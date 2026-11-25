@@ -38,7 +38,7 @@
                ('', 'Raporty', 'chart', False)]),
   ('Finanse', [('/bank', 'Bank', 'bank', p.startswith('/bank'))]),
   ('System', [('/ustawienia', 'Ustawienia', 'gear', p.startswith('/ustawienia')),
-              ('', 'Szablony', 'doc', False),
+              ('/szablony', 'Szablony maili', 'doc', p.startswith('/szablony')),
               ('/dostep', 'Claude', 'spark', p.startswith('/dostep')),
               ('/dziennik', 'Dziennik zmian', 'log', p.startswith('/dziennik')),
               ('/konto', 'Konto', 'user', p.startswith('/konto'))]),

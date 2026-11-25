@@ -16,7 +16,7 @@ from sqlalchemy import func, or_, select, update
 from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import api, auth, calc, config, mcp_server, migrate, nip_lookup, numbering, password, payments, pdf, secretbox, wz
+from . import api, auth, calc, config, mail_templates, mcp_server, migrate, nip_lookup, numbering, password, payments, pdf, secretbox, wz
 from . import products as prod
 from .bank import service as bank
 from .mail import service as mail
@@ -56,6 +56,8 @@ from .models import (
     PURCHASE_STATUSES,
     PurchaseInvoice,
     StockMovement,
+    TEMPLATE_KINDS,
+    EmailTemplate,
 )
 from .seed import seed
 
@@ -1285,27 +1287,31 @@ def mail_refresh(request: Request, db: Session = Depends(get_db)):
 
 @app.get("/poczta/nowa", response_class=HTMLResponse)
 def mail_compose(request: Request, faktura: int = 0, odpowiedz: int = 0, kontrahent: int = 0, do: str = "",
-                 przypomnienie: int = 0, db: Session = Depends(get_db)):
+                 przypomnienie: int = 0, szablon: int = 0, db: Session = Depends(get_db)):
     company = current_company(request, db)
     accounts = [a for a in _company_accounts(db, company.id) if a.active]
     draft = {"to": do, "cc": "", "subject": "", "body": "", "in_reply_to": "", "invoice_id": 0, "account_id": 0,
              "reminder": ""}
     inv = None
+    tpl_kind, tpls, tpl = "general", [], None
     if faktura:
         inv = get_invoice(db, request, faktura)
         draft["invoice_id"] = inv.id
         draft["to"] = draft["to"] or (inv.contractor.email.split(",")[0].strip() if inv.contractor and inv.contractor.email else "")
-        draft["subject"] = f"{inv.kind_label} {inv.display_number} – {company.name}"
-        lines = ["Dzień dobry,", "", f"w załączniku przesyłam {inv.kind_label.lower()} {inv.display_number}"
-                 f" na kwotę {calc.format_money(inv.total_gross)} zł brutto."]
-        if inv.due_date and inv.to_pay > 0 and inv.kind != "correction":
-            lines.append(f"Termin płatności: {inv.due_date:%d.%m.%Y}"
-                         + (f", konto: {company.bank_account}" if company.bank_account else "") + ".")
-        lines += ["", "Pozdrawiam"]
-        draft["body"] = "\n".join(lines)
+        tpl_kind = "invoice"
         if przypomnienie and inv.status == "issued" and inv.to_pay > 0:
-            draft["subject"], draft["body"] = payments.reminder_draft(inv)
+            tpl_kind = "reminder"
             draft["reminder"] = "1"
+    if faktura or szablon:
+        mail_templates.ensure_defaults(db, company)
+        tpls = db.scalars(select(EmailTemplate).where(EmailTemplate.company_id == company.id)
+                          .order_by(EmailTemplate.kind, EmailTemplate.is_default.desc(), EmailTemplate.name)).all()
+        tpl = next((t for t in tpls if t.id == szablon), None) or mail_templates.default_for(db, company, tpl_kind)
+        db.commit()
+        if tpl is not None:
+            ctx = mail_templates.context(company, inv)
+            draft["subject"] = mail_templates.render(tpl.subject, ctx)
+            draft["body"] = mail_templates.render(tpl.body, ctx)
     if kontrahent and not draft["to"]:
         c = db.get(Contractor, kontrahent)
         if c and c.email:
@@ -1322,7 +1328,8 @@ def mail_compose(request: Request, faktura: int = 0, odpowiedz: int = 0, kontrah
         draft["body"] = f"\n\n{when}, {orig.from_name or orig.from_addr} napisał(a):\n{quoted}"
         if orig.invoice_id:
             draft["invoice_id"] = orig.invoice_id
-    return render(request, db, "mail_compose.html", accounts=accounts, draft=draft, inv=inv)
+    return render(request, db, "mail_compose.html", accounts=accounts, draft=draft, inv=inv, tpls=tpls, tpl=tpl,
+                  query=dict(request.query_params))
 
 
 @app.post("/poczta/nowa")
@@ -1781,3 +1788,96 @@ def nip_data(nip: str, request: Request):
         return JSONResponse(nip_lookup.lookup(nip))
     except nip_lookup.NipLookupError as e:
         return JSONResponse({"error": str(e)}, status_code=422)
+
+
+# ---------------------------------------------------------------- Szablony maili
+
+def _get_template(db: Session, request: Request, tid: int) -> EmailTemplate:
+    t = db.get(EmailTemplate, tid)
+    if t is None or t.company_id != current_company(request, db).id:
+        raise HTTPException(404)
+    return t
+
+
+@app.get("/szablony", response_class=HTMLResponse)
+def templates_list(request: Request, db: Session = Depends(get_db)):
+    company = current_company(request, db)
+    mail_templates.ensure_defaults(db, company)
+    db.commit()
+    rows = db.scalars(select(EmailTemplate).where(EmailTemplate.company_id == company.id)
+                      .order_by(EmailTemplate.kind, EmailTemplate.is_default.desc(), EmailTemplate.name)).all()
+    return render(request, db, "templates_list.html", rows=rows, KINDS=TEMPLATE_KINDS)
+
+
+def _template_form(request: Request, db: Session, t: EmailTemplate, error: str | None = None):
+    company = current_company(request, db)
+    sample = mail_templates.sample_context(company)
+    return render(request, db, "template_form.html", t=t, KINDS=TEMPLATE_KINDS, PLACEHOLDERS=mail_templates.PLACEHOLDERS,
+                  sample_json=script_json(sample), error=error,
+                  preview_subject=mail_templates.render(t.subject, sample), preview_body=mail_templates.render(t.body, sample))
+
+
+@app.get("/szablony/nowy", response_class=HTMLResponse)
+def template_new(request: Request, rodzaj: str = "general", db: Session = Depends(get_db)):
+    company = current_company(request, db)
+    return _template_form(request, db, EmailTemplate(company_id=company.id, kind=rodzaj if rodzaj in TEMPLATE_KINDS else "general",
+                                                     name="", subject="", body="", is_default=False))
+
+
+@app.get("/szablony/{tid}", response_class=HTMLResponse)
+def template_edit(tid: int, request: Request, db: Session = Depends(get_db)):
+    return _template_form(request, db, _get_template(db, request, tid))
+
+
+async def _template_save(request: Request, db: Session, t: EmailTemplate):
+    form = await request.form()
+    t.name = (form.get("name") or "").strip()[:120]
+    t.kind = form.get("kind") if form.get("kind") in TEMPLATE_KINDS else "general"
+    t.subject = (form.get("subject") or "").strip()[:300]
+    t.body = (form.get("body") or "").replace("\r\n", "\n").strip()
+    if not t.name:
+        return _template_form(request, db, t, "Podaj nazwę szablonu.")
+    unknown = mail_templates.unknown_tags(t.subject + " " + t.body)
+    if unknown:
+        return _template_form(request, db, t, "Nieznane znaczniki: " + ", ".join("{" + u + "}" for u in unknown)
+                              + ". Użyj znaczników z listy obok.")
+    make_default = form.get("is_default") == "1"
+    db.add(t)
+    db.flush()
+    if make_default or not db.scalar(select(func.count()).select_from(EmailTemplate).where(
+            EmailTemplate.company_id == t.company_id, EmailTemplate.kind == t.kind, EmailTemplate.is_default)):
+        db.execute(update(EmailTemplate).where(EmailTemplate.company_id == t.company_id, EmailTemplate.kind == t.kind)
+                   .values(is_default=False))
+        t.is_default = True
+    audit(db, web_actor(request), "template.save", f"Szablon maila „{t.name}” ({t.kind_label})",
+          company_id=t.company_id, entity="template", entity_id=t.id)
+    db.commit()
+    flash(request, f"Zapisano szablon „{t.name}”.")
+    return redirect("/szablony")
+
+
+@app.post("/szablony/nowy")
+async def template_create(request: Request, db: Session = Depends(get_db)):
+    company = current_company(request, db)
+    return await _template_save(request, db, EmailTemplate(company_id=company.id, is_default=False))
+
+
+@app.post("/szablony/{tid}")
+async def template_update(tid: int, request: Request, db: Session = Depends(get_db)):
+    return await _template_save(request, db, _get_template(db, request, tid))
+
+
+@app.post("/szablony/{tid}/usun")
+def template_delete(tid: int, request: Request, db: Session = Depends(get_db)):
+    t = _get_template(db, request, tid)
+    others = db.scalars(select(EmailTemplate).where(EmailTemplate.company_id == t.company_id, EmailTemplate.kind == t.kind,
+                                                    EmailTemplate.id != t.id)).all()
+    if not others:
+        flash(request, "To jedyny szablon tego rodzaju. Możesz go zmienić, ale nie usunąć.")
+        return redirect(f"/szablony/{t.id}")
+    if t.is_default:
+        others[0].is_default = True
+    db.delete(t)
+    db.commit()
+    flash(request, "Usunięto szablon.")
+    return redirect("/szablony")

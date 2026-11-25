@@ -693,3 +693,28 @@ class PurchaseInvoice(Base):
     @property
     def status_label(self) -> str:
         return PURCHASE_STATUSES.get(self.status, self.status)
+
+
+TEMPLATE_KINDS = {"invoice": "Wysyłka faktury", "reminder": "Przypomnienie o płatności", "wz": "Wysyłka WZ",
+                  "recurring": "Faktura cykliczna", "general": "Ogólny"}
+
+
+class EmailTemplate(Base):
+    """Szablon maila firmy. Znaczniki {numer}, {kwota} itd. wypelnia program (app/templates_mail.py)."""
+
+    __tablename__ = "email_templates"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id", ondelete="CASCADE"), index=True)
+    kind: Mapped[str] = mapped_column(String(15), default="general")  # TEMPLATE_KINDS
+    name: Mapped[str] = mapped_column(String(120))
+    subject: Mapped[str] = mapped_column(String(300), default="")
+    body: Mapped[str] = mapped_column(Text, default="")
+    is_default: Mapped[bool] = mapped_column(default=False)  # domyslny dla rodzaju
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
+
+    company: Mapped[Company] = relationship()
+
+    @property
+    def kind_label(self) -> str:
+        return TEMPLATE_KINDS.get(self.kind, self.kind)

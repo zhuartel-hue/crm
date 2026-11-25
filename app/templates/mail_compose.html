@@ -10,6 +10,8 @@
 <input type="hidden" name="invoice_id" value="{{ draft.invoice_id or '' }}">
 <input type="hidden" name="reminder" value="{{ draft.reminder or '' }}">
 <div class="grid">
+  {% if tpls %}<div style="grid-column:1/-1"><label>Szablon (<a href="/szablony">zarządzaj</a>)</label>
+    <select id="tpl-pick">{% for t in tpls %}<option value="{{ t.id }}" {{ 'selected' if tpl and t.id == tpl.id }}>{{ t.kind_label }} · {{ t.name }}</option>{% endfor %}</select></div>{% endif %}
   <div style="grid-column:1/-1"><label>Od</label><select name="account_id">
     {% for a in accounts %}<option value="{{ a.id }}" {{ 'selected' if a.id == draft.account_id }}>{{ a.label }}</option>{% endfor %}</select></div>
   <div style="grid-column:1/-1"><label>Do (kilka adresów po przecinku)</label><input name="to" value="{{ draft.to }}" required inputmode="email"></div>
@@ -22,4 +24,15 @@
 <p><button class="btn primary">Wyślij</button></p>
 </form>
 {% endif %}
+{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  const sel = document.getElementById('tpl-pick'); if (!sel) return;
+  sel.addEventListener('change', () => {
+    const q = new URLSearchParams({{ (query or {})|tojson }}); q.set('szablon', sel.value);
+    location.href = '/poczta/nowa?' + q.toString();
+  });
+})();
+</script>
 {% endblock %}
