@@ -25,6 +25,8 @@ from .bank.mt940 import MT940Error
 from .ksef import ENVIRONMENTS as KSEF_ENVS
 from .ksef import qr as ksef_qr
 from .ksef import service as ksef
+from .ksef import incoming as ksef_incoming
+from .ksef import purchases
 from . import services
 from .services import ServiceError, audit, car_item_name
 from .db import SessionLocal, get_db
@@ -51,6 +53,8 @@ from .models import (
     InvoiceItem,
     Product,
     ProductPhoto,
+    PURCHASE_STATUSES,
+    PurchaseInvoice,
     StockMovement,
 )
 from .seed import seed
@@ -73,10 +77,11 @@ async def lifespan(_app: FastAPI):
     migrate.upgrade()
     with SessionLocal() as db:
         seed(db)
-    stop = _start_mail_sync()
+    stops = [_start_mail_sync(), _start_purchase_sync()]
     yield
-    if stop is not None:
-        stop.set()
+    for stop in stops:
+        if stop is not None:
+            stop.set()
 
 
 def _start_mail_sync():
@@ -98,6 +103,28 @@ def _start_mail_sync():
                 logging.getLogger("sygnavo.mail").exception("Pobieranie poczty nie powiodło się")
 
     threading.Thread(target=loop, name="mail-sync", daemon=True).start()
+    return stop
+
+
+def _start_purchase_sync():
+    """Faktury kosztowe z KSeF w tle co KSEF_PURCHASE_SYNC_HOURS godzin (dla firm z wlaczonym KSeF)."""
+    import logging
+    import threading
+
+    hours = config.KSEF_PURCHASE_SYNC_HOURS
+    if hours <= 0:
+        return None
+    stop = threading.Event()
+
+    def loop():
+        while not stop.wait(hours * 3600):
+            try:
+                with SessionLocal() as db:
+                    purchases.fetch_all(db)
+            except Exception:  # noqa: BLE001
+                logging.getLogger("sygnavo.ksef").exception("Pobieranie faktur kosztowych nie powiodło się")
+
+    threading.Thread(target=loop, name="ksef-purchases", daemon=True).start()
     return stop
 
 
@@ -1653,3 +1680,95 @@ def service_worker():
          "self.addEventListener('activate', e => self.clients.claim());\n" \
          "self.addEventListener('fetch', () => {});\n"
     return Response(js, media_type="application/javascript", headers={"Cache-Control": "no-cache"})
+
+
+# ---------------------------------------------------------------- Koszty (faktury z KSeF)
+
+def _get_purchase(db: Session, request: Request, pid: int) -> PurchaseInvoice:
+    p = db.get(PurchaseInvoice, pid)
+    if p is None or p.company_id != current_company(request, db).id:
+        raise HTTPException(404)
+    return p
+
+
+@app.get("/koszty", response_class=HTMLResponse)
+def purchases_list(request: Request, status: str = "", q: str = "", db: Session = Depends(get_db)):
+    company = current_company(request, db)
+    base = select(PurchaseInvoice).where(PurchaseInvoice.company_id == company.id)
+    stmt = base
+    if status in PURCHASE_STATUSES:
+        stmt = stmt.where(PurchaseInvoice.status == status)
+    elif status == "nieoplacone":
+        stmt = stmt.where(PurchaseInvoice.paid_at.is_(None), PurchaseInvoice.status != "rejected")
+    if q:
+        like = f"%{q.strip()}%"
+        stmt = stmt.where(or_(PurchaseInvoice.invoice_number.ilike(like), PurchaseInvoice.seller_name.ilike(like),
+                              PurchaseInvoice.seller_nip.ilike(like), PurchaseInvoice.ksef_number.ilike(like)))
+    rows = db.scalars(stmt.order_by(PurchaseInvoice.issue_date.desc(), PurchaseInvoice.id.desc()).limit(300)).all()
+    new_count = db.scalar(select(func.count()).select_from(PurchaseInvoice).where(
+        PurchaseInvoice.company_id == company.id, PurchaseInvoice.status == "new"))
+    unpaid = db.scalars(base.where(PurchaseInvoice.paid_at.is_(None), PurchaseInvoice.status != "rejected")).all()
+    return render(request, db, "purchases.html", rows=rows, status=status, q=q, STATUSES=PURCHASE_STATUSES,
+                  new_count=new_count, unpaid_count=len(unpaid),
+                  unpaid_sum=sum((p.gross for p in unpaid if p.currency == "PLN"), Decimal("0")),
+                  ksef_on=ksef.enabled(company), today=dt.date.today())
+
+
+@app.post("/koszty/pobierz")
+async def purchases_fetch(request: Request, db: Session = Depends(get_db)):
+    company = current_company(request, db)
+    form = await request.form()
+    since = None
+    if form.get("since"):
+        try:
+            since = dt.date.fromisoformat(form.get("since"))
+        except ValueError:
+            since = None
+    try:
+        n = purchases.fetch(db, web_actor(request), company, since=since)
+        flash(request, f"Pobrano z KSeF {n} nowych faktur kosztowych." if n else "Brak nowych faktur kosztowych w KSeF.")
+    except ServiceError as e:
+        flash(request, str(e))
+    return redirect("/koszty")
+
+
+@app.get("/koszty/{pid}", response_class=HTMLResponse)
+def purchase_view(pid: int, request: Request, db: Session = Depends(get_db)):
+    p = _get_purchase(db, request, pid)
+    try:
+        data = ksef_incoming.parse(p.xml) if p.xml else {}
+    except Exception:  # noqa: BLE001
+        data = {}
+    return render(request, db, "purchase_view.html", pi=p, data=data, STATUSES=PURCHASE_STATUSES,
+                  today_iso=dt.date.today().isoformat())
+
+
+@app.post("/koszty/{pid}")
+async def purchase_update(pid: int, request: Request, db: Session = Depends(get_db)):
+    p = _get_purchase(db, request, pid)
+    form = await request.form()
+    action = form.get("action") or ""
+    if action in PURCHASE_STATUSES:
+        p.status = action
+    if action == "paid":
+        try:
+            p.paid_at = dt.date.fromisoformat(form.get("paid_at") or "")
+        except ValueError:
+            p.paid_at = dt.date.today()
+    elif action == "unpaid":
+        p.paid_at = None
+    if "notes" in form:
+        p.notes = (form.get("notes") or "").strip()
+    audit(db, web_actor(request), "purchase.update",
+          f"Koszt {p.invoice_number} od {p.seller_name[:80]}: {p.status_label}{', zapłacona' if p.paid_at else ''}",
+          company_id=p.company_id, entity="purchase", entity_id=p.id)
+    db.commit()
+    flash(request, "Zapisano.")
+    return redirect(f"/koszty/{p.id}")
+
+
+@app.get("/koszty/{pid}/xml")
+def purchase_xml(pid: int, request: Request, db: Session = Depends(get_db)):
+    p = _get_purchase(db, request, pid)
+    return Response(p.xml.encode("utf-8"), media_type="application/xml",
+                    headers={"Content-Disposition": f'attachment; filename="{p.ksef_number}.xml"'})

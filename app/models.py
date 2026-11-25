@@ -48,6 +48,10 @@ class Company(Base):
     ksef_auth: Mapped[str] = mapped_column(String(10), default="token")
     ksef_cert_pem: Mapped[str] = mapped_column(Text, default="")
     ksef_key_enc: Mapped[str] = mapped_column(Text, default="")
+    # Faktury kosztowe z KSeF: data trwalego zapisu ostatniej pobranej (ISO), od niej kolejne pobranie.
+    ksef_purchase_cursor: Mapped[str] = mapped_column(String(40), default="")
+    ksef_purchase_synced_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+    ksef_purchase_error: Mapped[str] = mapped_column(Text, default="")
 
     @property
     def address_lines(self) -> list[str]:
@@ -648,3 +652,44 @@ class InvoicePayment(Base):
     @property
     def method_label(self) -> str:
         return PAYMENT_METHODS.get(self.method, self.method)
+
+
+PURCHASE_STATUSES = {"new": "do weryfikacji", "accepted": "zatwierdzona", "rejected": "odrzucona"}
+
+
+class PurchaseInvoice(Base):
+    """Faktura kosztowa (firma jest nabywca) pobrana z KSeF. XML jest zrodlem, reszta to wyciag do listy."""
+
+    __tablename__ = "purchase_invoices"
+    __table_args__ = (UniqueConstraint("company_id", "ksef_number", name="uq_purchase_ksef"),
+                      Index("ix_purchase_company_date", "company_id", "issue_date"))
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"))
+    ksef_env: Mapped[str] = mapped_column(String(10), default="")
+    ksef_number: Mapped[str] = mapped_column(String(40))
+    invoice_number: Mapped[str] = mapped_column(String(256), default="")
+    invoice_type: Mapped[str] = mapped_column(String(10), default="")  # Vat, Kor, Zal...
+    issue_date: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
+    stored_at: Mapped[str] = mapped_column(String(40), default="")  # permanentStorageDate z KSeF
+    seller_nip: Mapped[str] = mapped_column(String(20), default="")
+    seller_name: Mapped[str] = mapped_column(String(512), default="")
+    contractor_id: Mapped[int | None] = mapped_column(ForeignKey("contractors.id", ondelete="SET NULL"), nullable=True)
+    net: Mapped[Decimal] = mapped_column(Money, default=Decimal("0"))
+    vat: Mapped[Decimal] = mapped_column(Money, default=Decimal("0"))
+    gross: Mapped[Decimal] = mapped_column(Money, default=Decimal("0"))
+    currency: Mapped[str] = mapped_column(String(3), default="PLN")
+    due_date: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
+    bank_account: Mapped[str] = mapped_column(String(40), default="")
+    xml: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[str] = mapped_column(String(10), default="new")  # PURCHASE_STATUSES
+    paid_at: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
+    notes: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
+
+    company: Mapped[Company] = relationship()
+    contractor: Mapped[Contractor | None] = relationship()
+
+    @property
+    def status_label(self) -> str:
+        return PURCHASE_STATUSES.get(self.status, self.status)

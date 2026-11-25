@@ -6,6 +6,7 @@ os.environ.setdefault("DATABASE_URL", "sqlite:///" + str(Path(__file__).parent /
 os.environ["ADMIN_PASSWORD"] = "test-haslo"
 os.environ["SECRET_KEY"] = "test-secret"
 os.environ["MAIL_SYNC_MINUTES"] = "0"
+os.environ["KSEF_PURCHASE_SYNC_HOURS"] = "0"
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import pytest  # noqa: E402

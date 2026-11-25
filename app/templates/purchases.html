@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Koszty{% endblock %}
+{% block content %}
+<div class="row"><h1>Koszty · {{ company.short_name }}</h1></div>
+<div class="grid">
+  <div class="card"><div class="muted">Do weryfikacji</div><b style="font-size:1.3em">{{ new_count }}</b></div>
+  <div class="card"><div class="muted">Nieopłacone ({{ unpaid_count }})</div><b style="font-size:1.3em">{{ unpaid_sum|money }} zł</b></div>
+</div>
+<div class="card">
+{% if ksef_on %}
+<form method="post" action="/koszty/pobierz" class="row">
+  {% if not company.ksef_purchase_cursor %}<label>Od dnia <input type="date" name="since" style="max-width:170px"></label>{% endif %}
+  <button class="btn primary">Pobierz z KSeF</button>
+</form>
+<p class="muted" style="margin:8px 0 0">Faktury, na których {{ company.short_name }} jest nabywcą, pobierają się same co kilka godzin.
+{% if company.ksef_purchase_synced_at %}Ostatnio: {{ company.ksef_purchase_synced_at.strftime('%d.%m.%Y %H:%M') }}.{% else %}Przy pierwszym pobraniu możesz podać datę początkową (domyślnie 30 dni wstecz).{% endif %}
+Środowisko: {{ company.ksef_env }}.</p>
+{% if company.ksef_purchase_error %}<div class="error">Ostatni błąd: {{ company.ksef_purchase_error }}</div>{% endif %}
+{% else %}
+<p style="margin:0">KSeF jest wyłączony dla tej firmy. Faktury kosztowe pobiorą się po włączeniu KSeF w <a href="/ustawienia">Ustawieniach</a> (certyfikat albo token).</p>
+{% endif %}
+</div>
+<form class="row" style="margin:12px 0" method="get">
+  {% for key, label in [('', 'Wszystkie'), ('new', 'Do weryfikacji'), ('accepted', 'Zatwierdzone'), ('nieoplacone', 'Nieopłacone'), ('rejected', 'Odrzucone')] %}
+  <a class="btn small {{ 'primary' if status == key }}" href="/koszty?status={{ key }}">{{ label }}</a>{% endfor %}
+  <input type="hidden" name="status" value="{{ status }}">
+  <input name="q" value="{{ q }}" placeholder="Numer, sprzedawca albo NIP" style="max-width:260px"><button class="btn">Szukaj</button>
+</form>
+<div class="card tbl"><table>
+<tr><th>Faktura</th><th>Sprzedawca</th><th class="hide-sm">Termin</th><th class="n">Brutto</th><th>Status</th></tr>
+{% for pi in rows %}
+<tr>
+<td><a href="/koszty/{{ pi.id }}">{{ pi.invoice_number or pi.ksef_number }}</a><br><span class="muted">{{ pi.issue_date|date if pi.issue_date }}{% if pi.invoice_type and pi.invoice_type != 'Vat' %} · {{ pi.invoice_type }}{% endif %}</span></td>
+<td>{{ pi.seller_name }}<br><span class="muted">NIP {{ pi.seller_nip }}</span></td>
+<td class="hide-sm">{% if pi.due_date %}{{ pi.due_date|date }}{% if not pi.paid_at and pi.due_date < today and pi.status != 'rejected' %} <span class="badge" style="color:#b42318">po terminie</span>{% endif %}{% else %}—{% endif %}</td>
+<td class="n" style="white-space:nowrap">{{ pi.gross|money }} {{ 'zł' if pi.currency == 'PLN' else pi.currency }}</td>
+<td><span class="badge {{ 'warn' if pi.status == 'new' else ('ok' if pi.status == 'accepted' else '') }}">{{ pi.status_label }}</span>
+{% if pi.paid_at %}<br><span class="badge ok">zapłacona</span>{% endif %}</td>
+</tr>
+{% else %}<tr><td colspan="5" class="muted">Brak faktur kosztowych{{ ' w tym widoku' if status or q }}.</td></tr>{% endfor %}
+</table></div>
+{% endblock %}

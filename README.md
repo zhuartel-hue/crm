@@ -92,6 +92,16 @@ Wystawienie WZ zmniejsza, a PZ zwiększa stan produktu z katalogu (usługi nie m
 widać na karcie produktu; tam też ręczna korekta stanu (np. inwentaryzacja). W numeracji `{NNN}` daje numer
 z zerami (`{RRRR}/{MM}/{NNN}/WZ` → `2027/02/001/WZ`, jak w Firmao).
 
+## Należności i koszty
+
+Zakładka **Należności**: nieopłacone faktury (wszystkie, po terminie, z terminem w ciągu 7 dni), suma i liczba dni po terminie.
+Wpłatę, także częściową, zapisujesz z listy albo z faktury (kwota, data, forma). Wpłaty z banku (MT940) liczą się same.
+„Przypomnij” otwiera gotowy e-mail z kwotą do zapłaty, terminem i numerem konta. Po wysłaniu licznik przypomnień rośnie.
+
+Zakładka **Koszty**: faktury, na których firma jest nabywcą, pobierane z KSeF co `KSEF_PURCHASE_SYNC_HOURS` godzin
+(domyślnie 6) albo przyciskiem „Pobierz z KSeF”. Każda czeka na weryfikację (zatwierdź / odrzuć); można ją oznaczyć
+jako zapłaconą i pobrać oryginalny XML. Działa dla firm z włączonym KSeF (certyfikat albo token).
+
 ## Uruchomienie u siebie
 
 ```bash

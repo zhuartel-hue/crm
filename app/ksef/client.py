@@ -63,7 +63,7 @@ class KsefClient:
 
     # --- HTTP ---------------------------------------------------------------
 
-    def _call(self, method: str, path: str, *, bearer: str | None = None, json=None, accept_xml=False):
+    def _call(self, method: str, path: str, *, bearer: str | None = None, json=None, accept_xml=False, raw=False):
         headers = {"Accept": "application/xml" if accept_xml else "application/json"}
         if bearer:
             headers["Authorization"] = f"Bearer {bearer}"
@@ -73,6 +73,8 @@ class KsefClient:
             raise KsefError(f"Brak połączenia z KSeF ({self.env}): {e}") from e
         if r.status_code >= 400:
             raise KsefError(*_error_from(r))
+        if raw:
+            return r.content
         if accept_xml:
             return r.text
         return r.json() if r.content else {}
@@ -199,6 +201,25 @@ class KsefClient:
             self.authenticate()
         return self._call("GET", f"/sessions/{session_ref}/invoices/{inv_ref}/upo", bearer=self.access_token,
                           accept_xml=True)
+
+
+    # --- faktury otrzymane (kosztowe) -------------------------------------------
+
+    def query_received(self, date_from: str, date_to: str | None = None, page_offset: int = 0,
+                       page_size: int = 100) -> dict:
+        """Metadane faktur, na ktorych firma jest nabywca (Podmiot 2), po dacie trwalego zapisu w KSeF, rosnaco."""
+        if not self.access_token:
+            self.authenticate()
+        rng = {"dateType": "PermanentStorage", "from": date_from}
+        if date_to:
+            rng["to"] = date_to
+        return self._call("POST", f"/invoices/query/metadata?pageOffset={page_offset}&pageSize={page_size}&sortOrder=Asc",
+                          bearer=self.access_token, json={"subjectType": "Subject2", "dateRange": rng})
+
+    def download(self, ksef_number: str) -> bytes:
+        if not self.access_token:
+            self.authenticate()
+        return self._call("GET", f"/invoices/ksef/{ksef_number}", bearer=self.access_token, accept_xml=True, raw=True)
 
 
 def _error_from(r: httpx.Response) -> tuple[str, int | None, list]:

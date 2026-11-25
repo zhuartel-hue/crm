@@ -17,3 +17,5 @@ if DATABASE_URL.startswith("postgres") and (SECRET_KEY == "dev-secret-zmien-mnie
     raise RuntimeError("Na serwerze ustaw SECRET_KEY i ADMIN_PASSWORD (plik .env tworzy deploy/install.sh).")
 # Co ile minut pobierac poczte w tle (0 = wylaczone, np. w testach).
 MAIL_SYNC_MINUTES = int(os.environ.get("MAIL_SYNC_MINUTES", "5"))
+# Pobieranie faktur kosztowych z KSeF w tle co tyle godzin (0 = tylko recznie przyciskiem).
+KSEF_PURCHASE_SYNC_HOURS = float(os.environ.get("KSEF_PURCHASE_SYNC_HOURS", "6"))
