@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}{{ inv.display_number }}{% endblock %}
+{% block content %}
+<div class="row"><h1>{{ inv.kind_label }} {{ inv.display_number }}</h1>
+{% if inv.status == 'draft' %}<span class="badge warn">szkic</span>{% elif inv.to_pay <= 0 %}<span class="badge ok">zapłacona</span>{% else %}<span class="badge">do zapłaty {{ inv.to_pay|money }} zł</span>{% endif %}
+</div>
+<div class="row" style="margin-bottom:16px">
+  <a class="btn" href="/faktury/{{ inv.id }}/pdf" target="_blank">PDF</a>
+  <a class="btn" href="/faktury/{{ inv.id }}/pdf?pobierz=1">Pobierz PDF</a>
+  {% if inv.status == 'draft' %}
+  <a class="btn" href="/faktury/{{ inv.id }}/edytuj">Edytuj</a>
+  <form method="post" action="/faktury/{{ inv.id }}/wystaw"><button class="btn primary">Wystaw fakturę</button></form>
+  <form method="post" action="/faktury/{{ inv.id }}/usun" onsubmit="return confirm('Usunąć szkic?')"><button class="btn danger">Usuń szkic</button></form>
+  {% else %}
+  {% if inv.to_pay > 0 %}<form method="post" action="/faktury/{{ inv.id }}/zaplacona"><button class="btn">Oznacz jako zapłaconą</button></form>{% endif %}
+  {% endif %}
+  <form method="post" action="/faktury/{{ inv.id }}/kopiuj"><button class="btn">Kopiuj jako nową</button></form>
+</div>
+<div class="grid">
+  <div class="card"><div class="muted">Nabywca</div><b>{{ inv.buyer_name }}</b>{% if inv.buyer_nip %}<br>NIP {{ inv.buyer_nip }}{% endif %}<br><span style="white-space:pre-line">{{ inv.buyer_address }}</span></div>
+  <div class="card">Wystawiona {{ inv.issue_date|date }}, sprzedaż {{ inv.sale_date|date }}<br>{{ inv.payment_label }}{% if inv.due_date %}, termin {{ inv.due_date|date }}{% endif %}
+  {% if inv.car %}<br>Auto: <a href="/auta/{{ inv.car.id }}">{{ inv.car.label }}</a>{% endif %}</div>
+</div>
+<div class="card tbl"><table>
+<tr><th>Nazwa</th><th class="n">Ilość</th><th class="n">Cena</th>
+{% if inv.kind == 'margin' %}<th class="n">Nabycie</th><th class="n">Marża</th><th class="n">VAT od marży</th>{% else %}<th class="n">VAT</th><th class="n">Netto</th><th class="n">VAT zł</th>{% endif %}<th class="n">Brutto</th></tr>
+{% for it in inv.items %}
+<tr><td>{{ it.name }}</td><td class="n">{{ it.quantity|qty }} {{ it.unit }}</td><td class="n">{{ it.unit_price|money }}</td>
+{% if inv.kind == 'margin' %}<td class="n">{{ it.purchase_price|money }}</td><td class="n">{{ it.margin|money }}</td><td class="n">{{ it.vat|money }}</td>
+{% else %}<td class="n">{{ it.vat_rate }}{{ '%' if it.vat_rate.isdigit() }}</td><td class="n">{{ it.net|money }}</td><td class="n">{{ it.vat|money }}</td>{% endif %}
+<td class="n">{{ it.gross|money }}</td></tr>
+{% endfor %}
+<tr><td colspan="{{ 6 }}"><b>Razem</b></td><td class="n"><b>{{ inv.total_gross|money }}</b></td></tr>
+</table></div>
+{% if inv.kind == 'margin' %}<p class="muted">Marża i VAT od marży są tylko do Twojej ewidencji. Na fakturze dla klienta drukuje się sama kwota brutto i adnotacja „procedura marży – towary używane”.</p>{% endif %}
+{% if inv.notes %}<div class="card"><div class="muted">Uwagi</div><span style="white-space:pre-line">{{ inv.notes }}</span></div>{% endif %}
+{% endblock %}

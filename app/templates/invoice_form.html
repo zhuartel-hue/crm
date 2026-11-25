@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% set margin = inv.kind == 'margin' %}
+{% block title %}{{ 'Edycja' if inv.id else 'Nowa faktura' }}{% endblock %}
+{% block content %}
+<h1>{{ inv.kind_label }}{% if inv.id %} · {{ inv.display_number }}{% else %} · nowa{% endif %}</h1>
+<form method="post" id="invoice-form">
+<input type="hidden" name="kind" value="{{ inv.kind }}">
+<div class="card grid">
+  <div><label>Data wystawienia</label><input type="date" name="issue_date" value="{{ inv.issue_date }}" required></div>
+  <div><label>Data sprzedaży</label><input type="date" name="sale_date" value="{{ inv.sale_date }}" required></div>
+  <div><label>Miejsce wystawienia</label><input name="issue_place" value="{{ inv.issue_place }}"></div>
+  <div><label>Płatność</label><select name="payment_method">{% for k, v in PAYMENT_METHODS.items() %}<option value="{{ k }}" {{ 'selected' if inv.payment_method == k }}>{{ v }}</option>{% endfor %}</select></div>
+  <div><label>Termin płatności</label><input type="date" name="due_date" value="{{ inv.due_date or '' }}"></div>
+  <div><label>Zapłacono</label><input name="paid" inputmode="decimal" value="{{ inv.paid|money if inv.paid else '' }}" placeholder="0,00"></div>
+</div>
+
+<div class="card">
+  <h2 style="margin-top:0">Nabywca</h2>
+  <div class="grid">
+    <div><label>Wybierz z listy</label><select name="contractor_id" id="contractor">
+      <option value="">— nowy / wpisz ręcznie —</option>
+      {% for c in contractors %}<option value="{{ c.id }}" {{ 'selected' if inv.contractor_id == c.id }}>{{ c.name }}{% if c.nip %} ({{ c.nip }}){% endif %}</option>{% endfor %}
+    </select></div>
+    <div><label>NIP (pusty dla osoby prywatnej)</label><input name="buyer_nip" id="buyer_nip" value="{{ inv.buyer_nip }}" inputmode="numeric"></div>
+  </div>
+  <p><label>Nazwa / imię i nazwisko</label><input name="buyer_name" id="buyer_name" value="{{ inv.buyer_name }}" required></p>
+  <p><label>Adres (ulica, w drugiej linii kod i miasto)</label><textarea name="buyer_address" id="buyer_address">{{ inv.buyer_address }}</textarea></p>
+  <label id="save-wrap"><input type="checkbox" name="save_contractor" value="1" checked> zapisz jako nowego kontrahenta</label>
+</div>
+
+<div class="card">
+  <div class="row"><h2 style="margin:0">Pozycje</h2><span class="spacer"></span>
+  {% if not margin %}<label style="margin:0"><input type="checkbox" name="prices_gross" value="1" id="prices_gross" {{ 'checked' if inv.prices_gross }}> ceny brutto</label>{% endif %}
+  </div>
+  <div class="grid" style="margin:10px 0">
+    <div><label>Auto z placu (wypełnia pozycję)</label><select name="car_id" id="car">
+      <option value="">—</option>
+      {% for c in cars %}<option value="{{ c.id }}" {{ 'selected' if inv.car_id == c.id }} {{ 'disabled' if c.status == 'sold' and inv.car_id != c.id }}>{{ c.label }} {{ c.vin }}{% if c.status == 'sold' %} (sprzedany){% endif %}</option>{% endfor %}
+    </select></div>
+  </div>
+  <div class="items" id="items">
+    {% for it in (inv.items or [None]) %}
+    <div class="item">
+      <div class="name"><label>Nazwa</label><input name="item_name" value="{{ it.name if it else '' }}"></div>
+      <div><label>Ilość</label><input name="item_qty" inputmode="decimal" value="{{ it.quantity|qty if it else '1' }}"></div>
+      <div><label>Jm.</label><input name="item_unit" value="{{ it.unit if it else 'szt.' }}"></div>
+      <div><label class="price-label">{{ 'Cena brutto' if margin or inv.prices_gross else 'Cena netto' }}</label><input name="item_price" inputmode="decimal" value="{{ it.unit_price|money if it else '' }}"></div>
+      {% if margin %}
+      <div><label>Cena nabycia (łącznie)</label><input name="item_purchase" inputmode="decimal" value="{{ it.purchase_price|money if it and it.purchase_price is not none else '' }}"></div>
+      <input type="hidden" name="item_rate" value="23">
+      {% else %}
+      <div><label>VAT</label><select name="item_rate">{% for r in VAT_RATES %}<option value="{{ r }}" {{ 'selected' if (it.vat_rate if it else '23') == r }}>{{ r }}{{ '%' if r.isdigit() }}</option>{% endfor %}</select></div>
+      <input type="hidden" name="item_purchase" value="">
+      {% endif %}
+      <div><label>&nbsp;</label><button type="button" class="btn small danger remove">Usuń</button></div>
+      <div class="calc"></div>
+    </div>
+    {% endfor %}
+  </div>
+  <button type="button" class="btn small" id="add">+ Pozycja</button>
+  <p id="totals" style="margin-bottom:0"></p>
+</div>
+
+<div class="card"><label>Uwagi (drukowane na fakturze)</label><textarea name="notes">{{ inv.notes }}</textarea></div>
+
+<div class="row">
+  <button class="btn" name="action" value="draft">Zapisz szkic</button>
+  <button class="btn primary" name="action" value="issue">Wystaw fakturę</button>
+  <a class="btn" href="{{ '/faktury/%d' % inv.id if inv.id else '/faktury' }}">Anuluj</a>
+</div>
+</form>
+{% endblock %}
+{% block scripts %}
+<script>
+const MARGIN = {{ 'true' if margin else 'false' }};
+const CONTRACTORS = {{ contractors_json|safe }};
+</script>
+<script src="/static/invoice.js"></script>
+{% endblock %}

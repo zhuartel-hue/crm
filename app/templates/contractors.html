@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Kontrahenci{% endblock %}
+{% block content %}
+<div class="row"><h1>Kontrahenci</h1><span class="spacer"></span><a class="btn primary" href="/kontrahenci/nowy">+ Kontrahent</a></div>
+<p class="muted">Lista wspólna dla obu firm.</p>
+<form class="card row" method="get"><div style="flex:1"><input name="q" value="{{ q }}" placeholder="nazwa, NIP, miasto"></div><button class="btn">Szukaj</button></form>
+<div class="card tbl"><table>
+<tr><th>Nazwa</th><th>NIP</th><th class="hide-sm">Miasto</th><th class="hide-sm">Telefon</th></tr>
+{% for c in contractors %}
+<tr><td><a href="/kontrahenci/{{ c.id }}">{{ c.name }}</a>{% if not c.is_company %} <span class="badge">prywatny</span>{% endif %}</td><td>{{ c.nip }}</td><td class="hide-sm">{{ c.city }}</td><td class="hide-sm">{{ c.phone }}</td></tr>
+{% else %}<tr><td colspan="4" class="muted">Brak kontrahentów.</td></tr>{% endfor %}
+</table></div>
+{% endblock %}

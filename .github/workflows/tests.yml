@@ -1,0 +1,29 @@
+name: testy
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env: { POSTGRES_USER: crm, POSTGRES_PASSWORD: crm, POSTGRES_DB: crm }
+        ports: ["5432:5432"]
+        options: --health-cmd "pg_isready -U crm" --health-interval 5s --health-retries 20
+    strategy:
+      matrix:
+        db: [sqlite, postgres]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.13" }
+      - run: sudo apt-get update && sudo apt-get install -y libpango-1.0-0 libpangoft2-1.0-0 fonts-dejavu-core
+      - run: pip install -r requirements-dev.txt
+      - name: pytest
+        run: |
+          if [ "${{ matrix.db }}" = postgres ]; then export DATABASE_URL=postgresql+psycopg://crm:crm@localhost:5432/crm; fi
+          pytest -q
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t crm:test .

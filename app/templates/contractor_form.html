@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Kontrahent{% endblock %}
+{% block content %}
+<h1>{{ c.name if c.id else 'Nowy kontrahent' }}</h1>
+<form method="post" class="card">
+<p><label><input type="checkbox" name="is_company" value="1" {{ 'checked' if c.is_company }}> firma (odznacz dla osoby prywatnej)</label></p>
+<div class="grid">
+  <div style="grid-column:1/-1"><label>Nazwa / imię i nazwisko</label><input name="name" value="{{ c.name or '' }}" required></div>
+  <div><label>NIP</label><input name="nip" value="{{ c.nip or '' }}" inputmode="numeric"></div>
+  <div><label>PESEL (opcjonalnie)</label><input name="pesel" value="{{ c.pesel or '' }}" inputmode="numeric"></div>
+  <div style="grid-column:1/-1"><label>Ulica i numer</label><input name="street" value="{{ c.street or '' }}"></div>
+  <div><label>Kod pocztowy</label><input name="postal_code" value="{{ c.postal_code or '' }}"></div>
+  <div><label>Miasto</label><input name="city" value="{{ c.city or '' }}"></div>
+  <div><label>Kraj</label><input name="country" value="{{ c.country or 'PL' }}" maxlength="2"></div>
+  <div><label>E-mail</label><input name="email" type="email" value="{{ c.email or '' }}"></div>
+  <div><label>Telefon</label><input name="phone" type="tel" value="{{ c.phone or '' }}"></div>
+  <div style="grid-column:1/-1"><label>Notatki</label><textarea name="notes">{{ c.notes or '' }}</textarea></div>
+</div>
+<div class="row"><button class="btn primary">Zapisz</button><a class="btn" href="/kontrahenci">Anuluj</a></div>
+</form>
+{% if invoices %}<h2>Faktury</h2>{% include "_invoice_rows.html" %}{% endif %}
+{% endblock %}

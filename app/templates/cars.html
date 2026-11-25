@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Auta{% endblock %}
+{% block content %}
+<div class="row"><h1>Auta · {{ company.short_name }}</h1><span class="spacer"></span><a class="btn primary" href="/auta/nowe">+ Auto</a></div>
+<div class="row" style="margin-bottom:12px">
+  <a class="btn small {{ 'primary' if not status }}" href="/auta">wszystkie</a>
+  {% for k, v in CAR_STATUSES.items() %}<a class="btn small {{ 'primary' if status == k }}" href="/auta?status={{ k }}">{{ v }}</a>{% endfor %}
+</div>
+<div class="card tbl"><table>
+<tr><th>Auto</th><th class="hide-sm">VIN</th><th class="n hide-sm">Przebieg</th><th class="n">Zakup</th><th class="n">Cena</th><th>Status</th><th></th></tr>
+{% for c in cars %}
+<tr><td><a href="/auta/{{ c.id }}">{{ c.label }}</a>{% if c.registration %}<br><span class="muted">{{ c.registration }}</span>{% endif %}</td>
+<td class="hide-sm">{{ c.vin }}</td><td class="n hide-sm">{{ '{:,}'.format(c.mileage_km).replace(',', ' ') if c.mileage_km is not none }}</td>
+<td class="n">{{ c.purchase_price|money }}</td><td class="n">{{ c.asking_price|money }}</td><td>{{ c.status_label }}</td>
+<td>{% if c.status != 'sold' %}<a class="btn small" href="/faktury/nowa?rodzaj=margin&auto={{ c.id }}">Marża</a> <a class="btn small" href="/faktury/nowa?rodzaj=vat&auto={{ c.id }}">VAT</a>{% endif %}</td></tr>
+{% else %}<tr><td colspan="7" class="muted">Brak aut.</td></tr>{% endfor %}
+</table></div>
+{% endblock %}

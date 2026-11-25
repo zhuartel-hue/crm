@@ -1,0 +1,47 @@
+# Program do faktur na serwerze z ChirpStackiem i Sygnavo (katalog /opt/crm).
+# Nie otwiera zadnych portow: Caddy z ChirpStacka wystawia go pod HTTPS
+# (faktury.<adres-serwera>), a baza jest widoczna tylko dla aplikacji.
+name: crm
+
+services:
+  app:
+    image: crm:latest
+    build: .
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+psycopg://crm:${DB_PASSWORD}@db/crm
+      SECRET_KEY: ${SECRET_KEY}
+      ADMIN_LOGIN: ${ADMIN_LOGIN:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
+    depends_on:
+      db:
+        condition: service_healthy
+    mem_limit: 384m
+    networks:
+      default: {}
+      chirpstack:
+        aliases: [crm-app]
+
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: crm
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: crm
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U crm"]
+      interval: 5s
+      retries: 30
+    mem_limit: 256m
+
+volumes:
+  db-data:
+
+networks:
+  chirpstack:
+    external: true
+    name: ${CHIRPSTACK_NETWORK:-chirpstack_default}

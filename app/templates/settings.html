@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Ustawienia{% endblock %}
+{% block content %}
+<h1>Ustawienia · {{ company.short_name }}</h1>
+<form method="post" class="card">
+<h2 style="margin-top:0">Dane na fakturze</h2>
+<div class="grid">
+  <div><label>Nazwa krótka (przełącznik)</label><input name="short_name" value="{{ company.short_name }}" required></div>
+  <div style="grid-column:1/-1"><label>Pełna nazwa</label><input name="name" value="{{ company.name }}" required></div>
+  <div><label>NIP</label><input name="nip" value="{{ company.nip }}" inputmode="numeric"></div>
+  <div style="grid-column:1/-1"><label>Ulica i numer</label><input name="street" value="{{ company.street }}"></div>
+  <div><label>Kod pocztowy</label><input name="postal_code" value="{{ company.postal_code }}"></div>
+  <div><label>Miasto</label><input name="city" value="{{ company.city }}"></div>
+  <div><label>Miejsce wystawienia</label><input name="issue_place" value="{{ company.issue_place }}" placeholder="domyślnie miasto"></div>
+  <div><label>Bank</label><input name="bank_name" value="{{ company.bank_name }}"></div>
+  <div style="grid-column:span 2"><label>Numer konta</label><input name="bank_account" value="{{ company.bank_account }}"></div>
+  <div><label>E-mail</label><input name="email" value="{{ company.email }}"></div>
+  <div><label>Telefon</label><input name="phone" value="{{ company.phone }}"></div>
+</div>
+<h2>Numeracja</h2>
+<p class="muted">{nr} – kolejny numer, {MM} – miesiąc, {RRRR} – rok. Faktury VAT i marża mają osobne liczniki.</p>
+<div class="grid">
+  <div><label>Wzór: faktura VAT</label><input name="pattern_vat" value="{{ company.pattern_vat }}"></div>
+  <div><label>Wzór: faktura marża</label><input name="pattern_margin" value="{{ company.pattern_margin }}"></div>
+  <div><label>Numeracja od 1</label><select name="numbering_reset">
+    <option value="month" {{ 'selected' if company.numbering_reset == 'month' }}>co miesiąc</option>
+    <option value="year" {{ 'selected' if company.numbering_reset == 'year' }}>co rok</option></select></div>
+  <div><label>Domyślny termin płatności (dni)</label><input name="default_payment_days" value="{{ company.default_payment_days }}" inputmode="numeric"></div>
+</div>
+<p><button class="btn primary">Zapisz</button></p>
+</form>
+<form method="post" action="/logout"><button class="btn">Wyloguj</button></form>
+{% endblock %}
