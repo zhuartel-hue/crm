@@ -4,6 +4,7 @@ from pathlib import Path
 
 os.environ.setdefault("DATABASE_URL", "sqlite:///" + str(Path(__file__).parent / "test.db"))
 os.environ["ADMIN_PASSWORD"] = "test-haslo"
+os.environ["SECRET_KEY"] = "test-secret"
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import pytest  # noqa: E402
