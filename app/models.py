@@ -437,3 +437,88 @@ class BankTransaction(Base):
 
     company: Mapped[Company] = relationship()
     invoice: Mapped[Invoice | None] = relationship()
+
+
+class MailAccount(Base):
+    """Skrzynka pocztowa firmy (IMAP do odbioru, SMTP do wysylki). Haslo zaszyfrowane (app/secretbox.py)."""
+
+    __tablename__ = "mail_accounts"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"))
+    email: Mapped[str] = mapped_column(String(200))
+    display_name: Mapped[str] = mapped_column(String(200), default="")
+    imap_host: Mapped[str] = mapped_column(String(200), default="")
+    imap_port: Mapped[int] = mapped_column(Integer, default=993)
+    smtp_host: Mapped[str] = mapped_column(String(200), default="")
+    smtp_port: Mapped[int] = mapped_column(Integer, default=465)
+    smtp_security: Mapped[str] = mapped_column(String(10), default="ssl")  # ssl / starttls
+    username: Mapped[str] = mapped_column(String(200), default="")
+    password_enc: Mapped[str] = mapped_column(Text, default="")
+    signature: Mapped[str] = mapped_column(Text, default="")
+    active: Mapped[bool] = mapped_column(default=True)
+    # {"INBOX": {"validity": "...", "last": 123}, "Sent": {...}}
+    sync_state: Mapped[str] = mapped_column(Text, default="{}")
+    last_sync: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+    last_error: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
+
+    company: Mapped[Company] = relationship()
+
+    @property
+    def label(self) -> str:
+        return f"{self.display_name} <{self.email}>" if self.display_name else self.email
+
+
+class MailMessage(Base):
+    __tablename__ = "mail_messages"
+    __table_args__ = (
+        Index("ix_mail_account_date", "account_id", "date"),
+        Index("ix_mail_contractor", "contractor_id"),
+        Index("ix_mail_invoice", "invoice_id"),
+        Index("ix_mail_msgid", "account_id", "message_id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    account_id: Mapped[int] = mapped_column(ForeignKey("mail_accounts.id", ondelete="CASCADE"))
+    direction: Mapped[str] = mapped_column(String(3), default="in")  # in / out
+    folder: Mapped[str] = mapped_column(String(200), default="")
+    uid: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    message_id: Mapped[str] = mapped_column(String(300), default="")
+    in_reply_to: Mapped[str] = mapped_column(String(300), default="")
+    subject: Mapped[str] = mapped_column(String(500), default="")
+    from_addr: Mapped[str] = mapped_column(String(200), default="")
+    from_name: Mapped[str] = mapped_column(String(200), default="")
+    to_addrs: Mapped[str] = mapped_column(Text, default="")
+    cc_addrs: Mapped[str] = mapped_column(Text, default="")
+    date: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+    body_text: Mapped[str] = mapped_column(Text, default="")
+    body_html: Mapped[str] = mapped_column(Text, default="")
+    seen: Mapped[bool] = mapped_column(default=False)
+    contractor_id: Mapped[int | None] = mapped_column(ForeignKey("contractors.id", ondelete="SET NULL"), nullable=True)
+    invoice_id: Mapped[int | None] = mapped_column(ForeignKey("invoices.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
+
+    account: Mapped[MailAccount] = relationship()
+    contractor: Mapped[Contractor | None] = relationship()
+    invoice: Mapped[Invoice | None] = relationship()
+    attachments: Mapped[list[MailAttachment]] = relationship(
+        back_populates="message", cascade="all, delete-orphan", order_by="MailAttachment.id"
+    )
+
+    @property
+    def snippet(self) -> str:
+        return " ".join((self.body_text or "").split())[:160]
+
+
+class MailAttachment(Base):
+    __tablename__ = "mail_attachments"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    message_id: Mapped[int] = mapped_column(ForeignKey("mail_messages.id", ondelete="CASCADE"), index=True)
+    filename: Mapped[str] = mapped_column(String(300), default="")
+    content_type: Mapped[str] = mapped_column(String(100), default="application/octet-stream")
+    size: Mapped[int] = mapped_column(Integer, default=0)
+    data: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)  # None = za duzy, nie pobrany
+
+    message: Mapped[MailMessage] = relationship(back_populates="attachments")

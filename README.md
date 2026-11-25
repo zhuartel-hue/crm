@@ -70,6 +70,15 @@ sama (pole „Zapłacono”); pozostałe czekają w „Do sprawdzenia” z propo
 przypisania. Ten sam plik można wczytać wiele razy, powtórzone operacje są pomijane.
 Format: specyfikacja PKO „Struktura pliku wyjściowego - Raport MT940” (CP852, podpola `~NN`).
 
+## Poczta
+
+Zakładka **Poczta**: skrzynki IMAP/SMTP przypisane do firm (Ustawienia → Skrzynki pocztowe).
+Sygnavo pobiera INBOX i folder wysłanych co `MAIL_SYNC_MINUTES` minut (domyślnie 5; 0 wyłącza),
+tylko do odczytu, nic nie usuwa na serwerze poczty. Wiadomość łączy się z kontrahentem po adresie
+e-mail i z fakturą po numerze w temacie. Fakturę można wysłać z PDF-em przyciskiem „Wyślij e-mailem”.
+Hasła skrzynek są zaszyfrowane kluczem z `SECRET_KEY`. HTML wiadomości jest wyświetlany w ramce
+sandbox z CSP (bez skryptów i bez obrazków z internetu).
+
 ## Uruchomienie u siebie
 
 ```bash

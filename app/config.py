@@ -15,3 +15,5 @@ COOKIE_SECURE = os.environ.get("COOKIE_SECURE", "false").lower() == "true"
 
 if DATABASE_URL.startswith("postgres") and (SECRET_KEY == "dev-secret-zmien-mnie" or ADMIN_PASSWORD == "admin"):
     raise RuntimeError("Na serwerze ustaw SECRET_KEY i ADMIN_PASSWORD (plik .env tworzy deploy/install.sh).")
+# Co ile minut pobierac poczte w tle (0 = wylaczone, np. w testach).
+MAIL_SYNC_MINUTES = int(os.environ.get("MAIL_SYNC_MINUTES", "5"))

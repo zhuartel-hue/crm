@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import re
 from contextlib import asynccontextmanager
 from decimal import Decimal
 from pathlib import Path
@@ -15,9 +16,11 @@ from sqlalchemy import func, or_, select, update
 from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import api, auth, calc, config, mcp_server, migrate, numbering, password, pdf
+from . import api, auth, calc, config, mcp_server, migrate, numbering, password, pdf, secretbox
 from . import products as prod
 from .bank import service as bank
+from .mail import service as mail
+from .mail.service import MailError
 from .bank.mt940 import MT940Error
 from .ksef import ENVIRONMENTS as KSEF_ENVS
 from .ksef import qr as ksef_qr
@@ -31,6 +34,9 @@ from .models import (
     ApiToken,
     AuditLog,
     BankTransaction,
+    MailAccount,
+    MailAttachment,
+    MailMessage,
     INVOICE_KINDS,
     NEW_KINDS,
     PAYMENT_METHODS,
@@ -60,7 +66,32 @@ async def lifespan(_app: FastAPI):
     migrate.upgrade()
     with SessionLocal() as db:
         seed(db)
+    stop = _start_mail_sync()
     yield
+    if stop is not None:
+        stop.set()
+
+
+def _start_mail_sync():
+    """Pobieranie poczty w tle co MAIL_SYNC_MINUTES minut (jeden proces uvicorn)."""
+    import logging
+    import threading
+
+    minutes = config.MAIL_SYNC_MINUTES
+    if minutes <= 0:
+        return None
+    stop = threading.Event()
+
+    def loop():
+        while not stop.wait(minutes * 60):
+            try:
+                with SessionLocal() as db:
+                    mail.sync_all(db)
+            except Exception:  # noqa: BLE001
+                logging.getLogger("sygnavo.mail").exception("Pobieranie poczty nie powiodło się")
+
+    threading.Thread(target=loop, name="mail-sync", daemon=True).start()
+    return stop
 
 
 app = FastAPI(title="Sygnavo", docs_url=None, redoc_url=None, lifespan=lifespan)
@@ -426,8 +457,10 @@ def invoice_view(invoice_id: int, request: Request, db: Session = Depends(get_db
     url = ksef.qr_url(inv)
     bank_payments = db.scalars(select(BankTransaction).where(BankTransaction.invoice_id == inv.id)
                                .order_by(BankTransaction.booking_date)).all()
+    mails = db.scalars(select(MailMessage).where(MailMessage.invoice_id == inv.id)
+                       .order_by(MailMessage.date.desc()).limit(20)).all()
     return render(request, db, "invoice_view.html", inv=inv, summary=calc.invoice_summary(inv), derived=corrections,
-                  bank_payments=bank_payments,
+                  bank_payments=bank_payments, mails=mails, has_mail=_company_accounts(db, inv.company_id) != [],
                   ksef_enabled=ksef.enabled(inv.company), ksef_can_send=ksef.can_send(inv),
                   ksef_label=ksef.status_label(inv), ksef_url=url, ksef_qr=ksef_qr.svg(url) if url else "")
 
@@ -633,7 +666,9 @@ def contractor_edit(cid: int, request: Request, db: Session = Depends(get_db)):
     if c is None:
         raise HTTPException(404)
     invoices = db.scalars(select(Invoice).where(Invoice.contractor_id == cid).order_by(Invoice.issue_date.desc())).all()
-    return render(request, db, "contractor_form.html", c=c, invoices=invoices)
+    mails = db.scalars(select(MailMessage).where(MailMessage.contractor_id == cid)
+                       .order_by(MailMessage.date.desc()).limit(30)).all()
+    return render(request, db, "contractor_form.html", c=c, invoices=invoices, mails=mails)
 
 
 async def _save_contractor(request: Request, db: Session, c: Contractor):
@@ -1075,3 +1110,260 @@ def bank_undo(tx_id: int, request: Request, db: Session = Depends(get_db)):
 @app.post("/bank/{tx_id}/pomin")
 def bank_ignore(tx_id: int, request: Request, db: Session = Depends(get_db)):
     return _bank_action(request, db, bank.ignore, tx_id)
+
+
+# ---------------------------------------------------------------- poczta
+
+def _company_accounts(db: Session, company_id: int) -> list[MailAccount]:
+    return list(db.scalars(select(MailAccount).where(MailAccount.company_id == company_id).order_by(MailAccount.id)))
+
+
+def _get_message(db: Session, request: Request, mid: int) -> MailMessage:
+    m = db.get(MailMessage, mid)
+    if m is None or m.account.company_id != current_company(request, db).id:
+        raise HTTPException(404)
+    return m
+
+
+@app.get("/poczta", response_class=HTMLResponse)
+def mail_list(request: Request, konto: int = 0, q: str = "", kierunek: str = "", db: Session = Depends(get_db)):
+    company = current_company(request, db)
+    accounts = _company_accounts(db, company.id)
+    ids = [a.id for a in accounts if not konto or a.id == konto]
+    rows = []
+    if ids:
+        stmt = select(MailMessage).where(MailMessage.account_id.in_(ids))
+        if kierunek in ("in", "out"):
+            stmt = stmt.where(MailMessage.direction == kierunek)
+        if q:
+            like = f"%{q}%"
+            stmt = stmt.where(or_(MailMessage.subject.ilike(like), MailMessage.from_addr.ilike(like),
+                                  MailMessage.from_name.ilike(like), MailMessage.to_addrs.ilike(like)))
+        rows = db.scalars(stmt.order_by(MailMessage.date.desc(), MailMessage.id.desc()).limit(150)).all()
+    return render(request, db, "mail_list.html", accounts=accounts, rows=rows, konto=konto, q=q, kierunek=kierunek)
+
+
+@app.post("/poczta/odswiez")
+def mail_refresh(request: Request, db: Session = Depends(get_db)):
+    company = current_company(request, db)
+    n, errors = 0, []
+    for acc in _company_accounts(db, company.id):
+        if acc.active:
+            n += mail.sync_account(db, acc)
+            db.commit()
+            if acc.last_error:
+                errors.append(f"{acc.email}: {acc.last_error}")
+    flash(request, f"Nowych wiadomości: {n}." + (" Błędy: " + "; ".join(errors) if errors else ""))
+    return redirect("/poczta")
+
+
+@app.get("/poczta/nowa", response_class=HTMLResponse)
+def mail_compose(request: Request, faktura: int = 0, odpowiedz: int = 0, kontrahent: int = 0, do: str = "",
+                 db: Session = Depends(get_db)):
+    company = current_company(request, db)
+    accounts = [a for a in _company_accounts(db, company.id) if a.active]
+    draft = {"to": do, "cc": "", "subject": "", "body": "", "in_reply_to": "", "invoice_id": 0, "account_id": 0}
+    inv = None
+    if faktura:
+        inv = get_invoice(db, request, faktura)
+        draft["invoice_id"] = inv.id
+        draft["to"] = draft["to"] or (inv.contractor.email.split(",")[0].strip() if inv.contractor and inv.contractor.email else "")
+        draft["subject"] = f"{inv.kind_label} {inv.display_number} – {company.name}"
+        lines = ["Dzień dobry,", "", f"w załączniku przesyłam {inv.kind_label.lower()} {inv.display_number}"
+                 f" na kwotę {calc.format_money(inv.total_gross)} zł brutto."]
+        if inv.due_date and inv.to_pay > 0 and inv.kind != "correction":
+            lines.append(f"Termin płatności: {inv.due_date:%d.%m.%Y}"
+                         + (f", konto: {company.bank_account}" if company.bank_account else "") + ".")
+        lines += ["", "Pozdrawiam"]
+        draft["body"] = "\n".join(lines)
+    if kontrahent and not draft["to"]:
+        c = db.get(Contractor, kontrahent)
+        if c and c.email:
+            draft["to"] = c.email.split(",")[0].strip()
+    if odpowiedz:
+        orig = _get_message(db, request, odpowiedz)
+        draft["account_id"] = orig.account_id
+        draft["to"] = orig.from_addr if orig.direction == "in" else orig.to_addrs
+        subj = orig.subject or ""
+        draft["subject"] = subj if subj.lower().startswith(("re:", "odp:")) else f"Re: {subj}"
+        draft["in_reply_to"] = orig.message_id
+        when = orig.date.strftime("%d.%m.%Y %H:%M") if orig.date else ""
+        quoted = "\n".join("> " + line for line in (orig.body_text or "").splitlines()[:200])
+        draft["body"] = f"\n\n{when}, {orig.from_name or orig.from_addr} napisał(a):\n{quoted}"
+        if orig.invoice_id:
+            draft["invoice_id"] = orig.invoice_id
+    return render(request, db, "mail_compose.html", accounts=accounts, draft=draft, inv=inv)
+
+
+@app.post("/poczta/nowa")
+async def mail_send(request: Request, db: Session = Depends(get_db)):
+    company = current_company(request, db)
+    form = await request.form()
+    accounts = {a.id: a for a in _company_accounts(db, company.id) if a.active}
+    draft = {k: (form.get(k) or "") for k in ("to", "cc", "subject", "body", "in_reply_to")}
+    draft["account_id"] = int(form.get("account_id") or 0)
+    draft["invoice_id"] = int(form.get("invoice_id") or 0)
+    acc = accounts.get(draft["account_id"])
+    inv = get_invoice(db, request, draft["invoice_id"]) if draft["invoice_id"] else None
+    files = []
+    if inv is not None and form.get("attach_invoice") == "1":
+        name = (inv.number or f"szkic-{inv.id}").replace("/", "-") + ".pdf"
+        files.append((name, "application/pdf", pdf.render_invoice(inv)))
+    for f in form.getlist("files"):
+        if getattr(f, "filename", None):
+            data = await f.read()
+            if data:
+                files.append((f.filename, f.content_type or "application/octet-stream", data))
+    if sum(len(d) for _, _, d in files) > 20 * 1024 * 1024:
+        return render(request, db, "mail_compose.html", accounts=list(accounts.values()), draft=draft, inv=inv,
+                      error="Załączniki są za duże (razem ponad 20 MB).")
+    try:
+        if acc is None:
+            raise MailError("Wybierz skrzynkę, z której wysłać.")
+        msg = mail.send(db, acc, draft["to"], draft["subject"], draft["body"], cc=draft["cc"], attachments=files,
+                        in_reply_to=draft["in_reply_to"], invoice_id=inv.id if inv else None)
+        audit(db, web_actor(request), "mail.send", f"E-mail z {acc.email} do {draft['to']}: {draft['subject'][:120]}",
+              company_id=company.id, entity="invoice" if inv else "mail", entity_id=inv.id if inv else (msg.id if msg else None))
+        db.commit()
+    except MailError as e:
+        db.rollback()
+        return render(request, db, "mail_compose.html", accounts=list(accounts.values()), draft=draft, inv=inv, error=str(e))
+    flash(request, f"Wysłano do {draft['to']}.")
+    return redirect(f"/faktury/{inv.id}" if inv else "/poczta?kierunek=out")
+
+
+@app.get("/poczta/{mid}", response_class=HTMLResponse)
+def mail_view(mid: int, request: Request, db: Session = Depends(get_db)):
+    m = _get_message(db, request, mid)
+    if not m.seen:
+        m.seen = True
+        db.commit()
+    return render(request, db, "mail_view.html", m=m)
+
+
+@app.get("/poczta/{mid}/html")
+def mail_html(mid: int, request: Request, db: Session = Depends(get_db)):
+    m = _get_message(db, request, mid)
+    # Ramka sandbox bez skryptow; CSP blokuje skrypty, formularze i obrazki z internetu (sledzace piksele).
+    return HTMLResponse(m.body_html or "", headers={
+        "Content-Security-Policy": "default-src 'none'; img-src data: cid:; style-src 'unsafe-inline'; "
+                                   "form-action 'none'; frame-ancestors 'self'; sandbox allow-popups",
+        "X-Frame-Options": "SAMEORIGIN",
+    })
+
+
+@app.get("/poczta/zalacznik/{aid}")
+def mail_attachment(aid: int, request: Request, db: Session = Depends(get_db)):
+    a = db.get(MailAttachment, aid)
+    if a is None or a.data is None:
+        raise HTTPException(404)
+    _get_message(db, request, a.message_id)
+    safe = re.sub(r'[^\w.\- ]', "_", a.filename) or "zalacznik"
+    return Response(a.data, media_type="application/octet-stream",
+                    headers={"Content-Disposition": f'attachment; filename="{safe}"',
+                             "Content-Security-Policy": "sandbox"})
+
+
+@app.post("/poczta/{mid}/przypisz")
+async def mail_assign(mid: int, request: Request, db: Session = Depends(get_db)):
+    m = _get_message(db, request, mid)
+    form = await request.form()
+    number = (form.get("invoice") or "").strip()
+    if number:
+        inv = bank.find_invoice_by_number(db, m.account.company_id, number)
+        if inv is None:
+            flash(request, f"Nie znalazłem faktury {number}.")
+            return redirect(f"/poczta/{mid}")
+        m.invoice_id = inv.id
+    else:
+        m.invoice_id = None
+    db.commit()
+    return redirect(f"/poczta/{mid}")
+
+
+# --- ustawienia poczty
+
+MAIL_FIELDS = ("email", "display_name", "imap_host", "smtp_host", "username", "signature")
+
+
+@app.get("/ustawienia/poczta", response_class=HTMLResponse)
+def mail_settings(request: Request, edytuj: int = 0, db: Session = Depends(get_db)):
+    company = current_company(request, db)
+    accounts = _company_accounts(db, company.id)
+    acc = next((a for a in accounts if a.id == edytuj), None) or MailAccount(
+        email="", display_name=company.name, imap_host="", imap_port=993, smtp_host="", smtp_port=465,
+        smtp_security="ssl", username="", signature="", active=True)
+    return render(request, db, "mail_settings.html", accounts=accounts, acc=acc)
+
+
+@app.post("/ustawienia/poczta")
+async def mail_settings_save(request: Request, db: Session = Depends(get_db)):
+    company = current_company(request, db)
+    form = await request.form()
+    aid = int(form.get("id") or 0)
+    acc = db.get(MailAccount, aid) if aid else MailAccount(company_id=company.id, sync_state="{}", last_error="",
+                                                            password_enc="")
+    if acc is None or acc.company_id != company.id:
+        raise HTTPException(404)
+    for f in MAIL_FIELDS:
+        setattr(acc, f, (form.get(f) or "").strip())
+    acc.email = acc.email.lower()
+    try:
+        acc.imap_port = int(form.get("imap_port") or 993)
+        acc.smtp_port = int(form.get("smtp_port") or 465)
+    except ValueError:
+        acc.imap_port, acc.smtp_port = 993, 465
+    acc.smtp_security = "starttls" if form.get("smtp_security") == "starttls" else "ssl"
+    acc.active = form.get("active") == "1"
+    pw = form.get("password") or ""
+    if pw:
+        acc.password_enc = secretbox.seal(pw)
+    if "@" not in acc.email or not acc.imap_host or not acc.smtp_host:
+        return render(request, db, "mail_settings.html", accounts=_company_accounts(db, company.id), acc=acc,
+                      error="Podaj adres e-mail, serwer IMAP i serwer SMTP.")
+    db.add(acc)
+    audit(db, web_actor(request), "mail.account", f"Skrzynka {acc.email} zapisana", company_id=company.id)
+    db.commit()
+    flash(request, f"Zapisano skrzynkę {acc.email}. Sprawdź połączenie przyciskiem „Test”.")
+    return redirect("/ustawienia/poczta")
+
+
+@app.post("/ustawienia/poczta/{aid}/test")
+def mail_settings_test(aid: int, request: Request, db: Session = Depends(get_db)):
+    company = current_company(request, db)
+    acc = db.get(MailAccount, aid)
+    if acc is None or acc.company_id != company.id:
+        raise HTTPException(404)
+    msgs = []
+    try:
+        m = mail.connect_imap(acc)
+        folder = mail.sent_folder(m)
+        m.logout()
+        msgs.append(f"IMAP OK (wysłane: {folder or 'nie znaleziono folderu'})")
+    except (MailError, Exception) as e:  # noqa: BLE001
+        msgs.append(f"IMAP: {e}")
+    try:
+        s = mail.connect_smtp(acc)
+        s.quit()
+        msgs.append("SMTP OK")
+    except (MailError, Exception) as e:  # noqa: BLE001
+        msgs.append(f"SMTP: {e}")
+    flash(request, f"{acc.email}: " + "; ".join(msgs))
+    return redirect("/ustawienia/poczta")
+
+
+@app.post("/ustawienia/poczta/{aid}/usun")
+def mail_settings_delete(aid: int, request: Request, db: Session = Depends(get_db)):
+    company = current_company(request, db)
+    acc = db.get(MailAccount, aid)
+    if acc is None or acc.company_id != company.id:
+        raise HTTPException(404)
+    msg_ids = select(MailMessage.id).where(MailMessage.account_id == aid)
+    db.execute(MailAttachment.__table__.delete().where(MailAttachment.message_id.in_(msg_ids)))
+    db.execute(MailMessage.__table__.delete().where(MailMessage.account_id == aid))
+    db.delete(acc)
+    audit(db, web_actor(request), "mail.account", f"Usunięto skrzynkę {acc.email} z Sygnavo (poczta na serwerze zostaje)",
+          company_id=company.id)
+    db.commit()
+    flash(request, "Usunięto skrzynkę z Sygnavo. Wiadomości na serwerze poczty nie zostały ruszone.")
+    return redirect("/ustawienia/poczta")
