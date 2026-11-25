@@ -16,7 +16,7 @@ from sqlalchemy import func, or_, select, update
 from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import api, auth, calc, config, mail_templates, mcp_server, migrate, nip_lookup, numbering, password, payments, pdf, secretbox, wz
+from . import api, auth, calc, config, mail_templates, mcp_server, migrate, nip_lookup, numbering, password, payments, pdf, recurring, secretbox, wz
 from . import products as prod
 from .bank import service as bank
 from .mail import service as mail
@@ -58,6 +58,9 @@ from .models import (
     StockMovement,
     TEMPLATE_KINDS,
     EmailTemplate,
+    RECURRING_INTERVALS,
+    RECURRING_MODES,
+    RecurringInvoice,
 )
 from .seed import seed
 
@@ -79,7 +82,7 @@ async def lifespan(_app: FastAPI):
     migrate.upgrade()
     with SessionLocal() as db:
         seed(db)
-    stops = [_start_mail_sync(), _start_purchase_sync()]
+    stops = [_start_mail_sync(), _start_purchase_sync(), _start_recurring()]
     yield
     for stop in stops:
         if stop is not None:
@@ -105,6 +108,30 @@ def _start_mail_sync():
                 logging.getLogger("sygnavo.mail").exception("Pobieranie poczty nie powiodło się")
 
     threading.Thread(target=loop, name="mail-sync", daemon=True).start()
+    return stop
+
+
+def _start_recurring():
+    """Faktury cykliczne: co RECURRING_CHECK_MINUTES minut tworzy faktury, ktorych termin nadszedl."""
+    import logging
+    import threading
+
+    minutes = config.RECURRING_CHECK_MINUTES
+    if minutes <= 0:
+        return None
+    stop = threading.Event()
+
+    def loop():
+        while True:
+            try:
+                with SessionLocal() as db:
+                    recurring.run_due(db)
+            except Exception:  # noqa: BLE001
+                logging.getLogger("sygnavo.recurring").exception("Faktury cykliczne nie powiodły się")
+            if stop.wait(minutes * 60):
+                return
+
+    threading.Thread(target=loop, name="recurring", daemon=True).start()
     return stop
 
 
@@ -1881,3 +1908,136 @@ def template_delete(tid: int, request: Request, db: Session = Depends(get_db)):
     db.commit()
     flash(request, "Usunięto szablon.")
     return redirect("/szablony")
+
+
+# ---------------------------------------------------------------- Faktury cykliczne
+
+def _get_recurring(db: Session, request: Request, rid: int) -> RecurringInvoice:
+    r = db.get(RecurringInvoice, rid)
+    if r is None or r.company_id != current_company(request, db).id:
+        raise HTTPException(404)
+    return r
+
+
+@app.get("/cykliczne", response_class=HTMLResponse)
+def recurring_list(request: Request, db: Session = Depends(get_db)):
+    company = current_company(request, db)
+    rows = db.scalars(select(RecurringInvoice).where(RecurringInvoice.company_id == company.id)
+                      .order_by(RecurringInvoice.active.desc(), RecurringInvoice.next_date, RecurringInvoice.name)).all()
+    month = [r for r in rows if r.active]
+    monthly = sum((recurring.totals(r)["gross"] / r.interval_months for r in month), Decimal("0"))
+    return render(request, db, "recurring_list.html", rows=rows, totals={r.id: recurring.totals(r) for r in rows},
+                  monthly=calc.money(monthly), active_count=len(month))
+
+
+def _recurring_form(request: Request, db: Session, r: RecurringInvoice, error: str | None = None):
+    company = current_company(request, db)
+    products = prod.search(db, "", active_only=True)
+    contractors = db.scalars(select(Contractor).order_by(Contractor.name)).all()
+    mail_templates.ensure_defaults(db, company)
+    tpls = db.scalars(select(EmailTemplate).where(EmailTemplate.company_id == company.id,
+                                                  EmailTemplate.kind.in_(("recurring", "invoice")))).all()
+    history = db.scalars(select(Invoice).where(Invoice.recurring_id == r.id).order_by(Invoice.issue_date.desc())
+                         .limit(24)).all() if r.id else []
+    has_mail = _company_accounts(db, company.id) != []
+    return render(request, db, "recurring_form.html", r=r, rows=recurring.items(r) or [None], products=products,
+                  products_json=script_json(prod.picker_json(products)), contractors=contractors, tpls=tpls,
+                  INTERVALS=RECURRING_INTERVALS, MODES=RECURRING_MODES, schedule=recurring.schedule(r) if r.next_date else [],
+                  totals=recurring.totals(r), history=history, has_mail=has_mail, error=error,
+                  period=recurring.period_ctx(r.next_date or dt.date.today()))
+
+
+@app.get("/cykliczne/nowa", response_class=HTMLResponse)
+def recurring_new(request: Request, faktura: int = 0, db: Session = Depends(get_db)):
+    company = current_company(request, db)
+    if faktura:
+        r = recurring.from_invoice(get_invoice(db, request, faktura))
+    else:
+        r = RecurringInvoice(company_id=company.id, name="", buyer_name="", buyer_nip="", buyer_address="", items_json="[]",
+                             prices_gross=False, payment_method="transfer", due_days=company.default_payment_days,
+                             interval_months=1, day_of_month=1, next_date=recurring.first_date(dt.date.today(), 1),
+                             mode="draft", email_to="", notes="", active=True, last_error="")
+    return _recurring_form(request, db, r)
+
+
+@app.get("/cykliczne/{rid}", response_class=HTMLResponse)
+def recurring_edit(rid: int, request: Request, db: Session = Depends(get_db)):
+    return _recurring_form(request, db, _get_recurring(db, request, rid))
+
+
+async def _recurring_save(request: Request, db: Session, r: RecurringInvoice):
+    form = await request.form()
+    r.name = (form.get("name") or "").strip()[:200]
+    cid = form.get("contractor_id") or ""
+    c = db.get(Contractor, int(cid)) if cid.isdigit() else None
+    r.contractor_id = c.id if c else None
+    r.buyer_name = (form.get("recipient_name") or (c.name if c else "")).strip()[:300]
+    r.buyer_address = (form.get("recipient_address") or "").strip()
+    r.buyer_nip = (c.nip if c else (form.get("buyer_nip") or "")).replace("-", "").replace(" ", "")[:20]
+    r.prices_gross = form.get("prices_gross") == "1"
+    r.payment_method = form.get("payment_method") or "transfer"
+    r.mode = form.get("mode") or "draft"
+    r.email_to = (form.get("email_to") or "").strip()[:300]
+    tid = form.get("template_id") or ""
+    r.template_id = int(tid) if tid.isdigit() else None
+    r.notes = (form.get("notes") or "").strip()
+    r.active = form.get("active") == "1"
+    try:
+        r.interval_months = int(form.get("interval_months") or 1)
+        r.day_of_month = max(0, min(28, int(form.get("day_of_month") or 1)))
+        r.due_days = max(0, int(form.get("due_days") or 14))
+        start = dt.date.fromisoformat(form.get("next_date") or "")
+        r.next_date = recurring.day_in_month(start.year, start.month, r.day_of_month)
+        r.end_date = dt.date.fromisoformat(form["end_date"]) if form.get("end_date") else None
+        recurring.set_items(db, r, form.getlist("item_name"), form.getlist("item_qty"), form.getlist("item_unit"),
+                            form.getlist("item_price"), form.getlist("item_rate"), form.getlist("item_product"))
+        recurring.validate(r)
+    except ValueError as e:
+        msg = str(e)
+        if "isoformat" in msg or "Invalid isoformat" in msg or "invalid literal" in msg:
+            msg = "Sprawdź daty i liczby."
+        return _recurring_form(request, db, r, msg)
+    is_new = r.id is None
+    db.add(r)
+    db.flush()
+    audit(db, web_actor(request), "recurring.save", f"{'Nowa' if is_new else 'Zmieniona'} faktura cykliczna „{r.name}”",
+          company_id=r.company_id, entity="recurring", entity_id=r.id)
+    db.commit()
+    flash(request, f"Zapisano. Najbliższa faktura: {r.next_date:%d.%m.%Y}.")
+    return redirect(f"/cykliczne/{r.id}")
+
+
+@app.post("/cykliczne/nowa")
+async def recurring_create(request: Request, db: Session = Depends(get_db)):
+    company = current_company(request, db)
+    return await _recurring_save(request, db, RecurringInvoice(company_id=company.id, last_error=""))
+
+
+@app.post("/cykliczne/{rid}")
+async def recurring_update(rid: int, request: Request, db: Session = Depends(get_db)):
+    return await _recurring_save(request, db, _get_recurring(db, request, rid))
+
+
+@app.post("/cykliczne/{rid}/teraz")
+def recurring_now(rid: int, request: Request, db: Session = Depends(get_db)):
+    r = _get_recurring(db, request, rid)
+    try:
+        inv = recurring.generate(db, web_actor(request), r)
+    except (ServiceError, ValueError) as e:
+        db.rollback()
+        flash(request, str(e))
+        return redirect(f"/cykliczne/{rid}")
+    flash(request, f"Utworzono {inv.display_number}. Następna: {r.next_date:%d.%m.%Y}.")
+    return redirect(f"/faktury/{inv.id}")
+
+
+@app.post("/cykliczne/{rid}/usun")
+def recurring_delete(rid: int, request: Request, db: Session = Depends(get_db)):
+    r = _get_recurring(db, request, rid)
+    db.execute(update(Invoice).where(Invoice.recurring_id == r.id).values(recurring_id=None))
+    audit(db, web_actor(request), "recurring.delete", f"Usunięto fakturę cykliczną „{r.name}”",
+          company_id=r.company_id, entity="recurring")
+    db.delete(r)
+    db.commit()
+    flash(request, "Usunięto fakturę cykliczną. Wystawione faktury zostają.")
+    return redirect("/cykliczne")

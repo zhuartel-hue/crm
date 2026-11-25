@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Faktury cykliczne{% endblock %}
+{% block content %}
+<div class="row"><h1>Faktury cykliczne</h1><span class="spacer"></span><a class="btn primary" href="/cykliczne/nowa">+ Faktura cykliczna</a></div>
+<div class="grid stats">
+  <div class="card stat"><div class="l">Aktywne</div><div class="v">{{ active_count }}</div></div>
+  <div class="card stat"><div class="l">Średnio miesięcznie (brutto)</div><div class="v">{{ monthly|money }} zł</div></div>
+</div>
+<p class="muted">Abonamenty i umowy: program sam tworzy fakturę w wyznaczonym dniu (szkic do sprawdzenia, wystawioną albo wystawioną i wysłaną mailem).
+Cykliczną zrobisz też z gotowej faktury przyciskiem „Powtarzaj cyklicznie”.</p>
+<div class="card tbl"><table>
+<tr><th>Nazwa</th><th>Nabywca</th><th class="hide-sm">Co ile</th><th>Następna</th><th class="n">Brutto</th><th class="hide-sm">Tryb</th></tr>
+{% for r in rows %}
+<tr><td><a href="/cykliczne/{{ r.id }}">{{ r.name }}</a>{% if not r.active %} <span class="badge">wstrzymana</span>{% endif %}
+{% if r.last_error %}<br><span class="badge warn" title="{{ r.last_error }}">błąd przy ostatniej próbie</span>{% endif %}</td>
+<td>{{ r.contractor.name if r.contractor else r.buyer_name }}</td>
+<td class="hide-sm">{{ r.interval_label }}</td>
+<td>{{ r.next_date|date if r.active else '—' }}</td>
+<td class="n">{{ totals[r.id].gross|money }}</td>
+<td class="hide-sm"><span class="badge {{ 'm' if r.mode != 'draft' }}">{{ r.mode_label }}</span></td></tr>
+{% else %}<tr><td colspan="6" class="muted">Brak faktur cyklicznych.</td></tr>{% endfor %}
+</table></div>
+{% endblock %}

@@ -19,3 +19,5 @@ if DATABASE_URL.startswith("postgres") and (SECRET_KEY == "dev-secret-zmien-mnie
 MAIL_SYNC_MINUTES = int(os.environ.get("MAIL_SYNC_MINUTES", "5"))
 # Pobieranie faktur kosztowych z KSeF w tle co tyle godzin (0 = tylko recznie przyciskiem).
 KSEF_PURCHASE_SYNC_HOURS = float(os.environ.get("KSEF_PURCHASE_SYNC_HOURS", "6"))
+# Sprawdzanie faktur cyklicznych do wystawienia co tyle minut (0 = wylaczone, tylko przycisk).
+RECURRING_CHECK_MINUTES = int(os.environ.get("RECURRING_CHECK_MINUTES", "60"))

@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}{{ r.name or 'Nowa faktura cykliczna' }}{% endblock %}
+{% block content %}
+<div class="row"><h1>{{ r.name if r.id else 'Nowa faktura cykliczna' }}</h1>
+{% if r.id and not r.active %}<span class="badge">wstrzymana</span>{% endif %}<span class="spacer"></span>
+{% if r.id and r.active %}<form method="post" action="/cykliczne/{{ r.id }}/teraz" onsubmit="return confirm('Utworzyć teraz fakturę za {{ r.next_date|date }}?')"><button class="btn">Utwórz teraz</button></form>{% endif %}
+<a class="btn" href="/cykliczne">Wróć</a></div>
+{% if r.last_error %}<div class="error">Ostatnia próba się nie udała: {{ r.last_error }}</div>{% endif %}
+<div class="split">
+<form method="post" action="{{ '/cykliczne/%d' % r.id if r.id else '/cykliczne/nowa' }}">
+<div class="card">
+  <div class="grid">
+    <div style="grid-column:1/-1"><label>Nazwa (dla Ciebie)</label><input name="name" value="{{ r.name }}" required placeholder="np. Abonament serwisowy – Firma X"></div>
+    <div><label>Kontrahent z bazy</label><select name="contractor_id" id="contractor"><option value="">— wpisz ręcznie —</option>
+      {% for c in contractors %}<option value="{{ c.id }}" data-name="{{ c.name }}" data-address="{{ c.address_lines|join('\n') }}" data-email="{{ (c.email or '').split(',')[0] }}" {{ 'selected' if c.id == r.contractor_id }}>{{ c.name }}</option>{% endfor %}</select></div>
+    <div><label>NIP</label><input name="buyer_nip" value="{{ r.buyer_nip }}" inputmode="numeric"></div>
+    <div style="grid-column:1/-1"><label>Nabywca</label><input name="recipient_name" id="recipient_name" value="{{ r.buyer_name }}"></div>
+    <div style="grid-column:1/-1"><label>Adres</label><textarea name="recipient_address" id="recipient_address" rows="2">{{ r.buyer_address }}</textarea></div>
+  </div>
+</div>
+<div class="card">
+  <h2 style="margin-top:0">Harmonogram</h2>
+  <div class="grid">
+    <div><label>Co ile</label><select name="interval_months">{% for k, v in INTERVALS.items() %}<option value="{{ k }}" {{ 'selected' if r.interval_months == k }}>{{ v }}</option>{% endfor %}</select></div>
+    <div><label>Dzień miesiąca (0 = ostatni)</label><input name="day_of_month" type="number" min="0" max="28" value="{{ r.day_of_month }}"></div>
+    <div><label>Najbliższa faktura</label><input type="date" name="next_date" value="{{ r.next_date.isoformat() if r.next_date }}" required></div>
+    <div><label>Koniec umowy (opcjonalnie)</label><input type="date" name="end_date" value="{{ r.end_date.isoformat() if r.end_date }}"></div>
+    <div><label>Termin płatności (dni)</label><input name="due_days" type="number" min="0" value="{{ r.due_days }}"></div>
+    <div><label>Płatność</label><select name="payment_method">{% for k, v in PAYMENT_METHODS.items() %}<option value="{{ k }}" {{ 'selected' if r.payment_method == k }}>{{ v }}</option>{% endfor %}</select></div>
+  </div>
+  <h2>Co program ma zrobić w tym dniu</h2>
+  <div class="grid">
+    {% for k, v in MODES.items() %}<label class="choice"><input type="radio" name="mode" value="{{ k }}" {{ 'checked' if r.mode == k }}> {{ v[:1]|upper }}{{ v[1:] }}</label>{% endfor %}
+  </div>
+  <div class="grid" id="send-opts" style="margin-top:12px">
+    <div><label>E-mail klienta</label><input name="email_to" id="email_to" value="{{ r.email_to }}" inputmode="email"></div>
+    <div><label>Szablon maila</label><select name="template_id"><option value="">domyślny</option>
+      {% for t in tpls %}<option value="{{ t.id }}" {{ 'selected' if t.id == r.template_id }}>{{ t.kind_label }} · {{ t.name }}</option>{% endfor %}</select></div>
+  </div>
+  {% if not has_mail %}<p class="muted">Wysyłka mailem wymaga skrzynki w <a href="/ustawienia/poczta">Ustawieniach poczty</a>.</p>{% endif %}
+  <p><label><input type="checkbox" name="active" value="1" {{ 'checked' if r.active }}> Aktywna (odznacz, żeby wstrzymać)</label></p>
+</div>
+<div class="card">
+  <div class="row"><h2 style="margin:0">Pozycje</h2><span class="spacer"></span>
+    <label style="margin:0"><input type="checkbox" name="prices_gross" value="1" id="prices_gross" {{ 'checked' if r.prices_gross }}> Ceny brutto</label></div>
+  <p class="muted">W nazwie pozycji i w uwagach możesz wpisać <code>{okres}</code> ({{ period.okres }}), <code>{miesiac}</code> ({{ period.miesiac }}) albo <code>{rok}</code>; program wstawi okres faktury.</p>
+  <div id="items">
+  {% for it in rows %}
+    <div class="item grid">
+      <div class="name" style="grid-column:1/-1"><label>Nazwa</label>
+        <input name="item_name" list="product-list" autocomplete="off" value="{{ it.name if it else '' }}" placeholder="np. Abonament serwisowy za {miesiac}">
+        <input type="hidden" name="item_product" value="{{ (it.product_id or '') if it else '' }}"></div>
+      <div><label>Ilość</label><input name="item_qty" inputmode="decimal" value="{{ it.quantity if it else '1' }}"></div>
+      <div><label>Jedn.</label><input name="item_unit" value="{{ it.unit if it else 'szt.' }}"></div>
+      <div><label>Cena</label><input name="item_price" inputmode="decimal" value="{{ it.unit_price|replace('.', ',') if it else '' }}"></div>
+      <div><label>VAT</label><select name="item_rate">{% for v in VAT_RATES %}<option value="{{ v }}" {{ 'selected' if (it.vat_rate if it else '23') == v }}>{{ v }}{{ '%' if v.isdigit() }}</option>{% endfor %}</select></div>
+      <div><label>&nbsp;</label><button type="button" class="btn small remove">Usuń</button></div>
+    </div>
+  {% endfor %}
+  </div>
+  <datalist id="product-list">{% for pr in products %}<option value="{{ pr.label }}"></option>{% endfor %}</datalist>
+  <p class="row"><button type="button" class="btn" id="add">+ Pozycja</button><span class="spacer"></span><b id="total"></b></p>
+  <div><label>Uwagi na fakturze</label><textarea name="notes" rows="2" placeholder="np. Okres rozliczeniowy: {okres}">{{ r.notes }}</textarea></div>
+</div>
+<div class="row" style="margin-bottom:16px"><button class="btn primary">Zapisz</button><a class="btn" href="/cykliczne">Anuluj</a></div>
+</form>
+<div>
+  <div class="card preview">
+    <div class="muted" style="font-size:12px;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Podgląd</div>
+    <div style="font-size:22px;font-weight:700">{{ totals.gross|money }} zł <span class="muted" style="font-size:14px;font-weight:400">brutto · netto {{ totals.net|money }}</span></div>
+    <p>{{ r.interval_label|capitalize }}{% if r.day_of_month %}, {{ r.day_of_month }}. dnia miesiąca{% else %}, ostatniego dnia miesiąca{% endif %}. {{ r.mode_label|capitalize }}.</p>
+    {% if schedule %}<div class="muted" style="font-size:13px">Najbliższe terminy</div>
+    <ul style="margin:6px 0 0;padding-left:18px">{% for d in schedule %}<li>{{ d|date }}</li>{% endfor %}</ul>{% endif %}
+  </div>
+  {% if history %}<div class="card"><div class="muted" style="font-size:13px;margin-bottom:6px">Wystawione z tej umowy</div>
+  {% for i in history %}<div><a href="/faktury/{{ i.id }}">{{ i.display_number }}</a> · {{ i.issue_date|date }} · {{ i.total_gross|money }} zł</div>{% endfor %}</div>{% endif %}
+  {% if r.id %}<form method="post" action="/cykliczne/{{ r.id }}/usun" onsubmit="return confirm('Usunąć fakturę cykliczną? Wystawione faktury zostaną.')"><button class="btn danger small">Usuń</button></form>{% endif %}
+</div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>const PRODUCTS = {{ products_json|safe }};</script>
+<script src="/static/wz.js"></script>
+<script>
+(function () {
+  const sel = document.getElementById('contractor'), mail = document.getElementById('email_to');
+  sel.addEventListener('change', () => { const o = sel.selectedOptions[0]; if (o && o.dataset.email && !mail.value) mail.value = o.dataset.email; });
+  const opts = document.getElementById('send-opts');
+  const upd = () => { const m = document.querySelector('[name=mode]:checked'); opts.style.display = m && m.value === 'send' ? '' : 'none'; };
+  document.querySelectorAll('[name=mode]').forEach((x) => x.addEventListener('change', upd)); upd();
+})();
+</script>
+{% endblock %}

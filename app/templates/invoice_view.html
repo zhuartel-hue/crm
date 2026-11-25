@@ -24,6 +24,7 @@
   {% if inv.kind == 'proforma' %}<form method="post" action="/faktury/{{ inv.id }}/z-proformy"><button class="btn primary">Wystaw fakturę VAT</button></form>{% endif %}
   {% if inv.kind == 'advance' and not inv.settled_by_id %}<form method="post" action="/faktury/{{ inv.id }}/koncowa"><button class="btn primary">Wystaw fakturę końcową</button></form>{% endif %}
   {% endif %}
+  {% if inv.kind == 'vat' %}<a class="btn" href="/cykliczne/nowa?faktura={{ inv.id }}">Powtarzaj cyklicznie</a>{% endif %}
   {% if inv.kind in NEW_KINDS %}<form method="post" action="/faktury/{{ inv.id }}/kopiuj"><button class="btn">Kopiuj jako nową</button></form>{% endif %}
 </div>
 <div class="grid">

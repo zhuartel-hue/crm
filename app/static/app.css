@@ -87,6 +87,8 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
 .mail-body{white-space:pre-wrap;font-size:14px;line-height:1.6}
 code{background:var(--line2);padding:1px 5px;border-radius:5px;font-size:.9em}
 @media (max-width:1100px){.split{grid-template-columns:1fr}.preview{position:static}}
+.choice{display:flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:10px;padding:10px 12px;color:var(--text);font-size:14px;margin:0;cursor:pointer}
+.choice:has(input:checked){border-color:var(--accent);background:var(--accent-weak)}
 /* telefon */
 @media (max-width:900px){
   .only-sm{display:inline-flex!important}.hide-sm{display:none!important}

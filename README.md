@@ -102,6 +102,15 @@ Zakładka **Koszty**: faktury, na których firma jest nabywcą, pobierane z KSeF
 (domyślnie 6) albo przyciskiem „Pobierz z KSeF”. Każda czeka na weryfikację (zatwierdź / odrzuć); można ją oznaczyć
 jako zapłaconą i pobrać oryginalny XML. Działa dla firm z włączonym KSeF (certyfikat albo token).
 
+## Faktury cykliczne i szablony maili
+
+Zakładka **Faktury cykliczne**: abonamenty i umowy (co miesiąc, kwartał, pół roku, rok; wybrany dzień miesiąca, koniec umowy).
+W dniu terminu program tworzy szkic, wystawia fakturę albo wystawia i wysyła ją mailem (sprawdza co `RECURRING_CHECK_MINUTES`,
+domyślnie 60). W nazwach pozycji działają `{okres}`, `{miesiac}`, `{rok}`. Cykliczną robi się też z faktury: „Powtarzaj cyklicznie”.
+
+**Szablony maili** (menu System): treści do wysyłki faktury, przypomnienia, WZ i faktury cyklicznej, ze znacznikami
+(`{numer}`, `{kwota}`, `{do_zaplaty}`, `{termin}`...) i podglądem na żywo. Przy wysyłce można wybrać inny szablon.
+
 ## Uruchomienie u siebie
 
 ```bash

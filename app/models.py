@@ -191,6 +191,9 @@ class Invoice(Base):
     ksef_hash: Mapped[str] = mapped_column(String(64), default="")
     ksef_upo: Mapped[str] = mapped_column(Text, default="")
 
+    # Faktura wystawiona z faktury cyklicznej.
+    recurring_id: Mapped[int | None] = mapped_column(ForeignKey("recurring_invoices.id", ondelete="SET NULL"),
+                                                     nullable=True, index=True)
     # Przypomnienia o platnosci wyslane mailem.
     reminder_count: Mapped[int] = mapped_column(Integer, default=0)
     last_reminder_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
@@ -718,3 +721,48 @@ class EmailTemplate(Base):
     @property
     def kind_label(self) -> str:
         return TEMPLATE_KINDS.get(self.kind, self.kind)
+
+
+RECURRING_INTERVALS = {1: "co miesiąc", 2: "co 2 miesiące", 3: "co kwartał", 6: "co pół roku", 12: "co rok"}
+RECURRING_MODES = {"draft": "tworzy szkic do sprawdzenia", "issue": "wystawia fakturę",
+                   "send": "wystawia i wysyła mailem"}
+
+
+class RecurringInvoice(Base):
+    """Faktura cykliczna (abonament, umowa): wzor faktury i harmonogram. app/recurring.py tworzy z niej faktury."""
+
+    __tablename__ = "recurring_invoices"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    name: Mapped[str] = mapped_column(String(200))
+    contractor_id: Mapped[int | None] = mapped_column(ForeignKey("contractors.id", ondelete="SET NULL"), nullable=True)
+    buyer_name: Mapped[str] = mapped_column(String(300), default="")
+    buyer_nip: Mapped[str] = mapped_column(String(20), default="")
+    buyer_address: Mapped[str] = mapped_column(Text, default="")
+    items_json: Mapped[str] = mapped_column(Text, default="[]")
+    prices_gross: Mapped[bool] = mapped_column(default=False)
+    payment_method: Mapped[str] = mapped_column(String(15), default="transfer")
+    due_days: Mapped[int] = mapped_column(Integer, default=14)
+    interval_months: Mapped[int] = mapped_column(Integer, default=1)
+    day_of_month: Mapped[int] = mapped_column(Integer, default=1)  # 1-28, 0 = ostatni dzien miesiaca
+    next_date: Mapped[dt.date] = mapped_column(Date)
+    end_date: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
+    mode: Mapped[str] = mapped_column(String(10), default="draft")  # RECURRING_MODES
+    email_to: Mapped[str] = mapped_column(String(300), default="")
+    template_id: Mapped[int | None] = mapped_column(ForeignKey("email_templates.id", ondelete="SET NULL"), nullable=True)
+    notes: Mapped[str] = mapped_column(Text, default="")
+    active: Mapped[bool] = mapped_column(default=True)
+    last_error: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
+
+    company: Mapped[Company] = relationship()
+    contractor: Mapped[Contractor | None] = relationship()
+
+    @property
+    def interval_label(self) -> str:
+        return RECURRING_INTERVALS.get(self.interval_months, f"co {self.interval_months} mies.")
+
+    @property
+    def mode_label(self) -> str:
+        return RECURRING_MODES.get(self.mode, self.mode)

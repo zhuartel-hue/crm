@@ -21,7 +21,7 @@
   ('Sprzedaż', [('/faktury', 'Faktury', 'invoice', p.startswith('/faktury')),
                 ('/naleznosci', 'Należności', 'cash', p.startswith('/naleznosci')),
                 ('', 'Oferty', 'doc', False),
-                ('', 'Cykliczne i umowy', 'repeat', False),
+                ('/cykliczne', 'Faktury cykliczne', 'repeat', p.startswith('/cykliczne')),
                 ('', 'Zamówienia', 'cart', False)]),
   ('Zakupy i magazyn', [('/koszty', 'Koszty (KSeF)', 'cost', p.startswith('/koszty')),
                 ('/wz', 'Magazyn WZ / PZ', 'box', p.startswith('/wz')),
