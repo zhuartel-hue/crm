@@ -79,6 +79,13 @@ e-mail i z fakturą po numerze w temacie. Fakturę można wysłać z PDF-em przy
 Hasła skrzynek są zaszyfrowane kluczem z `SECRET_KEY`. HTML wiadomości jest wyświetlany w ramce
 sandbox z CSP (bez skryptów i bez obrazków z internetu).
 
+## WZ i aplikacja na telefon
+
+Zakładka **WZ**: wydanie towaru (z faktury przyciskiem „Wystaw WZ” albo od zera, z listą produktów),
+numeracja `WZ/{nr}/{MM}/{RRRR}` (Ustawienia), podpis odbiorcy palcem na telefonie, PDF z podpisem.
+Sygnavo można dodać do ekranu początkowego telefonu (Safari → Udostępnij → „Do ekranu początkowego”):
+otwiera się wtedy jak aplikacja, z ikoną. Service worker niczego nie zapisuje offline.
+
 ## Uruchomienie u siebie
 
 ```bash

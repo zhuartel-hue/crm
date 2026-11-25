@@ -16,7 +16,7 @@ from sqlalchemy import func, or_, select, update
 from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import api, auth, calc, config, mcp_server, migrate, numbering, password, pdf, secretbox
+from . import api, auth, calc, config, mcp_server, migrate, numbering, password, pdf, secretbox, wz
 from . import products as prod
 from .bank import service as bank
 from .mail import service as mail
@@ -44,6 +44,7 @@ from .models import (
     Car,
     Company,
     Contractor,
+    Delivery,
     Invoice,
     InvoiceItem,
     Product,
@@ -97,7 +98,7 @@ def _start_mail_sync():
 app = FastAPI(title="Sygnavo", docs_url=None, redoc_url=None, lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
 
-PUBLIC_PATHS = ("/login", "/static", "/health", "/api/", "/mcp", "/oauth/", "/.well-known/")
+PUBLIC_PATHS = ("/login", "/static", "/health", "/sw.js", "/api/", "/mcp", "/oauth/", "/.well-known/")
 
 
 @app.middleware("http")
@@ -123,6 +124,12 @@ app.add_middleware(
     same_site="lax",
     max_age=60 * 60 * 24 * 30,
 )
+
+
+def script_json(value) -> str:
+    """JSON do wstawienia w <script>: bez "</script>" i znakow HTML (nazwy produktow z importu)."""
+    return (json.dumps(value, ensure_ascii=False)
+            .replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026"))
 
 
 def redirect(url: str) -> RedirectResponse:
@@ -284,7 +291,7 @@ def _form_context(db: Session, company: Company) -> dict:
         ensure_ascii=False,
     )
     products = prod.search(db, active_only=True)
-    products_json = json.dumps(prod.picker_json(products), ensure_ascii=False)
+    products_json = script_json(prod.picker_json(products))
     return dict(contractors=contractors, cars=cars, contractors_json=contractors_json,
                 products=products, products_json=products_json)
 
@@ -457,10 +464,11 @@ def invoice_view(invoice_id: int, request: Request, db: Session = Depends(get_db
     url = ksef.qr_url(inv)
     bank_payments = db.scalars(select(BankTransaction).where(BankTransaction.invoice_id == inv.id)
                                .order_by(BankTransaction.booking_date)).all()
+    deliveries = db.scalars(select(Delivery).where(Delivery.invoice_id == inv.id).order_by(Delivery.id)).all()
     mails = db.scalars(select(MailMessage).where(MailMessage.invoice_id == inv.id)
                        .order_by(MailMessage.date.desc()).limit(20)).all()
     return render(request, db, "invoice_view.html", inv=inv, summary=calc.invoice_summary(inv), derived=corrections,
-                  bank_payments=bank_payments, mails=mails, has_mail=_company_accounts(db, inv.company_id) != [],
+                  bank_payments=bank_payments, mails=mails, deliveries=deliveries, has_mail=_company_accounts(db, inv.company_id) != [],
                   ksef_enabled=ksef.enabled(inv.company), ksef_can_send=ksef.can_send(inv),
                   ksef_label=ksef.status_label(inv), ksef_url=url, ksef_qr=ksef_qr.svg(url) if url else "")
 
@@ -927,7 +935,7 @@ def product_photo(photo_id: int, mini: int = 0, db: Session = Depends(get_db)):
 # --- ustawienia firmy -----------------------------------------------------
 
 COMPANY_FIELDS = ["short_name", "name", "nip", "street", "postal_code", "city", "bank_name", "bank_account",
-                  "email", "phone", "issue_place", "pattern_vat", "pattern_proforma", "pattern_advance",
+                  "email", "phone", "issue_place", "pattern_vat", "pattern_proforma", "pattern_advance", "pattern_wz",
                   "pattern_correction"]
 
 
@@ -960,7 +968,7 @@ async def settings_save(request: Request, db: Session = Depends(get_db)):
     company.numbering_reset = "year" if form.get("numbering_reset") == "year" else "month"
     days = form.get("default_payment_days") or "7"
     company.default_payment_days = int(days) if days.isdigit() else 7
-    for p in (company.pattern_vat, company.pattern_correction, company.pattern_advance, company.pattern_proforma):
+    for p in (company.pattern_vat, company.pattern_correction, company.pattern_advance, company.pattern_proforma, company.pattern_wz):
         if "{nr}" not in p:
             db.rollback()
             return render(request, db, "settings.html", KSEF_ENVS=KSEF_ENVS, error="Wzór numeru musi zawierać {nr}.")
@@ -1367,3 +1375,165 @@ def mail_settings_delete(aid: int, request: Request, db: Session = Depends(get_d
     db.commit()
     flash(request, "Usunięto skrzynkę z Sygnavo. Wiadomości na serwerze poczty nie zostały ruszone.")
     return redirect("/ustawienia/poczta")
+
+
+# ---------------------------------------------------------------- WZ
+
+def _get_wz(db: Session, request: Request, wid: int) -> Delivery:
+    d = db.get(Delivery, wid)
+    if d is None or d.company_id != current_company(request, db).id:
+        raise HTTPException(404)
+    return d
+
+
+def _wz_form(request: Request, db: Session, d: Delivery, error: str | None = None):
+    products = prod.search(db, "", active_only=True)
+    contractors = db.scalars(select(Contractor).order_by(Contractor.name)).all()
+    return render(request, db, "wz_form.html", d=d, products=products, products_json=script_json(prod.picker_json(products)),
+                  contractors=contractors, error=error)
+
+
+@app.get("/wz", response_class=HTMLResponse)
+def wz_list(request: Request, q: str = "", db: Session = Depends(get_db)):
+    company = current_company(request, db)
+    stmt = select(Delivery).where(Delivery.company_id == company.id)
+    if q:
+        like = f"%{q}%"
+        stmt = stmt.where(or_(Delivery.number.ilike(like), Delivery.recipient_name.ilike(like)))
+    rows = db.scalars(stmt.order_by(Delivery.issue_date.desc(), Delivery.id.desc()).limit(200)).all()
+    return render(request, db, "wz_list.html", rows=rows, q=q)
+
+
+@app.get("/wz/nowa", response_class=HTMLResponse)
+def wz_new(request: Request, faktura: int = 0, db: Session = Depends(get_db)):
+    company = current_company(request, db)
+    if faktura:
+        d = wz.from_invoice(get_invoice(db, request, faktura))
+    else:
+        d = Delivery(company_id=company.id, status="draft", issue_date=dt.date.today(), recipient_name="",
+                     recipient_address="", notes="", signed_by="")
+    return _wz_form(request, db, d)
+
+
+async def _wz_save(request: Request, db: Session, d: Delivery):
+    form = await request.form()
+    d.recipient_name = (form.get("recipient_name") or "").strip()[:300]
+    d.recipient_address = (form.get("recipient_address") or "").strip()
+    d.notes = (form.get("notes") or "").strip()
+    cid = form.get("contractor_id") or ""
+    d.contractor_id = int(cid) if cid.isdigit() and db.get(Contractor, int(cid)) else None
+    iid = form.get("invoice_id") or ""
+    if iid.isdigit():
+        inv = db.get(Invoice, int(iid))
+        d.invoice_id = inv.id if inv and inv.company_id == d.company_id else None
+    try:
+        d.issue_date = dt.date.fromisoformat(form.get("issue_date") or "")
+    except ValueError:
+        d.issue_date = dt.date.today()
+    try:
+        wz.set_items(db, d, form.getlist("item_name"), form.getlist("item_qty"), form.getlist("item_unit"),
+                     form.getlist("item_product"))
+        db.add(d)
+        db.flush()
+        if form.get("action") == "issue":
+            wz.issue(db, d)
+            audit(db, web_actor(request), "wz.issue", f"Wystawiono {d.number} dla {d.recipient_name}",
+                  company_id=d.company_id, entity="wz", entity_id=d.id)
+        db.commit()
+    except ValueError as e:
+        db.rollback()
+        return _wz_form(request, db, d, error=str(e))
+    flash(request, f"Wystawiono {d.number}." if d.status == "issued" else "Zapisano szkic WZ.")
+    return redirect(f"/wz/{d.id}")
+
+
+@app.post("/wz/nowa")
+async def wz_create(request: Request, db: Session = Depends(get_db)):
+    company = current_company(request, db)
+    return await _wz_save(request, db, Delivery(company_id=company.id, status="draft", signed_by=""))
+
+
+@app.get("/wz/{wid}", response_class=HTMLResponse)
+def wz_view(wid: int, request: Request, db: Session = Depends(get_db)):
+    d = _get_wz(db, request, wid)
+    return render(request, db, "wz_view.html", d=d, signature=wz.signature_data_url(d))
+
+
+@app.get("/wz/{wid}/edytuj", response_class=HTMLResponse)
+def wz_edit(wid: int, request: Request, db: Session = Depends(get_db)):
+    d = _get_wz(db, request, wid)
+    if d.status != "draft":
+        raise HTTPException(409, "WZ jest już wystawiona.")
+    return _wz_form(request, db, d)
+
+
+@app.post("/wz/{wid}/edytuj")
+async def wz_update(wid: int, request: Request, db: Session = Depends(get_db)):
+    d = _get_wz(db, request, wid)
+    if d.status != "draft":
+        raise HTTPException(409, "WZ jest już wystawiona.")
+    return await _wz_save(request, db, d)
+
+
+@app.post("/wz/{wid}/wystaw")
+def wz_issue(wid: int, request: Request, db: Session = Depends(get_db)):
+    d = _get_wz(db, request, wid)
+    try:
+        wz.issue(db, d)
+        audit(db, web_actor(request), "wz.issue", f"Wystawiono {d.number} dla {d.recipient_name}",
+              company_id=d.company_id, entity="wz", entity_id=d.id)
+        db.commit()
+        flash(request, f"Wystawiono {d.number}.")
+    except ValueError as e:
+        db.rollback()
+        flash(request, str(e))
+    return redirect(f"/wz/{d.id}")
+
+
+@app.post("/wz/{wid}/podpis")
+async def wz_sign(wid: int, request: Request, db: Session = Depends(get_db)):
+    d = _get_wz(db, request, wid)
+    form = await request.form()
+    try:
+        wz.sign(d, form.get("signature") or "", form.get("signed_by") or "")
+        audit(db, web_actor(request), "wz.sign", f"{d.number}: podpis odbiorcy {d.signed_by}",
+              company_id=d.company_id, entity="wz", entity_id=d.id)
+        db.commit()
+        flash(request, "Zapisano podpis odbiorcy.")
+    except ValueError as e:
+        db.rollback()
+        flash(request, str(e))
+    return redirect(f"/wz/{d.id}")
+
+
+@app.get("/wz/{wid}/pdf")
+def wz_pdf(wid: int, request: Request, db: Session = Depends(get_db), pobierz: int = 0):
+    d = _get_wz(db, request, wid)
+    filename = (d.number or f"wz-szkic-{d.id}").replace("/", "-") + ".pdf"
+    disposition = "attachment" if pobierz else "inline"
+    return Response(wz.render_pdf(d), media_type="application/pdf",
+                    headers={"Content-Disposition": f'{disposition}; filename="{filename}"'})
+
+
+@app.post("/wz/{wid}/usun")
+def wz_delete(wid: int, request: Request, db: Session = Depends(get_db)):
+    d = _get_wz(db, request, wid)
+    if d.status != "draft":
+        flash(request, "Wystawionej WZ nie można usunąć.")
+        return redirect(f"/wz/{d.id}")
+    db.delete(d)
+    db.commit()
+    flash(request, "Usunięto szkic WZ.")
+    return redirect("/wz")
+
+
+# ---------------------------------------------------------------- aplikacja na telefon (PWA)
+
+@app.get("/sw.js")
+def service_worker():
+    # Minimalny service worker: pozwala zainstalowac Sygnavo jako aplikacje; niczego nie zapisuje offline
+    # (dane firmy nie zostaja w pamieci telefonu).
+    js = "self.addEventListener('install', e => self.skipWaiting());\n" \
+         "self.addEventListener('activate', e => self.clients.claim());\n" \
+         "self.addEventListener('fetch', () => {});\n"
+    return Response(js, media_type="application/javascript", headers={"Cache-Control": "no-cache"})

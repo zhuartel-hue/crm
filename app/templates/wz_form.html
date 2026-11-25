@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edycja ' ~ d.display_number if d.id else 'Nowa WZ' }}{% endblock %}
+{% block content %}
+<h1>{{ 'Edycja ' ~ d.display_number if d.id else 'Nowa WZ' }}</h1>
+<form method="post" class="card" action="{{ '/wz/%d/edytuj' % d.id if d.id else '/wz/nowa' }}">
+<input type="hidden" name="invoice_id" value="{{ d.invoice_id or '' }}">
+<div class="grid">
+  <div><label>Data wydania</label><input type="date" name="issue_date" value="{{ d.issue_date.isoformat() if d.issue_date }}"></div>
+  <div><label>Kontrahent z bazy</label><select name="contractor_id" id="contractor">
+    <option value="">—</option>
+    {% for c in contractors %}<option value="{{ c.id }}" data-name="{{ c.name }}" data-address="{{ c.address_lines|join('\n') }}" {{ 'selected' if c.id == d.contractor_id }}>{{ c.name }}</option>{% endfor %}
+  </select></div>
+  <div style="grid-column:1/-1"><label>Odbiorca</label><input name="recipient_name" id="recipient_name" value="{{ d.recipient_name }}" required></div>
+  <div style="grid-column:1/-1"><label>Adres odbiorcy</label><textarea name="recipient_address" id="recipient_address" rows="2">{{ d.recipient_address }}</textarea></div>
+</div>
+{% if d.invoice %}<p class="muted">Do faktury <a href="/faktury/{{ d.invoice_id }}">{{ d.invoice.display_number }}</a></p>{% endif %}
+<h2>Towar</h2>
+<div id="items">
+{% for it in (d.items or [none]) %}
+  <div class="item grid">
+    <div class="name" style="grid-column:1/-1"><label>Nazwa{% if products %} (wpisz kod lub nazwę produktu){% endif %}</label>
+      <input name="item_name" list="product-list" autocomplete="off" value="{{ it.name if it else '' }}">
+      <input type="hidden" name="item_product" value="{{ (it.product_id or '') if it else '' }}"></div>
+    <div><label>Ilość</label><input name="item_qty" inputmode="decimal" value="{{ it.quantity|qty if it else '1' }}"></div>
+    <div><label>Jedn.</label><input name="item_unit" value="{{ it.unit if it else 'szt.' }}"></div>
+    <div><label>&nbsp;</label><button type="button" class="btn small remove">Usuń pozycję</button></div>
+  </div>
+{% endfor %}
+</div>
+<datalist id="product-list">{% for pr in products %}<option value="{{ pr.label }}"></option>{% endfor %}</datalist>
+<p><button type="button" class="btn" id="add">+ Pozycja</button></p>
+<div><label>Uwagi</label><textarea name="notes" rows="2">{{ d.notes }}</textarea></div>
+<p class="row"><button class="btn" name="action" value="save">Zapisz szkic</button>
+<button class="btn primary" name="action" value="issue">Wystaw WZ</button></p>
+</form>
+{% endblock %}
+{% block scripts %}
+<script>const PRODUCTS = {{ products_json|safe }};</script>
+<script src="/static/wz.js"></script>
+{% endblock %}

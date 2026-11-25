@@ -11,6 +11,7 @@
 <div class="row" style="margin-bottom:16px">
   <a class="btn" href="/faktury/{{ inv.id }}/pdf" target="_blank">PDF</a>
   <a class="btn" href="/faktury/{{ inv.id }}/pdf?pobierz=1">Pobierz PDF</a>
+  {% if inv.status == 'issued' and inv.kind != 'correction' %}<a class="btn" href="/wz/nowa?faktura={{ inv.id }}">Wystaw WZ</a>{% endif %}
   {% if inv.status == 'issued' and has_mail %}<a class="btn" href="/poczta/nowa?faktura={{ inv.id }}">Wyślij e-mailem</a>{% endif %}
   {% if inv.status == 'draft' %}
   <a class="btn" href="/faktury/{{ inv.id }}/edytuj">Edytuj</a>
@@ -81,6 +82,8 @@
 {% if bank_payments %}<div class="card"><div class="muted">Wpłaty z banku</div>
 {% for t in bank_payments %}{{ t.booking_date|date }} · <b>{{ t.applied_amount|money }} zł</b> · {{ t.counterparty or '—' }} <span class="muted">({{ 'auto' if t.state == 'auto' else ('ręcznie' if t.state == 'manual' else 'propozycja') }})</span><br>{% endfor %}
 <a href="/bank?pokaz=wszystkie">Bank →</a></div>{% endif %}
+{% if deliveries %}<div class="card"><div class="muted">WZ do tej faktury</div>
+{% for dd in deliveries %}<a href="/wz/{{ dd.id }}">{{ dd.display_number }}</a> · {{ dd.issue_date|date }}{% if dd.signature_png %} · podpisana{% endif %}<br>{% endfor %}</div>{% endif %}
 {% if mails %}<div class="card"><div class="muted">Korespondencja</div>
 {% for mm in mails %}{{ mm.date.strftime('%d.%m.%Y') if mm.date }} · {{ '→' if mm.direction == 'out' else '←' }} <a href="/poczta/{{ mm.id }}">{{ mm.subject or '(bez tematu)' }}</a><br>{% endfor %}</div>{% endif %}
 {% if inv.notes %}<div class="card"><div class="muted">Uwagi</div><span style="white-space:pre-line">{{ inv.notes }}</span></div>{% endif %}

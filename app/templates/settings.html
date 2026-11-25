@@ -25,6 +25,7 @@
   <div><label>Faktura korygująca</label><input name="pattern_correction" value="{{ company.pattern_correction }}"></div>
   <div><label>Faktura zaliczkowa</label><input name="pattern_advance" value="{{ company.pattern_advance }}"></div>
   <div><label>Proforma</label><input name="pattern_proforma" value="{{ company.pattern_proforma }}"></div>
+  <div><label>WZ (wydanie towaru)</label><input name="pattern_wz" value="{{ company.pattern_wz }}"></div>
   <div><label>Numeracja od 1</label><select name="numbering_reset">
     <option value="month" {{ 'selected' if company.numbering_reset == 'month' }}>co miesiąc</option>
     <option value="year" {{ 'selected' if company.numbering_reset == 'year' }}>co rok</option></select></div>

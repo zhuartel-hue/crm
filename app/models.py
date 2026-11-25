@@ -36,6 +36,7 @@ class Company(Base):
     pattern_proforma: Mapped[str] = mapped_column(String(60), default="PRO/{nr}/{MM}/{RRRR}")
     pattern_correction: Mapped[str] = mapped_column(String(60), default="FK/{nr}/{MM}/{RRRR}")
     pattern_advance: Mapped[str] = mapped_column(String(60), default="FZ/{nr}/{MM}/{RRRR}")
+    pattern_wz: Mapped[str] = mapped_column(String(60), default="WZ/{nr}/{MM}/{RRRR}")
     # "month" - numeracja od 1 co miesiac, "year" - co rok.
     numbering_reset: Mapped[str] = mapped_column(String(10), default="month")
     default_payment_days: Mapped[int] = mapped_column(Integer, default=7)
@@ -522,3 +523,53 @@ class MailAttachment(Base):
     data: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)  # None = za duzy, nie pobrany
 
     message: Mapped[MailMessage] = relationship(back_populates="attachments")
+
+
+class Delivery(Base):
+    """WZ: wydanie zewnetrzne towaru (z podpisem odbiorcy)."""
+
+    __tablename__ = "deliveries"
+    __table_args__ = (UniqueConstraint("company_id", "number", name="uq_delivery_number"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"))
+    status: Mapped[str] = mapped_column(String(10), default="draft")  # draft / issued
+    number: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    seq: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    issue_date: Mapped[dt.date] = mapped_column(Date)
+    contractor_id: Mapped[int | None] = mapped_column(ForeignKey("contractors.id", ondelete="SET NULL"), nullable=True)
+    recipient_name: Mapped[str] = mapped_column(String(300), default="")
+    recipient_address: Mapped[str] = mapped_column(Text, default="")
+    invoice_id: Mapped[int | None] = mapped_column(ForeignKey("invoices.id", ondelete="SET NULL"), nullable=True)
+    notes: Mapped[str] = mapped_column(Text, default="")
+    signed_by: Mapped[str] = mapped_column(String(200), default="")
+    signature_png: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    signed_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
+
+    company: Mapped[Company] = relationship()
+    contractor: Mapped[Contractor | None] = relationship()
+    invoice: Mapped[Invoice | None] = relationship()
+    items: Mapped[list[DeliveryItem]] = relationship(
+        back_populates="delivery", cascade="all, delete-orphan", order_by="DeliveryItem.position"
+    )
+
+    @property
+    def display_number(self) -> str:
+        return self.number or f"Szkic WZ #{self.id}"
+
+
+class DeliveryItem(Base):
+    __tablename__ = "delivery_items"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    delivery_id: Mapped[int] = mapped_column(ForeignKey("deliveries.id", ondelete="CASCADE"), index=True)
+    position: Mapped[int] = mapped_column(Integer, default=1)
+    product_id: Mapped[int | None] = mapped_column(ForeignKey("products.id", ondelete="SET NULL"), nullable=True)
+    code: Mapped[str] = mapped_column(String(60), default="")
+    name: Mapped[str] = mapped_column(String(500))
+    quantity: Mapped[Decimal] = mapped_column(Numeric(12, 3), default=Decimal("1"))
+    unit: Mapped[str] = mapped_column(String(10), default="szt.")
+
+    delivery: Mapped[Delivery] = relationship(back_populates="items")
+    product: Mapped["Product | None"] = relationship()

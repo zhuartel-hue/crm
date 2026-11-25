@@ -1,0 +1,42 @@
+{
+ "name": "Sygnavo",
+ "short_name": "Sygnavo",
+ "start_url": "/",
+ "scope": "/",
+ "display": "standalone",
+ "background_color": "#ffffff",
+ "theme_color": "#111827",
+ "lang": "pl",
+ "icons": [
+  {
+   "src": "/static/icons/icon-192.png",
+   "sizes": "192x192",
+   "type": "image/png"
+  },
+  {
+   "src": "/static/icons/icon-512.png",
+   "sizes": "512x512",
+   "type": "image/png"
+  },
+  {
+   "src": "/static/icons/icon-maskable-512.png",
+   "sizes": "512x512",
+   "type": "image/png",
+   "purpose": "maskable"
+  }
+ ],
+ "shortcuts": [
+  {
+   "name": "Nowa faktura",
+   "url": "/faktury/nowa"
+  },
+  {
+   "name": "Nowa WZ",
+   "url": "/wz/nowa"
+  },
+  {
+   "name": "Poczta",
+   "url": "/poczta"
+  }
+ ]
+}
