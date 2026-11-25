@@ -9,14 +9,14 @@ from decimal import Decimal
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, or_, select, update
 from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import api, auth, calc, config, mcp_server, migrate, numbering, password, payments, pdf, secretbox, wz
+from . import api, auth, calc, config, mcp_server, migrate, nip_lookup, numbering, password, payments, pdf, secretbox, wz
 from . import products as prod
 from .bank import service as bank
 from .mail import service as mail
@@ -1772,3 +1772,12 @@ def purchase_xml(pid: int, request: Request, db: Session = Depends(get_db)):
     p = _get_purchase(db, request, pid)
     return Response(p.xml.encode("utf-8"), media_type="application/xml",
                     headers={"Content-Disposition": f'attachment; filename="{p.ksef_number}.xml"'})
+
+
+@app.get("/nip/{nip}")
+def nip_data(nip: str, request: Request):
+    """Dane firmy z bialej listy VAT do uzupelnienia formularza (kontrahent, nabywca)."""
+    try:
+        return JSONResponse(nip_lookup.lookup(nip))
+    except nip_lookup.NipLookupError as e:
+        return JSONResponse({"error": str(e)}, status_code=422)

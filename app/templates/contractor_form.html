@@ -3,14 +3,16 @@
 {% block content %}
 <h1>{{ c.name if c.id else 'Nowy kontrahent' }}</h1>
 <form method="post" class="card">
-<p><label><input type="checkbox" name="is_company" value="1" {{ 'checked' if c.is_company }}> firma (odznacz dla osoby prywatnej)</label></p>
+<p><label><input type="checkbox" name="is_company" id="c_company" value="1" {{ 'checked' if c.is_company }}> firma (odznacz dla osoby prywatnej)</label></p>
 <div class="grid">
-  <div style="grid-column:1/-1"><label>Nazwa / imię i nazwisko</label><input name="name" value="{{ c.name or '' }}" required></div>
-  <div><label>NIP</label><input name="nip" value="{{ c.nip or '' }}" inputmode="numeric"></div>
+  <div style="grid-column:1/-1"><label>Nazwa / imię i nazwisko</label><input name="name" id="c_name" value="{{ c.name or '' }}" required></div>
+  <div><label>NIP</label><div class="row" style="flex-wrap:nowrap"><input name="nip" id="c_nip" value="{{ c.nip or '' }}" inputmode="numeric">
+    <button type="button" class="btn small" data-nip-lookup='{"nip":"c_nip","name":"c_name","street":"c_street","postal":"c_postal","city":"c_city","company":"c_company","info":"c_nip_info"}'>Pobierz dane po NIP</button></div>
+    <div class="muted" id="c_nip_info"></div></div>
   <div><label>PESEL (opcjonalnie)</label><input name="pesel" value="{{ c.pesel or '' }}" inputmode="numeric"></div>
-  <div style="grid-column:1/-1"><label>Ulica i numer</label><input name="street" value="{{ c.street or '' }}"></div>
-  <div><label>Kod pocztowy</label><input name="postal_code" value="{{ c.postal_code or '' }}"></div>
-  <div><label>Miasto</label><input name="city" value="{{ c.city or '' }}"></div>
+  <div style="grid-column:1/-1"><label>Ulica i numer</label><input name="street" id="c_street" value="{{ c.street or '' }}"></div>
+  <div><label>Kod pocztowy</label><input name="postal_code" id="c_postal" value="{{ c.postal_code or '' }}"></div>
+  <div><label>Miasto</label><input name="city" id="c_city" value="{{ c.city or '' }}"></div>
   <div><label>Kraj</label><input name="country" value="{{ c.country or 'PL' }}" maxlength="2"></div>
   <div><label>E-mail</label><input name="email" type="email" value="{{ c.email or '' }}"></div>
   <div><label>Telefon</label><input name="phone" type="tel" value="{{ c.phone or '' }}"></div>
@@ -27,3 +29,4 @@
 <td>{{ '→' if mm.direction == 'out' else '←' }} <a href="/poczta/{{ mm.id }}">{{ mm.subject or '(bez tematu)' }}</a></td></tr>{% endfor %}</table></div>
 {% else %}<p class="muted">Brak wiadomości z adresów tego kontrahenta.</p>{% endif %}{% endif %}
 {% endblock %}
+{% block scripts %}<script src="/static/nip.js"></script>{% endblock %}

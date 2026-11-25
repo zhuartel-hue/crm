@@ -43,8 +43,10 @@
       <option value="">— nowy / wpisz ręcznie —</option>
       {% for c in contractors %}<option value="{{ c.id }}" {{ 'selected' if inv.contractor_id == c.id }}>{{ c.name }}{% if c.nip %} ({{ c.nip }}){% endif %}</option>{% endfor %}
     </select></div>
-    <div><label>NIP (pusty dla osoby prywatnej)</label><input name="buyer_nip" id="buyer_nip" value="{{ inv.buyer_nip }}" inputmode="numeric"></div>
+    <div><label>NIP (pusty dla osoby prywatnej)</label><div class="row" style="flex-wrap:nowrap"><input name="buyer_nip" id="buyer_nip" value="{{ inv.buyer_nip }}" inputmode="numeric">
+      <button type="button" class="btn small" data-nip-lookup='{"nip":"buyer_nip","name":"buyer_name","address":"buyer_address","info":"buyer_nip_info"}'>Pobierz po NIP</button></div></div>
   </div>
+  <div class="muted" id="buyer_nip_info"></div>
   <p><label>Nazwa / imię i nazwisko</label><input name="buyer_name" id="buyer_name" value="{{ inv.buyer_name }}" required></p>
   <p><label>Adres (ulica, w drugiej linii kod i miasto)</label><textarea name="buyer_address" id="buyer_address">{{ inv.buyer_address }}</textarea></p>
   <label id="save-wrap"><input type="checkbox" name="save_contractor" value="1" checked> zapisz jako nowego kontrahenta</label>
@@ -99,4 +101,5 @@ const CONTRACTORS = {{ contractors_json|safe }};
 const PRODUCTS = {{ products_json|safe }};
 </script>
 <script src="/static/invoice.js"></script>
+<script src="/static/nip.js"></script>
 {% endblock %}
