@@ -16,10 +16,14 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import calc, config, numbering, pdf
+from . import api, auth, calc, config, mcp_server, numbering, pdf
+from .services import audit, car_item_name
 from .db import Base, SessionLocal, engine, get_db
 from .models import (
     CAR_STATUSES,
+    SCOPES,
+    ApiToken,
+    AuditLog,
     INVOICE_KINDS,
     PAYMENT_METHODS,
     VAT_RATES,
@@ -52,15 +56,23 @@ async def lifespan(_app: FastAPI):
 app = FastAPI(title="Faktury", docs_url=None, redoc_url=None, lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
 
-PUBLIC_PATHS = ("/login", "/static", "/health")
+PUBLIC_PATHS = ("/login", "/static", "/health", "/api/", "/mcp", "/oauth/", "/.well-known/")
 
 
 @app.middleware("http")
 async def require_login(request: Request, call_next):
     if not request.url.path.startswith(PUBLIC_PATHS) and not request.session.get("user"):
         return RedirectResponse("/login", status_code=303)
-    return await call_next(request)
+    response = await call_next(request)
+    # Strona zgody OAuth i formularze nie moga byc osadzone w cudzej ramce (clickjacking).
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    return response
 
+
+app.include_router(auth.router)
+app.include_router(mcp_server.router)
+api.install(app)
 
 # SessionMiddleware musi byc dodany po require_login, zeby dzialal przed nim.
 app.add_middleware(
@@ -93,6 +105,10 @@ def render(request: Request, db: Session, name: str, **ctx) -> HTMLResponse:
     return templates.TemplateResponse(request, name, ctx)
 
 
+def web_actor(request: Request) -> str:
+    return f"www ({request.session.get('user', '?')})"
+
+
 def flash(request: Request, text: str) -> None:
     request.session["flash"] = text
 
@@ -115,8 +131,9 @@ def login(request: Request, login: str = Form(...), password: str = Form(...)):
     ok = hmac.compare_digest(login, config.ADMIN_LOGIN) and hmac.compare_digest(password, config.ADMIN_PASSWORD)
     if not ok:
         return templates.TemplateResponse(request, "login.html", {"error": "Zły login lub hasło."}, status_code=401)
+    nxt = request.session.pop("next", None)
     request.session["user"] = login
-    return redirect("/")
+    return redirect(nxt if nxt and nxt.startswith("/") and not nxt.startswith("//") else "/")
 
 
 @app.post("/logout")
@@ -205,19 +222,6 @@ def _form_context(db: Session, company: Company) -> dict:
         ensure_ascii=False,
     )
     return dict(contractors=contractors, cars=cars, contractors_json=contractors_json)
-
-
-def car_item_name(car: Car) -> str:
-    parts = [f"Samochód {car.label}".strip()]
-    if car.vin:
-        parts.append(f"VIN: {car.vin}")
-    if car.year:
-        parts.append(f"rok produkcji: {car.year}")
-    if car.mileage_km is not None:
-        parts.append(f"przebieg: {car.mileage_km:,} km".replace(",", " "))
-    if car.registration:
-        parts.append(f"nr rej.: {car.registration}")
-    return ", ".join(parts)
 
 
 @app.get("/faktury/nowa", response_class=HTMLResponse)
@@ -335,6 +339,9 @@ async def _save(request: Request, db: Session, inv: Invoice, is_new: bool):
         db.flush()
         if form.get("action") == "issue":
             numbering.issue(db, inv)
+            audit(db, web_actor(request), "invoice.issue",
+                  f"Wystawiono {inv.number} dla {inv.buyer_name} na {calc.format_money(inv.total_gross)} zł",
+                  company_id=inv.company_id, entity="invoice", entity_id=inv.id)
         db.commit()
     except ValueError as e:
         db.rollback()
@@ -355,8 +362,10 @@ async def invoice_create(request: Request, db: Session = Depends(get_db)):
 
 def get_invoice(db: Session, request: Request, invoice_id: int) -> Invoice:
     inv = db.get(Invoice, invoice_id)
-    if inv is None or inv.company_id != current_company(request, db).id:
-        raise HTTPException(404, "Nie ma takiej faktury w tej firmie.")
+    if inv is None:
+        raise HTTPException(404, "Nie ma takiej faktury.")
+    # Link do faktury drugiej firmy (np. od Claude) przelacza firme.
+    request.session["company_id"] = inv.company_id
     return inv
 
 
@@ -388,6 +397,9 @@ def invoice_issue(invoice_id: int, request: Request, db: Session = Depends(get_d
     inv = get_invoice(db, request, invoice_id)
     try:
         numbering.issue(db, inv)
+        audit(db, web_actor(request), "invoice.issue",
+              f"Wystawiono {inv.number} dla {inv.buyer_name} na {calc.format_money(inv.total_gross)} zł",
+              company_id=inv.company_id, entity="invoice", entity_id=inv.id)
         db.commit()
         flash(request, f"Wystawiono fakturę {inv.number}.")
     except ValueError as e:
@@ -400,6 +412,8 @@ def invoice_issue(invoice_id: int, request: Request, db: Session = Depends(get_d
 def invoice_mark_paid(invoice_id: int, request: Request, db: Session = Depends(get_db)):
     inv = get_invoice(db, request, invoice_id)
     inv.paid = inv.total_gross
+    audit(db, web_actor(request), "invoice.paid", f"{inv.number}: zapłacono {calc.format_money(inv.paid)} zł",
+          company_id=inv.company_id, entity="invoice", entity_id=inv.id)
     db.commit()
     flash(request, "Oznaczono jako zapłaconą.")
     return redirect(f"/faktury/{inv.id}")
@@ -411,6 +425,8 @@ def invoice_delete(invoice_id: int, request: Request, db: Session = Depends(get_
     if inv.status != "draft":
         flash(request, "Wystawionej faktury nie można usunąć.")
         return redirect(f"/faktury/{inv.id}")
+    audit(db, web_actor(request), "invoice.delete", f"Usunięto szkic dla {inv.buyer_name}",
+          company_id=inv.company_id, entity="invoice")
     db.delete(inv)
     db.commit()
     flash(request, "Usunięto szkic.")
@@ -610,3 +626,56 @@ async def settings_save(request: Request, db: Session = Depends(get_db)):
     db.commit()
     flash(request, "Zapisano ustawienia firmy.")
     return redirect("/ustawienia")
+
+
+# --- dziennik i dostep dla Claude -------------------------------------------
+
+
+@app.get("/dziennik", response_class=HTMLResponse)
+def audit_log(request: Request, db: Session = Depends(get_db)):
+    entries = db.scalars(select(AuditLog).order_by(AuditLog.id.desc()).limit(200)).all()
+    return render(request, db, "audit.html", entries=entries)
+
+
+def _grants(db: Session) -> list[dict]:
+    """Aktywne polaczenia: zgody OAuth (po tokenie odswiezania) i klucze API."""
+    rows = db.scalars(
+        select(ApiToken).where(ApiToken.revoked.is_(False), ApiToken.kind.in_(["refresh", "key"]))
+        .order_by(ApiToken.id.desc())
+    ).all()
+    out = []
+    for t in rows:
+        if t.kind == "refresh" and t.expires_at and t.expires_at < auth.now():
+            continue
+        last = db.scalar(select(ApiToken.last_used_at).where(ApiToken.grant_id == t.grant_id)
+                         .order_by(ApiToken.last_used_at.desc().nulls_last()).limit(1))
+        out.append(dict(grant_id=t.grant_id, name=t.name, kind=t.kind, scopes=[SCOPES.get(s, s) for s in t.scope_list],
+                        created_at=t.created_at, last_used_at=last))
+    return out
+
+
+@app.get("/dostep", response_class=HTMLResponse)
+def access_page(request: Request, db: Session = Depends(get_db)):
+    new_key = request.session.pop("new_key", None)
+    return render(request, db, "access.html", grants=_grants(db), scopes=SCOPES, new_key=new_key,
+                  mcp_url=auth.base_url(request) + "/mcp")
+
+
+@app.post("/dostep/klucz")
+async def access_new_key(request: Request, db: Session = Depends(get_db)):
+    form = await request.form()
+    scopes = [s for s in form.getlist("scope") if s in SCOPES] or ["read"]
+    name = (form.get("name") or "").strip() or "Klucz API"
+    request.session["new_key"] = auth.create_api_key(db, name, scopes)
+    audit(db, web_actor(request), "access.key", f"Nowy klucz API „{name}” ({', '.join(scopes)})")
+    db.commit()
+    return redirect("/dostep")
+
+
+@app.post("/dostep/{grant_id}/cofnij")
+def access_revoke(grant_id: str, request: Request, db: Session = Depends(get_db)):
+    auth.revoke_grant(db, grant_id)
+    audit(db, web_actor(request), "access.revoke", f"Cofnięto dostęp {grant_id}")
+    db.commit()
+    flash(request, "Dostęp cofnięty.")
+    return redirect("/dostep")

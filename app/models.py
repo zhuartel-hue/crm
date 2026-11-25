@@ -198,3 +198,75 @@ class NumberSequence(Base):
     kind: Mapped[str] = mapped_column(String(10))
     period: Mapped[str] = mapped_column(String(7))  # "2027" albo "2027-01"
     last: Mapped[int] = mapped_column(Integer, default=0)
+
+
+# --- dostep dla Claude (OAuth, klucze API) i dziennik zmian -----------------
+
+SCOPES = {
+    "read": "Odczyt faktur, aut i kontrahentów",
+    "write": "Szkice faktur, nowe auta i kontrahenci, płatności",
+    "issue": "Wystawianie faktur (nadanie numeru)",
+}
+
+
+class OAuthClient(Base):
+    """Aplikacja zarejestrowana przez OAuth (np. konektor Claude)."""
+
+    __tablename__ = "oauth_clients"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    client_id: Mapped[str] = mapped_column(String(64), unique=True)
+    name: Mapped[str] = mapped_column(String(200), default="")
+    redirect_uris: Mapped[str] = mapped_column(Text, default="")  # jeden adres w linii
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class AuthCode(Base):
+    __tablename__ = "oauth_codes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    client_id: Mapped[str] = mapped_column(String(64))
+    redirect_uri: Mapped[str] = mapped_column(Text)
+    code_challenge: Mapped[str] = mapped_column(String(128))
+    scopes: Mapped[str] = mapped_column(String(100))
+    resource: Mapped[str] = mapped_column(Text, default="")
+    expires_at: Mapped[dt.datetime] = mapped_column(DateTime)
+    used: Mapped[bool] = mapped_column(default=False)
+
+
+class ApiToken(Base):
+    """Token dostepu (access/refresh z OAuth albo staly klucz API). W bazie tylko skrot SHA-256."""
+
+    __tablename__ = "api_tokens"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    kind: Mapped[str] = mapped_column(String(10))  # access / refresh / key
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    name: Mapped[str] = mapped_column(String(200), default="")
+    client_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    grant_id: Mapped[str] = mapped_column(String(32), default="")  # wspolny dla access i refresh z jednej zgody
+    scopes: Mapped[str] = mapped_column(String(100))
+    expires_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+    revoked: Mapped[bool] = mapped_column(default=False)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
+    last_used_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+
+    @property
+    def scope_list(self) -> list[str]:
+        return self.scopes.split()
+
+
+class AuditLog(Base):
+    """Kto, co i kiedy zmienil (www albo Claude/API)."""
+
+    __tablename__ = "audit_log"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
+    actor: Mapped[str] = mapped_column(String(200))
+    action: Mapped[str] = mapped_column(String(60))
+    company_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    entity: Mapped[str] = mapped_column(String(30), default="")
+    entity_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    summary: Mapped[str] = mapped_column(Text, default="")

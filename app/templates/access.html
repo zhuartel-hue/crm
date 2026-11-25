@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Dostęp dla Claude{% endblock %}
+{% block content %}
+<h1>Dostęp dla Claude</h1>
+<div class="card">
+  <h2 style="margin-top:0">Jak podłączyć</h2>
+  <ol>
+    <li>W Claude: <b>Ustawienia → Konektory → Dodaj własny konektor</b>.</li>
+    <li>Nazwa: <b>Faktury</b>, adres: <code>{{ mcp_url }}</code></li>
+    <li>Kliknij <b>Połącz</b>, zaloguj się tutaj i zaznacz uprawnienia.</li>
+  </ol>
+  <p class="muted" style="margin-bottom:0">Potem w czacie wystarczy napisać np. „wystaw marżę dla Kowalskiego na Transita”. Claude najpierw robi szkic i pyta o potwierdzenie.</p>
+</div>
+
+{% if new_key %}
+<div class="flash">Nowy klucz (pokazuję tylko raz, skopiuj go teraz):<br><code style="word-break:break-all">{{ new_key }}</code></div>
+{% endif %}
+
+<h2>Aktywne połączenia</h2>
+<div class="card tbl"><table>
+<tr><th>Nazwa</th><th>Uprawnienia</th><th class="hide-sm">Ostatnio</th><th></th></tr>
+{% for g in grants %}
+<tr><td>{{ g.name }}{% if g.kind == 'key' %} <span class="badge">klucz API</span>{% endif %}</td>
+<td>{{ g.scopes|join(', ') }}</td>
+<td class="hide-sm">{{ g.last_used_at.strftime('%d.%m.%Y %H:%M') if g.last_used_at else 'nigdy' }}</td>
+<td><form method="post" action="/dostep/{{ g.grant_id }}/cofnij" onsubmit="return confirm('Cofnąć dostęp?')"><button class="btn small danger">Cofnij</button></form></td></tr>
+{% else %}<tr><td colspan="4" class="muted">Brak połączeń.</td></tr>{% endfor %}
+</table></div>
+
+<h2>Klucz API (dla innych programów)</h2>
+<form method="post" action="/dostep/klucz" class="card">
+  <p><label>Nazwa</label><input name="name" placeholder="np. skrypt księgowej"></p>
+  {% for key, label in scopes.items() %}
+  <p><label style="color:var(--text);font-size:15px"><input type="checkbox" name="scope" value="{{ key }}" {{ 'checked' if key == 'read' }}> {{ label }}</label></p>
+  {% endfor %}
+  <button class="btn">Utwórz klucz</button>
+</form>
+{% endblock %}
