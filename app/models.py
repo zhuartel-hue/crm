@@ -187,6 +187,10 @@ class Invoice(Base):
     ksef_hash: Mapped[str] = mapped_column(String(64), default="")
     ksef_upo: Mapped[str] = mapped_column(Text, default="")
 
+    # Przypomnienia o platnosci wyslane mailem.
+    reminder_count: Mapped[int] = mapped_column(Integer, default=0)
+    last_reminder_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+
     # Nieuzywane (dawna faktura marza); kolumna zostaje w bazie.
     margin_total: Mapped[Decimal] = mapped_column(Money, default=Decimal("0"))
 
@@ -205,6 +209,15 @@ class Invoice(Base):
     advances: Mapped[list[Invoice]] = relationship(
         foreign_keys=[settled_by_id], back_populates="settled_by", order_by="Invoice.issue_date"
     )
+    payments: Mapped[list["InvoicePayment"]] = relationship(
+        back_populates="invoice", cascade="all, delete-orphan", order_by="InvoicePayment.date"
+    )
+
+    @property
+    def days_overdue(self) -> int:
+        if self.due_date is None or self.to_pay <= 0:
+            return 0
+        return max(0, (dt.date.today() - self.due_date).days)
 
     @property
     def before_items(self) -> list[InvoiceItem]:
@@ -615,3 +628,23 @@ class StockMovement(Base):
 
     product: Mapped[Product] = relationship()
     delivery: Mapped[Delivery | None] = relationship()
+
+
+class InvoicePayment(Base):
+    """Wplata zapisana recznie (gotowka, przelew spoza wyciagu, wplata czesciowa). Wplaty z banku sa w bank_transactions."""
+
+    __tablename__ = "invoice_payments"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    invoice_id: Mapped[int] = mapped_column(ForeignKey("invoices.id", ondelete="CASCADE"), index=True)
+    date: Mapped[dt.date] = mapped_column(Date)
+    amount: Mapped[Decimal] = mapped_column(Money)
+    method: Mapped[str] = mapped_column(String(15), default="transfer")  # PAYMENT_METHODS
+    note: Mapped[str] = mapped_column(String(200), default="")
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
+
+    invoice: Mapped[Invoice] = relationship(back_populates="payments")
+
+    @property
+    def method_label(self) -> str:
+        return PAYMENT_METHODS.get(self.method, self.method)

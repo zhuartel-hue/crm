@@ -6,7 +6,7 @@
 <div class="grid stats">
   <div class="card stat"><div class="l">Faktur w tym miesiącu</div><div class="v">{{ stats.month_count }}</div></div>
   <div class="card stat"><div class="l">Sprzedaż brutto w tym miesiącu</div><div class="v">{{ stats.month_gross|money }} zł</div></div>
-  <div class="card stat"><div class="l">Nieopłacone ({{ stats.unpaid_count }})</div><div class="v">{{ stats.unpaid_sum|money }} zł</div></div>
+  <div class="card stat"><div class="l">Nieopłacone ({{ stats.unpaid_count }})</div><div class="v"><a href="/naleznosci">{{ stats.unpaid_sum|money }} zł</a></div></div>
 </div>
 <h2>Ostatnie faktury</h2>
 {% set invoices = recent %}{% include "_invoice_rows.html" %}

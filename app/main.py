@@ -16,7 +16,7 @@ from sqlalchemy import func, or_, select, update
 from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import api, auth, calc, config, mcp_server, migrate, numbering, password, pdf, secretbox, wz
+from . import api, auth, calc, config, mcp_server, migrate, numbering, password, payments, pdf, secretbox, wz
 from . import products as prod
 from .bank import service as bank
 from .mail import service as mail
@@ -474,6 +474,7 @@ def invoice_view(invoice_id: int, request: Request, db: Session = Depends(get_db
     mails = db.scalars(select(MailMessage).where(MailMessage.invoice_id == inv.id)
                        .order_by(MailMessage.date.desc()).limit(20)).all()
     return render(request, db, "invoice_view.html", inv=inv, summary=calc.invoice_summary(inv), derived=corrections,
+                  today_iso=dt.date.today().isoformat(),
                   bank_payments=bank_payments, mails=mails, deliveries=deliveries, has_mail=_company_accounts(db, inv.company_id) != [],
                   ksef_enabled=ksef.enabled(inv.company), ksef_can_send=ksef.can_send(inv),
                   ksef_label=ksef.status_label(inv), ksef_url=url, ksef_qr=ksef_qr.svg(url) if url else "")
@@ -515,12 +516,74 @@ def invoice_issue(invoice_id: int, request: Request, db: Session = Depends(get_d
 @app.post("/faktury/{invoice_id}/zaplacona")
 def invoice_mark_paid(invoice_id: int, request: Request, db: Session = Depends(get_db)):
     inv = get_invoice(db, request, invoice_id)
-    inv.paid = inv.total_gross
-    audit(db, web_actor(request), "invoice.paid", f"{inv.number}: zapłacono {calc.format_money(inv.paid)} zł",
+    try:
+        p = payments.add_payment(db, inv, inv.to_pay, note="Oznaczono jako zapłaconą")
+    except ValueError as e:
+        flash(request, str(e))
+        return redirect(f"/faktury/{inv.id}")
+    audit(db, web_actor(request), "invoice.paid", f"{inv.number}: zapłacono {calc.format_money(p.amount)} zł",
           company_id=inv.company_id, entity="invoice", entity_id=inv.id)
     db.commit()
     flash(request, "Oznaczono jako zapłaconą.")
+    return redirect(_back(request, f"/faktury/{inv.id}"))
+
+
+def _back(request: Request, default: str) -> str:
+    """Powrot na liste naleznosci, gdy akcja byla wywolana stamtad (tylko wlasne sciezki)."""
+    ref = request.headers.get("referer") or ""
+    base = str(request.base_url)
+    if ref.startswith(base + "naleznosci"):
+        return "/" + ref[len(base):]
+    return default
+
+
+@app.post("/faktury/{invoice_id}/wplata")
+async def invoice_add_payment(invoice_id: int, request: Request, db: Session = Depends(get_db)):
+    inv = get_invoice(db, request, invoice_id)
+    form = await request.form()
+    try:
+        amount = calc.parse_decimal(form.get("amount"), None)
+        try:
+            date = dt.date.fromisoformat(form.get("date") or "")
+        except ValueError:
+            date = dt.date.today()
+        p = payments.add_payment(db, inv, amount, date, form.get("method") or "transfer", (form.get("note") or "").strip())
+    except ValueError as e:
+        db.rollback()
+        flash(request, str(e))
+        return redirect(_back(request, f"/faktury/{inv.id}"))
+    audit(db, web_actor(request), "invoice.paid",
+          f"{inv.number}: wpłata {calc.format_money(p.amount)} zł ({p.date:%d.%m.%Y}, {p.method_label})",
+          company_id=inv.company_id, entity="invoice", entity_id=inv.id)
+    db.commit()
+    flash(request, f"Zapisano wpłatę {calc.format_money(p.amount)} zł. Pozostało {calc.format_money(max(inv.to_pay, 0))} zł.")
+    return redirect(_back(request, f"/faktury/{inv.id}"))
+
+
+@app.post("/faktury/{invoice_id}/wplata/{payment_id}/usun")
+def invoice_delete_payment(invoice_id: int, payment_id: int, request: Request, db: Session = Depends(get_db)):
+    inv = get_invoice(db, request, invoice_id)
+    try:
+        p = payments.delete_payment(db, inv, payment_id)
+    except ValueError as e:
+        flash(request, str(e))
+        return redirect(f"/faktury/{inv.id}")
+    audit(db, web_actor(request), "invoice.unpaid", f"{inv.number}: usunięto wpłatę {calc.format_money(p.amount)} zł",
+          company_id=inv.company_id, entity="invoice", entity_id=inv.id)
+    db.commit()
+    flash(request, "Usunięto wpłatę.")
     return redirect(f"/faktury/{inv.id}")
+
+
+@app.get("/naleznosci", response_class=HTMLResponse)
+def receivables_view(request: Request, filtr: str = "", q: str = "", db: Session = Depends(get_db)):
+    company = current_company(request, db)
+    filtr = filtr if filtr in payments.FILTERS else ""
+    rows = payments.receivables(db, company, filtr, q)
+    everything = rows if not filtr and not q else payments.receivables(db, company)
+    return render(request, db, "receivables.html", rows=rows, filtr=filtr, q=q, FILTERS=payments.FILTERS,
+                  total=payments.summary(everything), shown=payments.summary(rows), today=dt.date.today(),
+                  has_mail=_company_accounts(db, company.id) != [])
 
 
 @app.post("/faktury/{invoice_id}/usun")
@@ -1195,10 +1258,11 @@ def mail_refresh(request: Request, db: Session = Depends(get_db)):
 
 @app.get("/poczta/nowa", response_class=HTMLResponse)
 def mail_compose(request: Request, faktura: int = 0, odpowiedz: int = 0, kontrahent: int = 0, do: str = "",
-                 db: Session = Depends(get_db)):
+                 przypomnienie: int = 0, db: Session = Depends(get_db)):
     company = current_company(request, db)
     accounts = [a for a in _company_accounts(db, company.id) if a.active]
-    draft = {"to": do, "cc": "", "subject": "", "body": "", "in_reply_to": "", "invoice_id": 0, "account_id": 0}
+    draft = {"to": do, "cc": "", "subject": "", "body": "", "in_reply_to": "", "invoice_id": 0, "account_id": 0,
+             "reminder": ""}
     inv = None
     if faktura:
         inv = get_invoice(db, request, faktura)
@@ -1212,6 +1276,9 @@ def mail_compose(request: Request, faktura: int = 0, odpowiedz: int = 0, kontrah
                          + (f", konto: {company.bank_account}" if company.bank_account else "") + ".")
         lines += ["", "Pozdrawiam"]
         draft["body"] = "\n".join(lines)
+        if przypomnienie and inv.status == "issued" and inv.to_pay > 0:
+            draft["subject"], draft["body"] = payments.reminder_draft(inv)
+            draft["reminder"] = "1"
     if kontrahent and not draft["to"]:
         c = db.get(Contractor, kontrahent)
         if c and c.email:
@@ -1236,7 +1303,7 @@ async def mail_send(request: Request, db: Session = Depends(get_db)):
     company = current_company(request, db)
     form = await request.form()
     accounts = {a.id: a for a in _company_accounts(db, company.id) if a.active}
-    draft = {k: (form.get(k) or "") for k in ("to", "cc", "subject", "body", "in_reply_to")}
+    draft = {k: (form.get(k) or "") for k in ("to", "cc", "subject", "body", "in_reply_to", "reminder")}
     draft["account_id"] = int(form.get("account_id") or 0)
     draft["invoice_id"] = int(form.get("invoice_id") or 0)
     acc = accounts.get(draft["account_id"])
@@ -1258,13 +1325,15 @@ async def mail_send(request: Request, db: Session = Depends(get_db)):
             raise MailError("Wybierz skrzynkę, z której wysłać.")
         msg = mail.send(db, acc, draft["to"], draft["subject"], draft["body"], cc=draft["cc"], attachments=files,
                         in_reply_to=draft["in_reply_to"], invoice_id=inv.id if inv else None)
+        if inv is not None and draft["reminder"] == "1":
+            payments.record_reminder(inv)
         audit(db, web_actor(request), "mail.send", f"E-mail z {acc.email} do {draft['to']}: {draft['subject'][:120]}",
               company_id=company.id, entity="invoice" if inv else "mail", entity_id=inv.id if inv else (msg.id if msg else None))
         db.commit()
     except MailError as e:
         db.rollback()
         return render(request, db, "mail_compose.html", accounts=list(accounts.values()), draft=draft, inv=inv, error=str(e))
-    flash(request, f"Wysłano do {draft['to']}.")
+    flash(request, f"Wysłano {'przypomnienie ' if inv is not None and draft['reminder'] == '1' else ''}do {draft['to']}.")
     return redirect(f"/faktury/{inv.id}" if inv else "/poczta?kierunek=out")
 
 

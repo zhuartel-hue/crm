@@ -8,6 +8,7 @@
 <form method="post" action="/poczta/nowa" enctype="multipart/form-data" class="card">
 <input type="hidden" name="in_reply_to" value="{{ draft.in_reply_to }}">
 <input type="hidden" name="invoice_id" value="{{ draft.invoice_id or '' }}">
+<input type="hidden" name="reminder" value="{{ draft.reminder or '' }}">
 <div class="grid">
   <div style="grid-column:1/-1"><label>Od</label><select name="account_id">
     {% for a in accounts %}<option value="{{ a.id }}" {{ 'selected' if a.id == draft.account_id }}>{{ a.label }}</option>{% endfor %}</select></div>

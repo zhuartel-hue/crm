@@ -510,6 +510,11 @@ def mark_paid(db: Session, actor: str, invoice_id: int, amount=None) -> Invoice:
     paid = inv.total_gross if amount in (None, "") else _dec(amount, "amount")
     if paid < 0:
         raise ServiceError("Kwota nie może być ujemna.")
+    diff = paid - (inv.paid or Decimal("0"))
+    if diff != 0:
+        from .models import InvoicePayment
+        inv.payments.append(InvoicePayment(date=dt.date.today(), amount=diff, method=inv.payment_method,
+                                           note=f"Zapisane przez {actor}"[:200]))
     inv.paid = paid
     audit(db, actor, "invoice.paid", f"{inv.number}: zapłacono {calc.format_money(paid)} zł",
           company_id=inv.company_id, entity="invoice", entity_id=inv.id)
