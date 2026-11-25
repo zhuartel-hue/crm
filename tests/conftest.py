@@ -1,0 +1,24 @@
+import os
+import sys
+from pathlib import Path
+
+os.environ.setdefault("DATABASE_URL", "sqlite:///" + str(Path(__file__).parent / "test.db"))
+os.environ["ADMIN_PASSWORD"] = "test-haslo"
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+import pytest  # noqa: E402
+
+
+@pytest.fixture()
+def client():
+    from fastapi.testclient import TestClient
+
+    from app.db import Base, engine
+    from app.main import app
+
+    Base.metadata.drop_all(engine)
+    with TestClient(app) as c:
+        r = c.post("/login", data={"login": "admin", "password": "test-haslo"})
+        assert r.status_code in (200, 303)
+        yield c
+    Base.metadata.drop_all(engine)

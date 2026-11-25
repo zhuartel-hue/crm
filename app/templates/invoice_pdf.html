@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="pl"><head><meta charset="utf-8">
+<style>
+@page { size: A4; margin: 16mm 14mm 18mm; @bottom-right { content: "Strona " counter(page) " z " counter(pages); font-family: "DejaVu Sans", sans-serif; font-size: 7pt; color: #777; } }
+body { font-family: "DejaVu Sans", sans-serif; font-size: 9pt; color: #111; }
+h1 { font-size: 15pt; margin: 0 0 2mm; }
+.top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6mm; }
+.dates td { padding: 0 0 0 6mm; text-align: right; }
+.dates td.l { color: #555; }
+.parties { display: flex; gap: 8mm; margin-bottom: 6mm; }
+.party { flex: 1; border-top: 2px solid #111; padding-top: 2mm; }
+.party .h { font-size: 8pt; text-transform: uppercase; color: #555; letter-spacing: .05em; margin-bottom: 1mm; }
+.party b { font-size: 10pt; }
+table.items { width: 100%; border-collapse: collapse; margin-bottom: 4mm; }
+table.items th { background: #f0f0f0; font-size: 7.5pt; text-align: left; padding: 2mm 1.5mm; border-bottom: 1px solid #999; }
+table.items td { padding: 2mm 1.5mm; border-bottom: 1px solid #ddd; vertical-align: top; }
+.n { text-align: right; white-space: nowrap; }
+.summary { width: 55%; margin-left: auto; border-collapse: collapse; }
+.summary td, .summary th { padding: 1.2mm 1.5mm; border-bottom: 1px solid #ddd; font-size: 8.5pt; }
+.summary th { text-align: right; color: #555; font-weight: normal; }
+.summary tr.total td { font-weight: bold; border-top: 1px solid #111; }
+.pay { margin-top: 6mm; display: flex; justify-content: space-between; gap: 8mm; }
+.big { font-size: 13pt; font-weight: bold; }
+.note { margin-top: 5mm; padding: 2.5mm 3mm; border: 1px solid #111; font-weight: bold; }
+.notes { margin-top: 4mm; white-space: pre-line; }
+.sign { margin-top: 18mm; display: flex; justify-content: space-between; color: #555; font-size: 7.5pt; }
+.sign div { width: 40%; border-top: 1px solid #999; text-align: center; padding-top: 1mm; }
+.draft { color: #b42318; font-weight: bold; }
+</style></head>
+<body>
+{% set c = inv.company %}{% set margin = inv.kind == 'margin' %}
+<div class="top">
+  <div>
+    <h1>{{ 'Faktura VAT marża' if margin else 'Faktura VAT' }}</h1>
+    <div style="font-size:11pt">nr <b>{{ inv.number or 'SZKIC' }}</b></div>
+    {% if inv.status == 'draft' %}<div class="draft">SZKIC — nie jest fakturą</div>{% endif %}
+  </div>
+  <table class="dates">
+    <tr><td class="l">Data wystawienia:</td><td>{{ inv.issue_date|date }}</td></tr>
+    <tr><td class="l">Data sprzedaży:</td><td>{{ inv.sale_date|date }}</td></tr>
+    {% if inv.issue_place %}<tr><td class="l">Miejsce wystawienia:</td><td>{{ inv.issue_place }}</td></tr>{% endif %}
+  </table>
+</div>
+<div class="parties">
+  <div class="party"><div class="h">Sprzedawca</div><b>{{ c.name }}</b><br>
+    {% for l in c.address_lines %}{{ l }}<br>{% endfor %}NIP: {{ c.nip }}
+    {% if c.phone %}<br>tel. {{ c.phone }}{% endif %}{% if c.email %}<br>{{ c.email }}{% endif %}</div>
+  <div class="party"><div class="h">Nabywca</div><b>{{ inv.buyer_name }}</b><br>
+    <span style="white-space:pre-line">{{ inv.buyer_address }}</span>{% if inv.buyer_nip %}<br>NIP: {{ inv.buyer_nip }}{% endif %}</div>
+</div>
+
+<table class="items">
+  <tr><th>Lp.</th><th>Nazwa towaru lub usługi</th><th class="n">Ilość</th><th>Jm.</th>
+  {% if margin %}<th class="n">Cena jedn.</th><th class="n">Wartość</th>
+  {% else %}<th class="n">Cena jedn. {{ 'brutto' if inv.prices_gross else 'netto' }}</th><th class="n">Stawka</th><th class="n">Netto</th><th class="n">VAT</th><th class="n">Brutto</th>{% endif %}</tr>
+  {% for it in inv.items %}
+  <tr><td>{{ loop.index }}</td><td>{{ it.name }}</td><td class="n">{{ it.quantity|qty }}</td><td>{{ it.unit }}</td>
+  {% if margin %}<td class="n">{{ it.unit_price|money }}</td><td class="n">{{ it.gross|money }}</td>
+  {% else %}<td class="n">{{ it.unit_price|money }}</td><td class="n">{{ it.vat_rate }}{{ '%' if it.vat_rate.isdigit() }}</td><td class="n">{{ it.net|money }}</td><td class="n">{{ it.vat|money }}</td><td class="n">{{ it.gross|money }}</td>{% endif %}</tr>
+  {% endfor %}
+</table>
+
+{% if not margin %}
+<table class="summary">
+  <tr><th>Stawka</th><th>Netto</th><th>VAT</th><th>Brutto</th></tr>
+  {% for s in summary %}<tr><td class="n">{{ s.rate }}{{ '%' if s.rate.isdigit() }}</td><td class="n">{{ s.net|money }}</td><td class="n">{{ s.vat|money }}</td><td class="n">{{ s.gross|money }}</td></tr>{% endfor %}
+  <tr class="total"><td class="n">Razem</td><td class="n">{{ inv.total_net|money }}</td><td class="n">{{ inv.total_vat|money }}</td><td class="n">{{ inv.total_gross|money }}</td></tr>
+</table>
+{% endif %}
+
+<div class="pay">
+  <div>
+    Sposób płatności: <b>{{ inv.payment_label }}</b>{% if inv.due_date and inv.payment_method == 'transfer' %}, termin: <b>{{ inv.due_date|date }}</b>{% endif %}<br>
+    {% if inv.payment_method == 'transfer' and c.bank_account %}Nr konta: <b>{{ c.bank_account }}</b>{% if c.bank_name %} ({{ c.bank_name }}){% endif %}<br>{% endif %}
+    {% if inv.paid and inv.paid > 0 %}Zapłacono: {{ inv.paid|money }} PLN<br>{% endif %}
+  </div>
+  <div style="text-align:right">
+    Do zapłaty: <span class="big">{{ inv.to_pay|money }} PLN</span><br>
+    Słownie: {{ inv.to_pay|plnwords }}
+  </div>
+</div>
+
+{% if margin %}<div class="note">procedura marży – towary używane</div>{% endif %}
+{% if inv.notes %}<div class="notes">{{ inv.notes }}</div>{% endif %}
+
+<div class="sign"><div>osoba upoważniona do odbioru</div><div>osoba upoważniona do wystawienia</div></div>
+</body></html>

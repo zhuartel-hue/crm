@@ -1,0 +1,11 @@
+<!doctype html>
+<html lang="pl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Logowanie · Faktury</title><link rel="stylesheet" href="/static/app.css"></head>
+<body><main class="login"><div class="card">
+<h1>Faktury</h1>
+{% if error %}<div class="error">{{ error }}</div>{% endif %}
+<form method="post" action="/login">
+<p><label>Login</label><input name="login" autocomplete="username" autocapitalize="none" required></p>
+<p><label>Hasło</label><input name="password" type="password" autocomplete="current-password" required></p>
+<button class="btn primary" style="width:100%">Zaloguj</button>
+</form></div></main></body></html>

@@ -1,0 +1,15 @@
+<div class="card tbl"><table>
+<tr><th>Numer</th><th>Data</th><th>Nabywca</th><th class="hide-sm">Rodzaj</th><th class="n">Brutto</th><th>Status</th></tr>
+{% for i in invoices %}
+<tr>
+  <td><a href="/faktury/{{ i.id }}">{{ i.display_number }}</a></td>
+  <td>{{ i.issue_date|date }}</td>
+  <td>{{ i.buyer_name }}</td>
+  <td class="hide-sm">{% if i.kind == 'margin' %}<span class="badge m">marża</span>{% else %}<span class="badge">VAT</span>{% endif %}</td>
+  <td class="n">{{ i.total_gross|money }}</td>
+  <td>{% if i.status == 'draft' %}<span class="badge warn">szkic</span>{% elif i.to_pay <= 0 %}<span class="badge ok">zapłacona</span>{% else %}<span class="badge">do zapłaty</span>{% endif %}</td>
+</tr>
+{% else %}
+<tr><td colspan="6" class="muted">Brak faktur.</td></tr>
+{% endfor %}
+</table></div>
