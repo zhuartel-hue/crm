@@ -112,3 +112,38 @@ def test_settings_change_pattern(client):
     assert client.post("/ustawienia", data=data, follow_redirects=False).status_code == 303
     inv_id = _new_invoice(client, "vat")
     assert "1/2027" in client.get(f"/faktury/{inv_id}").text
+
+
+def test_delete_car_and_contractor(client):
+    from app.db import SessionLocal
+    from app.models import Car, Contractor, Invoice
+
+    client.post("/auta/nowe", data={"make": "Opel", "model": "Astra", "status": "available"})
+    client.post("/auta/nowe", data={"make": "Skoda", "model": "Octavia", "status": "available"})
+    with SessionLocal() as db:
+        astra = db.scalars(select(Car).where(Car.model == "Astra")).one().id
+        octavia = db.scalars(select(Car).where(Car.model == "Octavia")).one().id
+
+    # szkic z autem i nowym kontrahentem: usuniecie odpina je od szkicu
+    draft = _new_invoice(client, "vat", car_id=str(astra), action="draft", buyer_name="Szkic Testowy")
+    with SessionLocal() as db:
+        cid = db.get(Invoice, draft).contractor_id
+    assert cid
+    assert "Usuń auto" in client.get(f"/auta/{astra}").text
+    client.post(f"/auta/{astra}/usun")
+    client.post(f"/kontrahenci/{cid}/usun")
+    with SessionLocal() as db:
+        assert db.get(Car, astra) is None and db.get(Contractor, cid) is None
+        inv = db.get(Invoice, draft)
+        assert inv.car_id is None and inv.contractor_id is None and inv.buyer_name == "Szkic Testowy"
+
+    # wystawiona faktura blokuje usuniecie
+    issued = _new_invoice(client, "vat", car_id=str(octavia), buyer_name="Kupiec")
+    with SessionLocal() as db:
+        cid2 = db.get(Invoice, issued).contractor_id
+    assert "Usuń auto" not in client.get(f"/auta/{octavia}").text
+    client.post(f"/auta/{octavia}/usun")
+    client.post(f"/kontrahenci/{cid2}/usun")
+    with SessionLocal() as db:
+        assert db.get(Car, octavia) is not None and db.get(Contractor, cid2) is not None
+    assert "Dziennik" in client.get("/dziennik").text and "Usunięto auto" in client.get("/dziennik").text

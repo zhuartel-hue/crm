@@ -20,5 +20,7 @@
 <div class="row"><button class="btn primary">Zapisz</button><a class="btn" href="/auta">Anuluj</a>
 {% if car.id and car.status != 'sold' %}<span class="spacer"></span><a class="btn" href="/faktury/nowa?auto={{ car.id }}">Wystaw fakturę</a>{% endif %}</div>
 </form>
+{% if car.id and not (invoices|selectattr('status', 'equalto', 'issued')|list) %}
+<form method="post" action="/auta/{{ car.id }}/usun" onsubmit="return confirm('Usunąć to auto?')" style="margin-top:12px"><button class="btn danger">Usuń auto</button></form>{% endif %}
 {% if invoices %}<h2>Faktury</h2>{% include "_invoice_rows.html" %}{% endif %}
 {% endblock %}

@@ -520,6 +520,24 @@ async def contractor_update(cid: int, request: Request, db: Session = Depends(ge
     return await _save_contractor(request, db, c)
 
 
+@app.post("/kontrahenci/{cid}/usun")
+def contractor_delete(cid: int, request: Request, db: Session = Depends(get_db)):
+    c = db.get(Contractor, cid)
+    if c is None:
+        raise HTTPException(404)
+    invoices = db.scalars(select(Invoice).where(Invoice.contractor_id == cid)).all()
+    if any(i.status != "draft" for i in invoices):
+        flash(request, "Kontrahent ma wystawione faktury, nie można go usunąć.")
+        return redirect(f"/kontrahenci/{cid}")
+    for inv in invoices:  # szkice zachowuja dane nabywcy, tracą tylko powiazanie
+        inv.contractor_id = None
+    audit(db, web_actor(request), "contractor.delete", f"Usunięto kontrahenta {c.name}", entity="contractor")
+    db.delete(c)
+    db.commit()
+    flash(request, f"Usunięto kontrahenta {c.name}.")
+    return redirect("/kontrahenci")
+
+
 # --- auta ---------------------------------------------------------------
 
 
@@ -593,6 +611,25 @@ async def car_update(car_id: int, request: Request, db: Session = Depends(get_db
     if car is None or car.company_id != current_company(request, db).id:
         raise HTTPException(404)
     return await _save_car(request, db, car)
+
+
+@app.post("/auta/{car_id}/usun")
+def car_delete(car_id: int, request: Request, db: Session = Depends(get_db)):
+    car = db.get(Car, car_id)
+    if car is None or car.company_id != current_company(request, db).id:
+        raise HTTPException(404)
+    invoices = db.scalars(select(Invoice).where(Invoice.car_id == car_id)).all()
+    if any(i.status != "draft" for i in invoices):
+        flash(request, "Auto ma wystawioną fakturę, nie można go usunąć.")
+        return redirect(f"/auta/{car_id}")
+    for inv in invoices:
+        inv.car_id = None
+    label = car.label
+    audit(db, web_actor(request), "car.delete", f"Usunięto auto {label}", company_id=car.company_id, entity="car")
+    db.delete(car)
+    db.commit()
+    flash(request, f"Usunięto auto {label}.")
+    return redirect("/auta")
 
 
 # --- ustawienia firmy -----------------------------------------------------
