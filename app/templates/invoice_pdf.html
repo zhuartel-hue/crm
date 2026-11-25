@@ -23,6 +23,8 @@ table.items td { padding: 2mm 1.5mm; border-bottom: 1px solid #ddd; vertical-ali
 .big { font-size: 13pt; font-weight: bold; }
 .note { margin-top: 5mm; padding: 2.5mm 3mm; border: 1px solid #111; font-weight: bold; }
 .notes { margin-top: 4mm; white-space: pre-line; }
+.ksef { margin-top: 5mm; display: flex; gap: 4mm; align-items: center; font-size: 8.5pt; }
+.ksef .qr svg { width: 30mm; height: 30mm; display: block; }
 .sign { margin-top: 18mm; display: flex; justify-content: space-between; color: #555; font-size: 7.5pt; }
 .sign div { width: 40%; border-top: 1px solid #999; text-align: center; padding-top: 1mm; }
 .draft { color: #b42318; font-weight: bold; }
@@ -96,6 +98,15 @@ table.items td { padding: 2mm 1.5mm; border-bottom: 1px solid #ddd; vertical-ali
 </div>
 
 {% if inv.notes %}<div class="notes">{{ inv.notes }}</div>{% endif %}
+{% if inv.exemption_basis and inv.items|selectattr('vat_rate', 'equalto', 'zw')|list %}<div class="notes">Podstawa zwolnienia z VAT: {{ inv.exemption_basis }}</div>{% endif %}
+{% if inv.split_payment %}<div class="notes"><b>Mechanizm podzielonej płatności</b></div>{% endif %}
+{% if ksef_qr %}
+<div class="ksef">
+  <div class="qr">{{ ksef_qr|safe }}</div>
+  <div>Faktura w Krajowym Systemie e-Faktur<br>Numer KSeF: <b>{{ inv.ksef_number }}</b><br>
+  <span style="font-size:7pt;word-break:break-all">{{ ksef_url }}</span></div>
+</div>
+{% endif %}
 
 <div class="sign"><div>osoba upoważniona do odbioru</div><div>osoba upoważniona do wystawienia</div></div>
 </body></html>

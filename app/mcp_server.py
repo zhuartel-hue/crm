@@ -108,6 +108,12 @@ def _t_final(db, p, a, base):
     return {"invoice": svc.invoice_dict(svc.start_final(db, p.actor, a["advance_id"]), base)}
 
 
+def _t_ksef(db, p, a, base):
+    from .ksef import service as ksef
+
+    return {"invoice": svc.invoice_dict(ksef.send(db, p.actor, a["invoice_id"]), base, with_items=False)}
+
+
 def _t_issue(db, p, a, base):
     return {"invoice": svc.invoice_dict(svc.issue_invoice(db, p.actor, a["invoice_id"]), base)}
 
@@ -205,6 +211,10 @@ TOOLS = [
          "proforma/zaliczkowa = 'reserved'. "
          "Nieodwracalne. Wywołuj tylko po wyraźnym potwierdzeniu użytkownika.", "issue",
          _obj({"invoice_id": {"type": "integer"}}, ["invoice_id"]), _t_issue, read_only=False, destructive=True),
+    Tool("send_invoice_to_ksef", "Wyślij do KSeF",
+         "Wysyła WYSTAWIONĄ fakturę do KSeF (Krajowy System e-Faktur) i zwraca status oraz numer KSeF. "
+         "Nieodwracalne: zmiany tylko korektą. Wywołuj tylko po wyraźnym potwierdzeniu użytkownika.", "issue",
+         _obj({"invoice_id": {"type": "integer"}}, ["invoice_id"]), _t_ksef, read_only=False, destructive=True),
     Tool("mark_invoice_paid", "Zapisz płatność",
          "Zapisuje zapłaconą kwotę na wystawionej fakturze (bez amount = cała kwota).", "write",
          _obj({"invoice_id": {"type": "integer"}, "amount": MONEY}, ["invoice_id"]), _t_paid, read_only=False),

@@ -33,6 +33,23 @@
   {% for d in derived %}<br>{{ d.kind_label }}: <a href="/faktury/{{ d.id }}">{{ d.display_number }}</a>{% endfor %}
   </div>
 </div>
+{% if inv.status == 'issued' and inv.kind != 'proforma' %}
+<div class="card ksef-card">
+  <div class="row"><b>KSeF</b>
+    <span class="badge {{ 'ok' if inv.ksef_status == 'accepted' else ('warn' if inv.ksef_status in ('rejected', 'error') else '') }}">{{ ksef_label }}</span>
+    {% if inv.ksef_env and inv.ksef_env != 'prod' %}<span class="badge">środowisko {{ inv.ksef_env }}</span>{% endif %}
+    <span class="spacer"></span>
+    {% if ksef_enabled and ksef_can_send %}<form method="post" action="/faktury/{{ inv.id }}/ksef" onsubmit="return confirm('Wysłać fakturę {{ inv.number }} do KSeF? Tego nie da się cofnąć, zmiany robi się korektą.')"><button class="btn primary">Wyślij do KSeF</button></form>{% endif %}
+    {% if inv.ksef_status == 'sent' or (inv.ksef_status == 'accepted' and not inv.ksef_upo) %}<form method="post" action="/faktury/{{ inv.id }}/ksef/status"><button class="btn">Sprawdź status</button></form>{% endif %}
+    <a class="btn small" href="/faktury/{{ inv.id }}/ksef/xml" target="_blank">XML</a>
+    {% if inv.ksef_upo %}<a class="btn small" href="/faktury/{{ inv.id }}/ksef/upo">UPO</a>{% endif %}
+  </div>
+  {% if inv.ksef_number %}<p style="margin:8px 0 0">Numer KSeF: <b>{{ inv.ksef_number }}</b></p>{% endif %}
+  {% if inv.ksef_message %}<p class="muted" style="margin:8px 0 0;white-space:pre-line">{{ inv.ksef_message }}</p>{% endif %}
+  {% if not ksef_enabled and not inv.ksef_status %}<p class="muted" style="margin:8px 0 0">KSeF dla tej firmy jest wyłączony. Włączysz go w <a href="/ustawienia">Ustawieniach</a>.</p>{% endif %}
+  {% if ksef_qr %}<div class="row" style="margin-top:8px"><div class="qr-box">{{ ksef_qr|safe }}</div><a href="{{ ksef_url }}" target="_blank" style="word-break:break-all;font-size:13px">{{ ksef_url }}</a></div>{% endif %}
+</div>
+{% endif %}
 {% if inv.kind == 'correction' %}<div class="card"><div class="muted">Przyczyna korekty</div>{{ inv.correction_reason or '—' }}</div>{% endif %}
 
 {% macro rows(items, title) %}

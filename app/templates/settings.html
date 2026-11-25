@@ -31,5 +31,20 @@
 </div>
 <p><button class="btn primary">Zapisz</button></p>
 </form>
+<form method="post" action="/ustawienia/ksef" class="card" autocomplete="off">
+<h2 style="margin-top:0">KSeF · {{ company.short_name }}</h2>
+<p class="muted">Faktury wysyła się przyciskiem „Wyślij do KSeF” na wystawionej fakturze. Logowanie tokenem KSeF wygenerowanym
+dla NIP {{ company.nip }} (uprawnienia: wystawianie i przeglądanie faktur). Token jest zapisany w bazie w postaci zaszyfrowanej i nigdzie się nie wyświetla.</p>
+<p class="muted">Środowiska testowe MF są publiczne: nie wysyłaj tam prawdziwych faktur ani danych klientów.</p>
+<div class="grid">
+  <div><label>Środowisko</label><select name="ksef_env">
+    <option value="off" {{ 'selected' if company.ksef_env in ('off', None) }}>wyłączony</option>
+    {% for k, v in KSEF_ENVS.items() %}<option value="{{ k }}" {{ 'selected' if company.ksef_env == k }}>{{ v.label }}</option>{% endfor %}
+  </select></div>
+  <div style="grid-column:1/-1"><label>Token KSeF {% if company.ksef_token_enc %}(zapisany; wpisz nowy, żeby zmienić){% endif %}</label>
+    <input type="password" name="ksef_token" value="" autocomplete="new-password" placeholder="{{ '••••••••' if company.ksef_token_enc else 'wklej token' }}"></div>
+</div>
+<p><button class="btn primary">Zapisz KSeF</button></p>
+</form>
 <form method="post" action="/logout"><button class="btn">Wyloguj</button></form>
 {% endblock %}

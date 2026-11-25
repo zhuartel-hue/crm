@@ -198,6 +198,9 @@ def invoice_dict(inv: Invoice, base_url: str = "", with_items: bool = True) -> d
     )
     if inv.related is not None:
         d["related"] = dict(id=inv.related.id, number=inv.related.display_number, kind=inv.related.kind)
+    if inv.status == "issued" and inv.kind != "proforma":
+        d["ksef"] = dict(status=inv.ksef_status or "not_sent", number=inv.ksef_number or None,
+                         environment=inv.ksef_env or None, message=inv.ksef_message or None)
     if inv.kind == "correction":
         d["correction_reason"] = inv.correction_reason
     if inv.kind in ("advance", "final"):
@@ -307,6 +310,7 @@ def create_invoice_draft(db: Session, actor: str, data: dict) -> Invoice:
         prices_gross=bool(data.get("prices_gross", True)),
         paid=Decimal("0"), notes=(data.get("notes") or "").strip(),
         buyer_name="", buyer_nip="", buyer_address="", correction_reason="",
+        exemption_basis=(data.get("exemption_basis") or "").strip()[:256], split_payment=bool(data.get("split_payment")),
     )
     inv.company = company
     if kind == "advance":
@@ -381,6 +385,7 @@ def _derived_draft(src: Invoice, kind: str) -> Invoice:
         due_date=today + dt.timedelta(days=src.company.default_payment_days), prices_gross=src.prices_gross,
         contractor_id=src.contractor_id, buyer_name=src.buyer_name, buyer_nip=src.buyer_nip,
         buyer_address=src.buyer_address, car_id=src.car_id, notes="", paid=Decimal("0"), correction_reason="",
+        exemption_basis=src.exemption_basis or "", split_payment=bool(src.split_payment),
     )
     inv.company = src.company
     inv.car = src.car

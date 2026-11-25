@@ -78,6 +78,12 @@
   <p id="totals" style="margin-bottom:0"></p>
 </div>
 
+<div class="card">
+  <div class="grid">
+    <div><label>Podstawa zwolnienia z VAT (tylko przy stawce „zw”)</label><input name="exemption_basis" value="{{ inv.exemption_basis or '' }}" placeholder="np. przepis ustawy o VAT"></div>
+    <div><label>&nbsp;</label><label><input type="checkbox" name="split_payment" value="1" {{ 'checked' if inv.split_payment }}> mechanizm podzielonej płatności</label></div>
+  </div>
+</div>
 <div class="card"><label>Uwagi (drukowane na fakturze)</label><textarea name="notes">{{ inv.notes }}</textarea></div>
 
 <div class="row">

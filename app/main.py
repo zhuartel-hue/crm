@@ -17,6 +17,9 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from . import api, auth, calc, config, mcp_server, migrate, numbering, password, pdf
 from . import products as prod
+from .ksef import ENVIRONMENTS as KSEF_ENVS
+from .ksef import qr as ksef_qr
+from .ksef import service as ksef
 from . import services
 from .services import ServiceError, audit, car_item_name
 from .db import SessionLocal, get_db
@@ -318,6 +321,8 @@ def _apply_form(db: Session, inv: Invoice, form) -> None:
         inv.correction_reason = form.get("correction_reason", "").strip()
     if inv.kind == "advance":
         inv.advance_gross = calc.parse_decimal(form.get("advance_gross"), None)
+    inv.exemption_basis = (form.get("exemption_basis") or "").strip()[:256]
+    inv.split_payment = form.get("split_payment") == "1"
 
     cid = form.get("contractor_id") or ""
     inv.contractor_id = int(cid) if cid.isdigit() else None
@@ -415,7 +420,10 @@ def invoice_view(invoice_id: int, request: Request, db: Session = Depends(get_db
     corrections = db.scalars(
         select(Invoice).where(Invoice.related_id == inv.id).order_by(Invoice.issue_date, Invoice.id)
     ).all()
-    return render(request, db, "invoice_view.html", inv=inv, summary=calc.invoice_summary(inv), derived=corrections)
+    url = ksef.qr_url(inv)
+    return render(request, db, "invoice_view.html", inv=inv, summary=calc.invoice_summary(inv), derived=corrections,
+                  ksef_enabled=ksef.enabled(inv.company), ksef_can_send=ksef.can_send(inv),
+                  ksef_label=ksef.status_label(inv), ksef_url=url, ksef_qr=ksef_qr.svg(url) if url else "")
 
 
 @app.get("/faktury/{invoice_id}/edytuj", response_class=HTMLResponse)
@@ -536,6 +544,61 @@ def invoice_pdf(invoice_id: int, request: Request, db: Session = Depends(get_db)
     filename = (inv.number or f"szkic-{inv.id}").replace("/", "-") + ".pdf"
     disposition = "attachment" if pobierz else "inline"
     return Response(data, media_type="application/pdf", headers={"Content-Disposition": f'{disposition}; filename="{filename}"'})
+
+
+# --- KSeF -------------------------------------------------------------------
+
+
+@app.post("/faktury/{invoice_id}/ksef")
+def invoice_ksef_send(invoice_id: int, request: Request, db: Session = Depends(get_db)):
+    inv = get_invoice(db, request, invoice_id)
+    try:
+        inv = ksef.send(db, web_actor(request), inv.id)
+        if inv.ksef_status == "accepted":
+            flash(request, f"KSeF przyjął fakturę {inv.number}. Numer KSeF: {inv.ksef_number}")
+        elif inv.ksef_status == "sent":
+            flash(request, "KSeF jeszcze przetwarza fakturę. Sprawdź status za chwilę.")
+        else:
+            flash(request, f"KSeF odrzucił fakturę: {inv.ksef_message}")
+    except ServiceError as e:
+        flash(request, str(e))
+    return redirect(f"/faktury/{invoice_id}")
+
+
+@app.post("/faktury/{invoice_id}/ksef/status")
+def invoice_ksef_refresh(invoice_id: int, request: Request, db: Session = Depends(get_db)):
+    inv = get_invoice(db, request, invoice_id)
+    try:
+        inv = ksef.refresh(db, web_actor(request), inv.id)
+        flash(request, f"Status KSeF: {ksef.status_label(inv)} {inv.ksef_number}".strip())
+    except ServiceError as e:
+        flash(request, str(e))
+    return redirect(f"/faktury/{invoice_id}")
+
+
+@app.get("/faktury/{invoice_id}/ksef/xml")
+def invoice_ksef_xml(invoice_id: int, request: Request, db: Session = Depends(get_db)):
+    """Wyslany plik XML, a przed wysylka podglad (bez zapisu)."""
+    inv = get_invoice(db, request, invoice_id)
+    if inv.ksef_xml:
+        data = inv.ksef_xml.encode("utf-8")
+    else:
+        try:
+            data = ksef.preview_xml(inv)
+        except ServiceError as e:
+            return Response(str(e), status_code=422, media_type="text/plain; charset=utf-8")
+    name = (inv.number or f"szkic-{inv.id}").replace("/", "-") + ".xml"
+    return Response(data, media_type="application/xml", headers={"Content-Disposition": f'inline; filename="{name}"'})
+
+
+@app.get("/faktury/{invoice_id}/ksef/upo")
+def invoice_ksef_upo(invoice_id: int, request: Request, db: Session = Depends(get_db)):
+    inv = get_invoice(db, request, invoice_id)
+    if not inv.ksef_upo:
+        raise HTTPException(404)
+    name = "UPO-" + (inv.number or str(inv.id)).replace("/", "-") + ".xml"
+    return Response(inv.ksef_upo, media_type="application/xml",
+                    headers={"Content-Disposition": f'attachment; filename="{name}"'})
 
 
 # --- kontrahenci ----------------------------------------------------------
@@ -829,7 +892,20 @@ COMPANY_FIELDS = ["short_name", "name", "nip", "street", "postal_code", "city", 
 
 @app.get("/ustawienia", response_class=HTMLResponse)
 def settings_form(request: Request, db: Session = Depends(get_db)):
-    return render(request, db, "settings.html")
+    return render(request, db, "settings.html", KSEF_ENVS=KSEF_ENVS)
+
+
+@app.post("/ustawienia/ksef")
+async def settings_ksef(request: Request, db: Session = Depends(get_db)):
+    company = current_company(request, db)
+    form = await request.form()
+    try:
+        ksef.set_token(db, web_actor(request), company, form.get("ksef_env") or "off",
+                       (form.get("ksef_token") or "").strip() or None)
+    except ServiceError as e:
+        return render(request, db, "settings.html", KSEF_ENVS=KSEF_ENVS, error=str(e))
+    flash(request, "Zapisano ustawienia KSeF.")
+    return redirect("/ustawienia")
 
 
 @app.post("/ustawienia")
@@ -846,7 +922,7 @@ async def settings_save(request: Request, db: Session = Depends(get_db)):
     for p in (company.pattern_vat, company.pattern_correction, company.pattern_advance, company.pattern_proforma):
         if "{nr}" not in p:
             db.rollback()
-            return render(request, db, "settings.html", error="Wzór numeru musi zawierać {nr}.")
+            return render(request, db, "settings.html", KSEF_ENVS=KSEF_ENVS, error="Wzór numeru musi zawierać {nr}.")
     db.commit()
     flash(request, "Zapisano ustawienia firmy.")
     return redirect("/ustawienia")

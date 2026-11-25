@@ -39,6 +39,9 @@ class Company(Base):
     # "month" - numeracja od 1 co miesiac, "year" - co rok.
     numbering_reset: Mapped[str] = mapped_column(String(10), default="month")
     default_payment_days: Mapped[int] = mapped_column(Integer, default=7)
+    # KSeF: "off" (wylaczony), "test", "demo", "prod"; token KSeF zaszyfrowany kluczem z SECRET_KEY (app/secretbox.py).
+    ksef_env: Mapped[str] = mapped_column(String(10), default="off")
+    ksef_token_enc: Mapped[str] = mapped_column(Text, default="")
 
     @property
     def address_lines(self) -> list[str]:
@@ -160,6 +163,24 @@ class Invoice(Base):
     total_net: Mapped[Decimal] = mapped_column(Money, default=Decimal("0"))
     total_vat: Mapped[Decimal] = mapped_column(Money, default=Decimal("0"))
     total_gross: Mapped[Decimal] = mapped_column(Money, default=Decimal("0"))
+    # Stawka "zw": podstawa prawna zwolnienia (FA(3) P_19A).
+    exemption_basis: Mapped[str] = mapped_column(String(256), default="")
+    # Mechanizm podzielonej platnosci (FA(3) P_18A).
+    split_payment: Mapped[bool] = mapped_column(default=False)
+
+    # KSeF: status "" (nie wysylano) / "sent" (w trakcie) / "accepted" / "rejected" / "error"
+    ksef_status: Mapped[str] = mapped_column(String(10), default="")
+    ksef_env: Mapped[str] = mapped_column(String(10), default="")
+    ksef_number: Mapped[str] = mapped_column(String(40), default="")
+    ksef_session_ref: Mapped[str] = mapped_column(String(40), default="")
+    ksef_invoice_ref: Mapped[str] = mapped_column(String(40), default="")
+    ksef_message: Mapped[str] = mapped_column(Text, default="")
+    ksef_sent_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+    # Wyslany XML (do kodu QR liczy sie skrot dokladnie tego pliku) i UPO.
+    ksef_xml: Mapped[str] = mapped_column(Text, default="")
+    ksef_hash: Mapped[str] = mapped_column(String(64), default="")
+    ksef_upo: Mapped[str] = mapped_column(Text, default="")
+
     # Nieuzywane (dawna faktura marza); kolumna zostaje w bazie.
     margin_total: Mapped[Decimal] = mapped_column(Money, default=Decimal("0"))
 
@@ -233,6 +254,7 @@ class InvoiceItem(Base):
     product_id: Mapped[int | None] = mapped_column(ForeignKey("products.id", ondelete="SET NULL"))
 
     invoice: Mapped[Invoice] = relationship(back_populates="items")
+    product: Mapped["Product | None"] = relationship()
 
 
 class NumberSequence(Base):

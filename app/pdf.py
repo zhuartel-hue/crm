@@ -16,7 +16,12 @@ _env.filters["date"] = lambda d: d.strftime("%d.%m.%Y") if d else ""
 
 
 def render_invoice_html(invoice) -> str:
-    return _env.get_template("invoice_pdf.html").render(inv=invoice, summary=calc.invoice_summary(invoice))
+    from .ksef import qr, service as ksef_service
+
+    url = ksef_service.qr_url(invoice)
+    return _env.get_template("invoice_pdf.html").render(
+        inv=invoice, summary=calc.invoice_summary(invoice), ksef_url=url, ksef_qr=qr.svg(url) if url else "",
+    )
 
 
 def render_invoice(invoice) -> bytes:
