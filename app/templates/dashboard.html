@@ -2,7 +2,7 @@
 {% block title %}Pulpit{% endblock %}
 {% block content %}
 <div class="row"><h1>{{ company.short_name }}</h1><span class="spacer"></span>
-<a class="btn primary" href="/faktury/nowa">+ Faktura</a></div>
+<a class="btn primary only-sm" href="/faktury/nowa">+ Faktura</a><a class="btn only-sm" href="/wz/nowa">+ WZ</a></div>
 <div class="grid stats">
   <div class="card stat"><div class="l">Faktur w tym miesiącu</div><div class="v">{{ stats.month_count }}</div></div>
   <div class="card stat"><div class="l">Sprzedaż brutto w tym miesiącu</div><div class="v">{{ stats.month_gross|money }} zł</div></div>
