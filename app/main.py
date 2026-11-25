@@ -16,15 +16,17 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import api, auth, calc, config, mcp_server, numbering, pdf
-from .services import audit, car_item_name
-from .db import Base, SessionLocal, engine, get_db
+from . import api, auth, calc, config, mcp_server, migrate, numbering, pdf
+from . import services
+from .services import ServiceError, audit, car_item_name
+from .db import SessionLocal, get_db
 from .models import (
     CAR_STATUSES,
     SCOPES,
     ApiToken,
     AuditLog,
     INVOICE_KINDS,
+    NEW_KINDS,
     PAYMENT_METHODS,
     VAT_RATES,
     Car,
@@ -42,12 +44,12 @@ templates.env.filters["qty"] = calc.format_qty
 templates.env.filters["plnwords"] = calc.amount_in_words
 templates.env.filters["date"] = lambda d: d.strftime("%d.%m.%Y") if d else ""
 templates.env.globals.update(
-    INVOICE_KINDS=INVOICE_KINDS, PAYMENT_METHODS=PAYMENT_METHODS, VAT_RATES=VAT_RATES, CAR_STATUSES=CAR_STATUSES
+    INVOICE_KINDS=INVOICE_KINDS, NEW_KINDS=NEW_KINDS, PAYMENT_METHODS=PAYMENT_METHODS, VAT_RATES=VAT_RATES, CAR_STATUSES=CAR_STATUSES
 )
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    Base.metadata.create_all(engine)
+    migrate.upgrade()
     with SessionLocal() as db:
         seed(db)
     yield
@@ -206,7 +208,7 @@ def invoice_list(request: Request, rodzaj: str = "", miesiac: str = "", q: str =
         like = f"%{q}%"
         stmt = stmt.where(or_(Invoice.number.ilike(like), Invoice.buyer_name.ilike(like), Invoice.buyer_nip.ilike(like)))
     invoices = db.scalars(stmt.order_by(Invoice.issue_date.desc(), Invoice.id.desc())).all()
-    total = sum((i.total_gross for i in invoices if i.status == "issued"), Decimal("0"))
+    total = sum((i.total_gross for i in invoices if i.status == "issued" and i.is_accounting), Decimal("0"))
     return render(request, db, "invoices.html", invoices=invoices, rodzaj=rodzaj, miesiac=miesiac, q=q, total=total)
 
 
@@ -226,7 +228,7 @@ def _form_context(db: Session, company: Company) -> dict:
 @app.get("/faktury/nowa", response_class=HTMLResponse)
 def invoice_new(request: Request, rodzaj: str = "vat", auto: int | None = None, db: Session = Depends(get_db)):
     company = current_company(request, db)
-    kind = rodzaj if rodzaj in INVOICE_KINDS else "vat"
+    kind = rodzaj if rodzaj in NEW_KINDS else "vat"
     today = dt.date.today()
     inv = Invoice(
         company_id=company.id,
@@ -242,6 +244,7 @@ def invoice_new(request: Request, rodzaj: str = "vat", auto: int | None = None, 
         buyer_address="",
         notes="",
         paid=Decimal("0"),
+        correction_reason="",
     )
     inv.items = []
     car = db.get(Car, auto) if auto else None
@@ -269,19 +272,25 @@ def _apply_form(db: Session, inv: Invoice, form) -> None:
             return None
         return dt.date.fromisoformat(v)
 
-    kind = form.get("kind", inv.kind or "vat")
-    inv.kind = kind if kind in INVOICE_KINDS else "vat"
+    if inv.id is None:  # rodzaj ustala sie przy zakladaniu; korekta i koncowa powstaja z innych faktur
+        kind = form.get("kind") or inv.kind or "vat"
+        inv.kind = kind if kind in NEW_KINDS else "vat"
     inv.issue_date = date("issue_date")
     inv.sale_date = date("sale_date")
     inv.due_date = date("due_date", required=False)
     inv.issue_place = form.get("issue_place", "").strip()
     inv.payment_method = form.get("payment_method", "transfer")
-    inv.prices_gross = form.get("prices_gross") == "1"
+    if inv.kind != "correction":  # korekta liczy ceny tak jak faktura korygowana
+        inv.prices_gross = form.get("prices_gross") == "1"
     inv.paid = calc.parse_decimal(form.get("paid"), Decimal("0"))
     inv.notes = form.get("notes", "").strip()
     inv.buyer_name = form.get("buyer_name", "").strip()
     inv.buyer_nip = form.get("buyer_nip", "").replace("-", "").replace(" ", "").strip()
     inv.buyer_address = form.get("buyer_address", "").strip()
+    if inv.kind == "correction":
+        inv.correction_reason = form.get("correction_reason", "").strip()
+    if inv.kind == "advance":
+        inv.advance_gross = calc.parse_decimal(form.get("advance_gross"), None)
 
     cid = form.get("contractor_id") or ""
     inv.contractor_id = int(cid) if cid.isdigit() else None
@@ -305,7 +314,9 @@ def _apply_form(db: Session, inv: Invoice, form) -> None:
     units = form.getlist("item_unit")
     prices = form.getlist("item_price")
     rates = form.getlist("item_rate")
-    inv.items.clear()
+    # Pozycje "przed korekta" sa kopia faktury korygowanej i nie zmieniaja sie w formularzu.
+    for it in [i for i in inv.items if not i.is_before]:
+        inv.items.remove(it)
     for i, name in enumerate(names):
         name = name.strip()
         if not name:
@@ -351,7 +362,7 @@ async def _save(request: Request, db: Session, inv: Invoice, is_new: bool):
 @app.post("/faktury/nowa")
 async def invoice_create(request: Request, db: Session = Depends(get_db)):
     company = current_company(request, db)
-    inv = Invoice(company_id=company.id, kind="vat")
+    inv = Invoice(company_id=company.id, kind="vat", correction_reason="")
     inv.company = company
     inv.items = []
     return await _save(request, db, inv, is_new=True)
@@ -369,14 +380,17 @@ def get_invoice(db: Session, request: Request, invoice_id: int) -> Invoice:
 @app.get("/faktury/{invoice_id}", response_class=HTMLResponse)
 def invoice_view(invoice_id: int, request: Request, db: Session = Depends(get_db)):
     inv = get_invoice(db, request, invoice_id)
-    return render(request, db, "invoice_view.html", inv=inv, summary=calc.vat_summary(inv.items))
+    corrections = db.scalars(
+        select(Invoice).where(Invoice.related_id == inv.id).order_by(Invoice.issue_date, Invoice.id)
+    ).all()
+    return render(request, db, "invoice_view.html", inv=inv, summary=calc.invoice_summary(inv), derived=corrections)
 
 
 @app.get("/faktury/{invoice_id}/edytuj", response_class=HTMLResponse)
 def invoice_edit(invoice_id: int, request: Request, db: Session = Depends(get_db)):
     inv = get_invoice(db, request, invoice_id)
     if inv.status != "draft":
-        flash(request, "Wystawionej faktury nie można zmieniać. Zmiany robi się korektą (w następnym etapie).")
+        flash(request, "Wystawionej faktury nie można zmieniać. Zmiany robi się fakturą korygującą.")
         return redirect(f"/faktury/{inv.id}")
     return render(request, db, "invoice_form.html", inv=inv, **_form_context(db, inv.company))
 
@@ -419,31 +433,59 @@ def invoice_mark_paid(invoice_id: int, request: Request, db: Session = Depends(g
 @app.post("/faktury/{invoice_id}/usun")
 def invoice_delete(invoice_id: int, request: Request, db: Session = Depends(get_db)):
     inv = get_invoice(db, request, invoice_id)
-    if inv.status != "draft":
-        flash(request, "Wystawionej faktury nie można usunąć.")
+    try:
+        services.delete_draft(db, web_actor(request), inv)
+    except ServiceError as e:
+        flash(request, str(e))
         return redirect(f"/faktury/{inv.id}")
-    audit(db, web_actor(request), "invoice.delete", f"Usunięto szkic dla {inv.buyer_name}",
-          company_id=inv.company_id, entity="invoice")
-    db.delete(inv)
-    db.commit()
     flash(request, "Usunięto szkic.")
     return redirect("/faktury")
+
+
+def _derive(request: Request, db: Session, invoice_id: int, fn, done: str):
+    get_invoice(db, request, invoice_id)
+    try:
+        inv = fn(db, web_actor(request), invoice_id)
+    except ServiceError as e:
+        flash(request, str(e))
+        return redirect(f"/faktury/{invoice_id}")
+    flash(request, done)
+    return redirect(f"/faktury/{inv.id}/edytuj")
+
+
+@app.post("/faktury/{invoice_id}/korekta")
+def invoice_correction(invoice_id: int, request: Request, db: Session = Depends(get_db)):
+    return _derive(request, db, invoice_id, services.start_correction,
+                   "Szkic korekty: zmień pozycje „po korekcie” i wpisz przyczynę.")
+
+
+@app.post("/faktury/{invoice_id}/z-proformy")
+def invoice_from_proforma(invoice_id: int, request: Request, db: Session = Depends(get_db)):
+    return _derive(request, db, invoice_id, services.start_from_proforma, "Szkic faktury VAT z proformy.")
+
+
+@app.post("/faktury/{invoice_id}/koncowa")
+def invoice_final(invoice_id: int, request: Request, db: Session = Depends(get_db)):
+    return _derive(request, db, invoice_id, services.start_final,
+                   "Szkic faktury końcowej: całe zamówienie minus otrzymane zaliczki.")
 
 
 @app.post("/faktury/{invoice_id}/kopiuj")
 def invoice_copy(invoice_id: int, request: Request, db: Session = Depends(get_db)):
     src = get_invoice(db, request, invoice_id)
+    if src.kind not in NEW_KINDS:
+        flash(request, "Tę fakturę można skorygować, ale nie skopiować.")
+        return redirect(f"/faktury/{src.id}")
     today = dt.date.today()
     inv = Invoice(
-        company_id=src.company_id, kind=src.kind, issue_date=today, sale_date=today,
+        company_id=src.company_id, kind=src.kind, advance_gross=src.advance_gross, correction_reason="", issue_date=today, sale_date=today,
         issue_place=src.issue_place, due_date=today + dt.timedelta(days=src.company.default_payment_days),
         payment_method=src.payment_method, prices_gross=src.prices_gross, contractor_id=src.contractor_id,
         buyer_name=src.buyer_name, buyer_nip=src.buyer_nip, buyer_address=src.buyer_address, notes=src.notes,
         paid=Decimal("0"),
     )
     inv.items = [
-        InvoiceItem(name=i.name, quantity=i.quantity, unit=i.unit, unit_price=i.unit_price, vat_rate=i.vat_rate,
-                    purchase_price=i.purchase_price)
+        InvoiceItem(name=i.name, quantity=i.quantity, unit=i.unit, unit_price=i.unit_price, vat_rate=i.vat_rate)
         for i in src.items
     ]
     inv.company = src.company
@@ -635,7 +677,8 @@ def car_delete(car_id: int, request: Request, db: Session = Depends(get_db)):
 # --- ustawienia firmy -----------------------------------------------------
 
 COMPANY_FIELDS = ["short_name", "name", "nip", "street", "postal_code", "city", "bank_name", "bank_account",
-                  "email", "phone", "issue_place", "pattern_vat"]
+                  "email", "phone", "issue_place", "pattern_vat", "pattern_proforma", "pattern_advance",
+                  "pattern_correction"]
 
 
 @app.get("/ustawienia", response_class=HTMLResponse)
@@ -648,12 +691,13 @@ async def settings_save(request: Request, db: Session = Depends(get_db)):
     company = current_company(request, db)
     form = await request.form()
     for f in COMPANY_FIELDS:
-        setattr(company, f, (form.get(f) or "").strip())
+        if f in form:
+            setattr(company, f, (form.get(f) or "").strip())
     company.nip = company.nip.replace("-", "").replace(" ", "")
     company.numbering_reset = "year" if form.get("numbering_reset") == "year" else "month"
     days = form.get("default_payment_days") or "7"
     company.default_payment_days = int(days) if days.isdigit() else 7
-    for p in (company.pattern_vat,):
+    for p in (company.pattern_vat, company.pattern_correction, company.pattern_advance, company.pattern_proforma):
         if "{nr}" not in p:
             db.rollback()
             return render(request, db, "settings.html", error="Wzór numeru musi zawierać {nr}.")

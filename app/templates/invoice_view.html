@@ -2,34 +2,63 @@
 {% block title %}{{ inv.display_number }}{% endblock %}
 {% block content %}
 <div class="row"><h1>{{ inv.kind_label }} {{ inv.display_number }}</h1>
-{% if inv.status == 'draft' %}<span class="badge warn">szkic</span>{% elif inv.to_pay <= 0 %}<span class="badge ok">zapłacona</span>{% else %}<span class="badge">do zapłaty {{ inv.to_pay|money }} zł</span>{% endif %}
+{% if inv.status == 'draft' %}<span class="badge warn">szkic</span>
+{% elif inv.kind == 'proforma' %}<span class="badge">proforma</span>
+{% elif inv.to_pay < 0 %}<span class="badge">do zwrotu {{ (-inv.to_pay)|money }} zł</span>
+{% elif inv.to_pay <= 0 %}<span class="badge ok">rozliczona</span>
+{% else %}<span class="badge">do zapłaty {{ inv.to_pay|money }} zł</span>{% endif %}
 </div>
 <div class="row" style="margin-bottom:16px">
   <a class="btn" href="/faktury/{{ inv.id }}/pdf" target="_blank">PDF</a>
   <a class="btn" href="/faktury/{{ inv.id }}/pdf?pobierz=1">Pobierz PDF</a>
   {% if inv.status == 'draft' %}
   <a class="btn" href="/faktury/{{ inv.id }}/edytuj">Edytuj</a>
-  <form method="post" action="/faktury/{{ inv.id }}/wystaw"><button class="btn primary">Wystaw fakturę</button></form>
+  <form method="post" action="/faktury/{{ inv.id }}/wystaw"><button class="btn primary">Wystaw</button></form>
   <form method="post" action="/faktury/{{ inv.id }}/usun" onsubmit="return confirm('Usunąć szkic?')"><button class="btn danger">Usuń szkic</button></form>
   {% else %}
-  {% if inv.to_pay > 0 %}<form method="post" action="/faktury/{{ inv.id }}/zaplacona"><button class="btn">Oznacz jako zapłaconą</button></form>{% endif %}
+  {% if inv.to_pay > 0 and inv.kind != 'proforma' %}<form method="post" action="/faktury/{{ inv.id }}/zaplacona"><button class="btn">Oznacz jako zapłaconą</button></form>{% endif %}
+  {% if inv.kind in ('vat', 'final') %}<form method="post" action="/faktury/{{ inv.id }}/korekta"><button class="btn">Wystaw korektę</button></form>{% endif %}
+  {% if inv.kind == 'proforma' %}<form method="post" action="/faktury/{{ inv.id }}/z-proformy"><button class="btn primary">Wystaw fakturę VAT</button></form>{% endif %}
+  {% if inv.kind == 'advance' and not inv.settled_by_id %}<form method="post" action="/faktury/{{ inv.id }}/koncowa"><button class="btn primary">Wystaw fakturę końcową</button></form>{% endif %}
   {% endif %}
-  <form method="post" action="/faktury/{{ inv.id }}/kopiuj"><button class="btn">Kopiuj jako nową</button></form>
+  {% if inv.kind in NEW_KINDS %}<form method="post" action="/faktury/{{ inv.id }}/kopiuj"><button class="btn">Kopiuj jako nową</button></form>{% endif %}
 </div>
 <div class="grid">
   <div class="card"><div class="muted">Nabywca</div><b>{{ inv.buyer_name }}</b>{% if inv.buyer_nip %}<br>NIP {{ inv.buyer_nip }}{% endif %}<br><span style="white-space:pre-line">{{ inv.buyer_address }}</span></div>
   <div class="card">Wystawiona {{ inv.issue_date|date }}, sprzedaż {{ inv.sale_date|date }}<br>{{ inv.payment_label }}{% if inv.due_date %}, termin {{ inv.due_date|date }}{% endif %}
-  {% if inv.car %}<br>Auto: <a href="/auta/{{ inv.car.id }}">{{ inv.car.label }}</a>{% endif %}</div>
+  {% if inv.car %}<br>Auto: <a href="/auta/{{ inv.car.id }}">{{ inv.car.label }}</a>{% endif %}
+  {% if inv.related %}<br>{{ 'Korygowana faktura' if inv.kind == 'correction' else 'Na podstawie' }}: <a href="/faktury/{{ inv.related.id }}">{{ inv.related.kind_label }} {{ inv.related.display_number }}</a>{% endif %}
+  {% if inv.kind == 'advance' %}<br>Zamówienie: {{ inv.order_total|money }} zł, zaliczka: {{ inv.advance_gross|money }} zł
+    {% if inv.settled_by %}<br>Rozliczona w: <a href="/faktury/{{ inv.settled_by.id }}">{{ inv.settled_by.display_number }}</a>{% endif %}{% endif %}
+  {% for d in derived %}<br>{{ d.kind_label }}: <a href="/faktury/{{ d.id }}">{{ d.display_number }}</a>{% endfor %}
+  </div>
 </div>
+{% if inv.kind == 'correction' %}<div class="card"><div class="muted">Przyczyna korekty</div>{{ inv.correction_reason or '—' }}</div>{% endif %}
+
+{% macro rows(items, title) %}
 <div class="card tbl"><table>
-<tr><th>Nazwa</th><th class="n">Ilość</th><th class="n">Cena</th>
-<th class="n">VAT</th><th class="n">Netto</th><th class="n">VAT zł</th><th class="n">Brutto</th></tr>
-{% for it in inv.items %}
+<tr><th>{{ title }}</th><th class="n">Ilość</th><th class="n">Cena</th><th class="n">VAT</th><th class="n">Netto</th><th class="n">VAT zł</th><th class="n">Brutto</th></tr>
+{% for it in items %}
 <tr><td>{{ it.name }}</td><td class="n">{{ it.quantity|qty }} {{ it.unit }}</td><td class="n">{{ it.unit_price|money }}</td>
 <td class="n">{{ it.vat_rate }}{{ '%' if it.vat_rate.isdigit() }}</td><td class="n">{{ it.net|money }}</td><td class="n">{{ it.vat|money }}</td>
 <td class="n">{{ it.gross|money }}</td></tr>
 {% endfor %}
-<tr><td colspan="{{ 6 }}"><b>Razem</b></td><td class="n"><b>{{ inv.total_gross|money }}</b></td></tr>
+</table></div>
+{% endmacro %}
+{% if inv.kind == 'correction' %}
+{{ rows(inv.before_items, 'Przed korektą') }}
+{{ rows(inv.after_items, 'Po korekcie') }}
+{% else %}
+{{ rows(inv.after_items, 'Zamówienie' if inv.kind in ('advance', 'final') else 'Nazwa') }}
+{% endif %}
+{% if inv.kind == 'final' and inv.advances %}
+<div class="card"><div class="muted">Odliczone zaliczki</div>
+{% for a in inv.advances %}<div><a href="/faktury/{{ a.id }}">{{ a.display_number }}</a> z {{ a.issue_date|date }}: {{ a.total_gross|money }} zł</div>{% endfor %}</div>
+{% endif %}
+<div class="card tbl"><table>
+<tr><th>{{ 'Różnica wg stawek' if inv.kind == 'correction' else ('Zaliczka wg stawek' if inv.kind == 'advance' else ('Do zapłaty wg stawek' if inv.kind == 'final' else 'Wg stawek')) }}</th><th class="n">Netto</th><th class="n">VAT</th><th class="n">Brutto</th></tr>
+{% for s in summary %}<tr><td>{{ s.rate }}{{ '%' if s.rate.isdigit() }}</td><td class="n">{{ s.net|money }}</td><td class="n">{{ s.vat|money }}</td><td class="n">{{ s.gross|money }}</td></tr>{% endfor %}
+<tr><td><b>Razem</b></td><td class="n">{{ inv.total_net|money }}</td><td class="n">{{ inv.total_vat|money }}</td><td class="n"><b>{{ inv.total_gross|money }}</b></td></tr>
 </table></div>
 {% if inv.notes %}<div class="card"><div class="muted">Uwagi</div><span style="white-space:pre-line">{{ inv.notes }}</span></div>{% endif %}
 {% endblock %}

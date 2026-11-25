@@ -8,6 +8,8 @@ RUN apt-get update \
 WORKDIR /srv
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+COPY alembic.ini ./
+COPY migrations ./migrations
 COPY app ./app
 
 RUN useradd --system --uid 10001 crm

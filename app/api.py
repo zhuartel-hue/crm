@@ -93,6 +93,34 @@ async def invoice_draft(request: Request, p: Principal = Depends(principal), db:
     return {"invoice": svc.invoice_dict(inv, base_url(request))}
 
 
+async def _json(request: Request) -> dict:
+    return (await request.json()) if await request.body() else {}
+
+
+@router.post("/invoices/{invoice_id}/correction", status_code=201)
+async def invoice_correction(invoice_id: int, request: Request, p: Principal = Depends(principal),
+                             db: Session = Depends(get_db)):
+    need(p, "write")
+    data = await _json(request)
+    inv = run(lambda: svc.start_correction(db, p.actor, invoice_id, data.get("reason", ""), data.get("items")))
+    return {"invoice": svc.invoice_dict(inv, base_url(request))}
+
+
+@router.post("/invoices/{invoice_id}/from-proforma", status_code=201)
+def invoice_from_proforma(invoice_id: int, request: Request, p: Principal = Depends(principal),
+                          db: Session = Depends(get_db)):
+    need(p, "write")
+    return {"invoice": svc.invoice_dict(run(lambda: svc.start_from_proforma(db, p.actor, invoice_id)),
+                                        base_url(request))}
+
+
+@router.post("/invoices/{invoice_id}/final", status_code=201)
+def invoice_final(invoice_id: int, request: Request, p: Principal = Depends(principal),
+                  db: Session = Depends(get_db)):
+    need(p, "write")
+    return {"invoice": svc.invoice_dict(run(lambda: svc.start_final(db, p.actor, invoice_id)), base_url(request))}
+
+
 @router.post("/invoices/{invoice_id}/issue")
 def invoice_issue(invoice_id: int, request: Request, p: Principal = Depends(principal), db: Session = Depends(get_db)):
     need(p, "issue")

@@ -2,6 +2,7 @@
 import base64
 import hashlib
 from urllib.parse import parse_qs, urlparse
+import pytest
 
 REDIRECT = "https://claude.ai/api/mcp/auth_callback"
 
@@ -170,3 +171,34 @@ def test_login_returns_to_authorize():
         assert r.headers["location"] == "/login"
         r = anon.post("/login", data={"login": "admin", "password": "test-haslo"}, follow_redirects=False)
         assert r.headers["location"].startswith("/oauth/authorize?")
+
+
+def test_kinds_via_mcp(client):
+    _, tok = connect(client, scopes=("read", "write", "issue"))
+    at = tok["access_token"]
+    sc = lambda r: (r.get("isError") and pytest.fail(r["content"][0]["text"])) or r["structuredContent"]
+    buyer = {"name": "Firma Test", "nip": "5260250995", "address": "ul. A 1\n00-001 Warszawa"}
+    item = {"name": "Usługa", "unit_price": "1230.00"}
+
+    pro = sc(call(client, at, "create_invoice_draft", company="Margot", kind="proforma", buyer=buyer, items=[item]))
+    pro = sc(call(client, at, "issue_invoice", invoice_id=pro["invoice"]["id"]))["invoice"]
+    assert pro["number"].startswith("PRO/")
+    vat = sc(call(client, at, "create_invoice_from_proforma", proforma_id=pro["id"]))["invoice"]
+    assert vat["kind"] == "vat" and vat["total_gross"] == "1230.00"
+    vat = sc(call(client, at, "issue_invoice", invoice_id=vat["id"]))["invoice"]
+
+    no_reason = call(client, at, "create_correction_draft", invoice_id=vat["id"], reason="")
+    assert no_reason["isError"] is False  # szkic bez powodu wolno zapisać, ale nie wystawić
+    bad = call(client, at, "issue_invoice", invoice_id=no_reason["structuredContent"]["invoice"]["id"])
+    assert bad["isError"]
+    kor = sc(call(client, at, "create_correction_draft", invoice_id=vat["id"], reason="Rabat",
+                  items=[{"name": "Usługa", "unit_price": "615.00"}]))["invoice"]
+    assert kor["kind"] == "correction" and kor["total_gross"] == "-615.00"
+
+    adv = sc(call(client, at, "create_invoice_draft", company="Margot", kind="advance", advance_gross="1000",
+                  buyer=buyer, items=[{"name": "Auto", "unit_price": "12300.00"}]))["invoice"]
+    adv = sc(call(client, at, "issue_invoice", invoice_id=adv["id"]))["invoice"]
+    fin = sc(call(client, at, "create_final_invoice_draft", advance_id=adv["id"]))["invoice"]
+    assert fin["kind"] == "final" and fin["total_gross"] == "11300.00"
+    listed = sc(call(client, at, "list_invoices", company="Margot", kind="advance"))["invoices"]
+    assert [i["id"] for i in listed] == [adv["id"]]

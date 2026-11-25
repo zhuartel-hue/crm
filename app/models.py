@@ -33,6 +33,9 @@ class Company(Base):
     pattern_vat: Mapped[str] = mapped_column(String(60), default="FV/{nr}/{MM}/{RRRR}")
     # Nieuzywane (faktura marza usunieta 2026-11-25); kolumna zostaje w bazie.
     pattern_margin: Mapped[str] = mapped_column(String(60), default="FM/{nr}/{MM}/{RRRR}")
+    pattern_proforma: Mapped[str] = mapped_column(String(60), default="PRO/{nr}/{MM}/{RRRR}")
+    pattern_correction: Mapped[str] = mapped_column(String(60), default="FK/{nr}/{MM}/{RRRR}")
+    pattern_advance: Mapped[str] = mapped_column(String(60), default="FZ/{nr}/{MM}/{RRRR}")
     # "month" - numeracja od 1 co miesiac, "year" - co rok.
     numbering_reset: Mapped[str] = mapped_column(String(10), default="month")
     default_payment_days: Mapped[int] = mapped_column(Integer, default=7)
@@ -103,7 +106,17 @@ class Car(Base):
         return CAR_STATUSES.get(self.status, self.status)
 
 
-INVOICE_KINDS = {"vat": "Faktura VAT"}
+INVOICE_KINDS = {
+    "vat": "Faktura VAT",
+    "proforma": "Faktura proforma",
+    "advance": "Faktura zaliczkowa",
+    "final": "Faktura końcowa",
+    "correction": "Faktura korygująca",
+}
+# Rodzaje, ktore mozna zalozyc od zera (korekte robi sie z wystawionej faktury, koncowa z zaliczkowej).
+NEW_KINDS = ("vat", "proforma", "advance")
+# Serie numeracji: faktura koncowa idzie w serii zwyklych faktur VAT.
+NUMBER_SERIES = {"vat": "vat", "final": "vat", "proforma": "proforma", "advance": "advance", "correction": "correction"}
 VAT_RATES = ["23", "8", "5", "0", "zw", "np"]
 PAYMENT_METHODS = {"transfer": "Przelew", "cash": "Gotówka", "card": "Karta", "compensation": "Kompensata"}
 
@@ -114,7 +127,7 @@ class Invoice(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"))
-    kind: Mapped[str] = mapped_column(String(10))  # vat
+    kind: Mapped[str] = mapped_column(String(10))  # INVOICE_KINDS
     status: Mapped[str] = mapped_column(String(10), default="draft")  # draft / issued
     number: Mapped[str | None] = mapped_column(String(60), nullable=True)
     seq: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -135,6 +148,15 @@ class Invoice(Base):
     car_id: Mapped[int | None] = mapped_column(ForeignKey("cars.id"), nullable=True)
     notes: Mapped[str] = mapped_column(Text, default="")
 
+    # Korekta: faktura korygowana. Faktura VAT z proformy: ta proforma.
+    related_id: Mapped[int | None] = mapped_column(ForeignKey("invoices.id"), nullable=True)
+    correction_reason: Mapped[str] = mapped_column(Text, default="")
+    # Zaliczkowa: otrzymana zaliczka brutto (wpisywana) i wartosc calego zamowienia brutto (z pozycji).
+    advance_gross: Mapped[Decimal | None] = mapped_column(Money, nullable=True)
+    order_total: Mapped[Decimal | None] = mapped_column(Money, nullable=True)
+    # Zaliczkowa: faktura koncowa, ktora ja rozlicza.
+    settled_by_id: Mapped[int | None] = mapped_column(ForeignKey("invoices.id"), nullable=True)
+
     total_net: Mapped[Decimal] = mapped_column(Money, default=Decimal("0"))
     total_vat: Mapped[Decimal] = mapped_column(Money, default=Decimal("0"))
     total_gross: Mapped[Decimal] = mapped_column(Money, default=Decimal("0"))
@@ -149,6 +171,23 @@ class Invoice(Base):
     items: Mapped[list[InvoiceItem]] = relationship(
         back_populates="invoice", cascade="all, delete-orphan", order_by="InvoiceItem.position"
     )
+    related: Mapped[Invoice | None] = relationship(remote_side="Invoice.id", foreign_keys=[related_id])
+    settled_by: Mapped[Invoice | None] = relationship(
+        remote_side="Invoice.id", foreign_keys=[settled_by_id], back_populates="advances"
+    )
+    advances: Mapped[list[Invoice]] = relationship(
+        foreign_keys=[settled_by_id], back_populates="settled_by", order_by="Invoice.issue_date"
+    )
+
+    @property
+    def before_items(self) -> list[InvoiceItem]:
+        """Korekta: pozycje przed korekta (stan z faktury korygowanej)."""
+        return [i for i in self.items if i.is_before]
+
+    @property
+    def after_items(self) -> list[InvoiceItem]:
+        """Pozycje faktury; w korekcie stan po korekcie."""
+        return [i for i in self.items if not i.is_before]
 
     @property
     def kind_label(self) -> str:
@@ -157,6 +196,11 @@ class Invoice(Base):
     @property
     def payment_label(self) -> str:
         return PAYMENT_METHODS.get(self.payment_method, self.payment_method)
+
+    @property
+    def is_accounting(self) -> bool:
+        """Proforma nie jest faktura w rozumieniu VAT (nie liczy sie do sprzedazy, nie idzie do KSeF)."""
+        return self.kind != "proforma"
 
     @property
     def to_pay(self) -> Decimal:
@@ -184,6 +228,8 @@ class InvoiceItem(Base):
     # Nieuzywane (dawna faktura marza); kolumny zostaja w bazie.
     purchase_price: Mapped[Decimal | None] = mapped_column(Money, nullable=True)
     margin: Mapped[Decimal | None] = mapped_column(Money, nullable=True)
+    # Korekta: True dla pozycji "przed korekta" (kopia z faktury korygowanej).
+    is_before: Mapped[bool] = mapped_column(default=False)
 
     invoice: Mapped[Invoice] = relationship(back_populates="items")
 

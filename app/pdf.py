@@ -16,7 +16,7 @@ _env.filters["date"] = lambda d: d.strftime("%d.%m.%Y") if d else ""
 
 
 def render_invoice_html(invoice) -> str:
-    return _env.get_template("invoice_pdf.html").render(inv=invoice, summary=calc.vat_summary(invoice.items))
+    return _env.get_template("invoice_pdf.html").render(inv=invoice, summary=calc.invoice_summary(invoice))
 
 
 def render_invoice(invoice) -> bytes:

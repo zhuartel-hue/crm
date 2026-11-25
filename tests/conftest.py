@@ -17,9 +17,17 @@ def client():
     from app.db import Base, engine
     from app.main import app
 
-    Base.metadata.drop_all(engine)
+    _reset(engine, Base)
     with TestClient(app) as c:
         r = c.post("/login", data={"login": "admin", "password": "test-haslo"})
         assert r.status_code in (200, 303)
         yield c
+    _reset(engine, Base)
+
+
+def _reset(engine, Base):
+    from sqlalchemy import text
+
     Base.metadata.drop_all(engine)
+    with engine.begin() as conn:
+        conn.execute(text("DROP TABLE IF EXISTS alembic_version"))

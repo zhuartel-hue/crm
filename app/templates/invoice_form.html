@@ -4,6 +4,29 @@
 <h1>{{ inv.kind_label }}{% if inv.id %} · {{ inv.display_number }}{% else %} · nowa{% endif %}</h1>
 <form method="post" id="invoice-form">
 <input type="hidden" name="kind" value="{{ inv.kind }}">
+{% if inv.kind == 'correction' %}
+<div class="card">
+  <h2 style="margin-top:0">Korekta faktury {{ inv.related.display_number if inv.related }}</h2>
+  <p class="muted">Z dnia {{ inv.related.issue_date|date if inv.related }}. Poniżej stan przed korektą; zmień pozycje „po korekcie” (ilość 0 albo „Usuń” usuwa pozycję).</p>
+  <div class="tbl"><table>
+  <tr><th>Przed korektą</th><th class="n">Ilość</th><th class="n">Cena</th><th class="n">VAT</th><th class="n">Brutto</th></tr>
+  {% for it in inv.before_items %}<tr><td>{{ it.name }}</td><td class="n">{{ it.quantity|qty }} {{ it.unit }}</td><td class="n">{{ it.unit_price|money }}</td><td class="n">{{ it.vat_rate }}{{ '%' if it.vat_rate.isdigit() }}</td><td class="n">{{ it.gross|money }}</td></tr>{% endfor %}
+  </table></div>
+  <p><label>Przyczyna korekty (drukowana na fakturze)</label><textarea name="correction_reason" required placeholder="np. rabat udzielony po sprzedaży, zwrot towaru, błędna cena">{{ inv.correction_reason }}</textarea></p>
+</div>
+{% elif inv.kind == 'advance' %}
+<div class="card">
+  <h2 style="margin-top:0">Zaliczka</h2>
+  <p class="muted">Poniżej w pozycjach wpisz całe zamówienie. Tutaj kwotę zaliczki, którą otrzymałeś. VAT liczy się od zaliczki.</p>
+  <div class="grid"><div><label>Otrzymana zaliczka brutto</label><input name="advance_gross" inputmode="decimal" value="{{ inv.advance_gross|money if inv.advance_gross else '' }}" required></div></div>
+</div>
+{% elif inv.kind == 'final' %}
+<div class="card">
+  <h2 style="margin-top:0">Rozliczane zaliczki</h2>
+  {% for a in inv.advances %}<div>{{ a.display_number }} z {{ a.issue_date|date }}: {{ a.total_gross|money }} zł</div>{% endfor %}
+  <p class="muted" style="margin-bottom:0">Pozycje to całe zamówienie. Do zapłaty zostaje zamówienie minus zaliczki.</p>
+</div>
+{% endif %}
 <div class="card grid">
   <div><label>Data wystawienia</label><input type="date" name="issue_date" value="{{ inv.issue_date }}" required></div>
   <div><label>Data sprzedaży</label><input type="date" name="sale_date" value="{{ inv.sale_date }}" required></div>
@@ -28,7 +51,7 @@
 </div>
 
 <div class="card">
-  <div class="row"><h2 style="margin:0">Pozycje</h2><span class="spacer"></span>
+  <div class="row"><h2 style="margin:0">{{ 'Po korekcie' if inv.kind == 'correction' else ('Zamówienie' if inv.kind in ('advance', 'final') else 'Pozycje') }}</h2><span class="spacer"></span>
   <label style="margin:0"><input type="checkbox" name="prices_gross" value="1" id="prices_gross" {{ 'checked' if inv.prices_gross }}> ceny brutto</label>
   </div>
   <div class="grid" style="margin:10px 0">
@@ -38,7 +61,7 @@
     </select></div>
   </div>
   <div class="items" id="items">
-    {% for it in (inv.items or [None]) %}
+    {% for it in (inv.after_items or [None]) %}
     <div class="item">
       <div class="name"><label>Nazwa</label><input name="item_name" value="{{ it.name if it else '' }}"></div>
       <div><label>Ilość</label><input name="item_qty" inputmode="decimal" value="{{ it.quantity|qty if it else '1' }}"></div>
@@ -58,7 +81,7 @@
 
 <div class="row">
   <button class="btn" name="action" value="draft">Zapisz szkic</button>
-  <button class="btn primary" name="action" value="issue">Wystaw fakturę</button>
+  <button class="btn primary" name="action" value="issue">Wystaw {{ 'proformę' if inv.kind == 'proforma' else ('korektę' if inv.kind == 'correction' else 'fakturę') }}</button>
   <a class="btn" href="{{ '/faktury/%d' % inv.id if inv.id else '/faktury' }}">Anuluj</a>
 </div>
 </form>

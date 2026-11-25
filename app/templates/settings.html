@@ -20,7 +20,10 @@
 <h2>Numeracja</h2>
 <p class="muted">{nr} – kolejny numer, {MM} – miesiąc, {RRRR} – rok.</p>
 <div class="grid">
-  <div><label>Wzór numeru faktury</label><input name="pattern_vat" value="{{ company.pattern_vat }}"></div>
+  <div><label>Faktura VAT i końcowa</label><input name="pattern_vat" value="{{ company.pattern_vat }}"></div>
+  <div><label>Faktura korygująca</label><input name="pattern_correction" value="{{ company.pattern_correction }}"></div>
+  <div><label>Faktura zaliczkowa</label><input name="pattern_advance" value="{{ company.pattern_advance }}"></div>
+  <div><label>Proforma</label><input name="pattern_proforma" value="{{ company.pattern_proforma }}"></div>
   <div><label>Numeracja od 1</label><select name="numbering_reset">
     <option value="month" {{ 'selected' if company.numbering_reset == 'month' }}>co miesiąc</option>
     <option value="year" {{ 'selected' if company.numbering_reset == 'year' }}>co rok</option></select></div>

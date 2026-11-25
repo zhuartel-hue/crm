@@ -2,12 +2,16 @@
 {% block title %}Faktury{% endblock %}
 {% block content %}
 <div class="row"><h1>Faktury</h1><span class="spacer"></span>
-<a class="btn primary" href="/faktury/nowa">+ Faktura</a></div>
+<a class="btn primary" href="/faktury/nowa">+ Faktura VAT</a>
+<a class="btn" href="/faktury/nowa?rodzaj=proforma">+ Proforma</a>
+<a class="btn" href="/faktury/nowa?rodzaj=advance">+ Zaliczkowa</a></div>
 <form class="card row" method="get">
   <div style="flex:2;min-width:160px"><label>Szukaj</label><input name="q" value="{{ q }}" placeholder="numer, nabywca, NIP"></div>
   <div style="flex:1;min-width:120px"><label>Miesiąc</label><input type="month" name="miesiac" value="{{ miesiac }}"></div>
+  <div style="flex:1;min-width:120px"><label>Rodzaj</label><select name="rodzaj"><option value="">wszystkie</option>
+    {% for k, v in INVOICE_KINDS.items() %}<option value="{{ k }}" {{ 'selected' if rodzaj == k }}>{{ v }}</option>{% endfor %}</select></div>
   <div><label>&nbsp;</label><button class="btn">Pokaż</button></div>
 </form>
 {% include "_invoice_rows.html" %}
-<p class="muted">Razem wystawione brutto: <b>{{ total|money }} zł</b></p>
+<p class="muted">Razem wystawione brutto (bez proform): <b>{{ total|money }} zł</b></p>
 {% endblock %}

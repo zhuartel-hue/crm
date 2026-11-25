@@ -15,6 +15,12 @@ biała lista VAT, wysyłka mailem, przeniesienie danych z Firmao.
 - **Auta na placu**: marka, model, VIN, rocznik, przebieg, nr rej., cena nabycia,
   cena sprzedaży. „Sprzedaj” wypełnia fakturę VAT danymi auta, a po wystawieniu
   auto dostaje status „Sprzedany”.
+- **Rodzaje faktur**: VAT, proforma (bez skutków podatkowych, nie liczy się do sprzedaży),
+  zaliczkowa (całe zamówienie + otrzymana zaliczka, VAT zaliczki proporcjonalnie do stawek),
+  końcowa (zamówienie minus wszystkie nierozliczone zaliczki nabywcy), korygująca
+  (pozycje przed i po, różnica wg stawek, przyczyna korekty). Z proformy jednym kliknięciem
+  powstaje faktura VAT, z zaliczkowej końcowa, z VAT/końcowej korekta. Osobne serie:
+  `FV` (VAT i końcowe), `PRO`, `FZ`, `FK`; wzory w Ustawieniach.
 - **Numeracja** bez dziur, osobno dla każdej firmy, od 1 co miesiąc
   albo co rok; wzór do ustawienia (domyślnie `FV/{nr}/{MM}/{RRRR}`).
 - **Szkic → wystawienie**: numer nadaje się przy wystawieniu. Wystawionej faktury
@@ -43,7 +49,11 @@ zalogowanie do programu i zaznaczenie uprawnień. Instrukcja jest też w program
 - **Cofnięcie dostępu**: zakładka **Claude → Aktywne połączenia → Cofnij**.
 - **Dziennik**: każda zmiana z programu, API i Claude (kto, co, kiedy), zakładka **Dziennik**.
 - **REST API** `/api/v1/...` (te same operacje, nagłówek `Authorization: Bearer <klucz>`);
-  klucz tworzy się w zakładce **Claude**.
+  klucz tworzy się w zakładce **Claude**. Korekta / VAT z proformy / końcowa:
+  `POST /api/v1/invoices/{id}/correction` (`reason`, opcjonalnie `items` po korekcie),
+  `/from-proforma`, `/final`. Te same operacje w MCP: `create_correction_draft`,
+  `create_invoice_from_proforma`, `create_final_invoice_draft`; `create_invoice_draft`
+  przyjmuje `kind` (`vat`, `proforma`, `advance` + `advance_gross`).
 
 ## Uruchomienie u siebie
 
@@ -94,7 +104,8 @@ KSeF: podpisy XAdES, certyfikaty i XML (FA(3)) mają tu dojrzałe biblioteki.
 ## Dalsze etapy
 
 1. (Etap 2, gotowe) Konektor dla Claude: MCP + OAuth + REST API + dziennik.
-1. Korekty, proformy, zaliczki; migracje bazy (Alembic) przed pierwszymi prawdziwymi danymi.
+1. (Gotowe) Korekty, proformy, zaliczki; migracje bazy (Alembic, `migrations/`, uruchamiane
+   automatycznie przy starcie; stara baza bez `alembic_version` dostaje stempel `0001`).
 2. KSeF 2.0: logowanie certyfikatem KSeF (bez tokenu), wysyłka FA(3), numer KSeF
    i UPO przy fakturze, kod QR na PDF, tryb offline, pobieranie faktur zakupowych.
    Najpierw środowisko testowe MF.
