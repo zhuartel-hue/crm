@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
+from . import products as prod
 from . import services as svc
 from .auth import Principal, authenticate, base_url, unauthorized
 from .db import get_db
@@ -68,6 +69,14 @@ async def car_create(request: Request, p: Principal = Depends(principal), db: Se
     need(p, "write")
     data = await request.json()
     return {"car": run(lambda: svc.create_car(db, p.actor, data))}
+
+
+@router.get("/products")
+def products(request: Request, q: str = "", include_inactive: bool = False, limit: int = 50,
+             p: Principal = Depends(principal), db: Session = Depends(get_db)):
+    need(p, "read")
+    rows = prod.search(db, q, active_only=not include_inactive, limit=limit)
+    return {"products": [prod.product_dict(x, base_url(request)) for x in rows]}
 
 
 @router.get("/invoices")

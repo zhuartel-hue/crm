@@ -63,7 +63,7 @@
   <div class="items" id="items">
     {% for it in (inv.after_items or [None]) %}
     <div class="item">
-      <div class="name"><label>Nazwa</label><input name="item_name" value="{{ it.name if it else '' }}"></div>
+      <div class="name"><label>Nazwa{% if products %} (wpisz kod lub nazwę produktu){% endif %}</label><input name="item_name" list="product-list" autocomplete="off" value="{{ it.name if it else '' }}"><input type="hidden" name="item_product" value="{{ (it.product_id or '') if it else '' }}"></div>
       <div><label>Ilość</label><input name="item_qty" inputmode="decimal" value="{{ it.quantity|qty if it else '1' }}"></div>
       <div><label>Jm.</label><input name="item_unit" value="{{ it.unit if it else 'szt.' }}"></div>
       <div><label class="price-label">{{ 'Cena brutto' if inv.prices_gross else 'Cena netto' }}</label><input name="item_price" inputmode="decimal" value="{{ it.unit_price|money if it else '' }}"></div>
@@ -73,6 +73,7 @@
     </div>
     {% endfor %}
   </div>
+  <datalist id="product-list">{% for pr in products %}<option value="{{ pr.label }}">{% if pr.price_gross is not none %}{{ pr.price_gross|money }} zł brutto{% endif %}</option>{% endfor %}</datalist>
   <button type="button" class="btn small" id="add">+ Pozycja</button>
   <p id="totals" style="margin-bottom:0"></p>
 </div>
@@ -89,6 +90,7 @@
 {% block scripts %}
 <script>
 const CONTRACTORS = {{ contractors_json|safe }};
+const PRODUCTS = {{ products_json|safe }};
 </script>
 <script src="/static/invoice.js"></script>
 {% endblock %}

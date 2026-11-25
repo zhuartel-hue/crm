@@ -21,6 +21,12 @@ biała lista VAT, wysyłka mailem, przeniesienie danych z Firmao.
   (pozycje przed i po, różnica wg stawek, przyczyna korekty). Z proformy jednym kliknięciem
   powstaje faktura VAT, z zaliczkowej końcowa, z VAT/końcowej korekta. Osobne serie:
   `FV` (VAT i końcowe), `PRO`, `FZ`, `FK`; wzory w Ustawieniach.
+- **Produkty**: katalog wspólny dla obu firm (kod, nazwa, jm., cena netto/brutto, VAT, EAN,
+  opis, zdjęcia). Zdjęcia są w bazie (JPEG max 1600 px + miniatura), więc trafiają do nocnej
+  kopii. Na fakturze wpisz kod albo nazwę i wybierz produkt z listy. Claude: `search_products`,
+  a w `create_invoice_draft` pozycja może mieć `product_id`; REST: `GET /api/v1/products`.
+- **Konto**: zmiana hasła w aplikacji (skrót scrypt w bazie; od tej chwili hasło z `.env`
+  przestaje działać).
 - **Numeracja** bez dziur, osobno dla każdej firmy, od 1 co miesiąc
   albo co rok; wzór do ustawienia (domyślnie `FV/{nr}/{MM}/{RRRR}`).
 - **Szkic → wystawienie**: numer nadaje się przy wystawieniu. Wystawionej faktury

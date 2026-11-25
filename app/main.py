@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import datetime as dt
-import hmac
 import json
 from contextlib import asynccontextmanager
 from decimal import Decimal
@@ -12,11 +11,12 @@ from fastapi import Depends, FastAPI, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import api, auth, calc, config, mcp_server, migrate, numbering, pdf
+from . import api, auth, calc, config, mcp_server, migrate, numbering, password, pdf
+from . import products as prod
 from . import services
 from .services import ServiceError, audit, car_item_name
 from .db import SessionLocal, get_db
@@ -34,6 +34,8 @@ from .models import (
     Contractor,
     Invoice,
     InvoiceItem,
+    Product,
+    ProductPhoto,
 )
 from .seed import seed
 
@@ -129,13 +131,35 @@ def login_form(request: Request):
 
 
 @app.post("/login")
-def login(request: Request, login: str = Form(...), password: str = Form(...)):
-    ok = hmac.compare_digest(login, config.ADMIN_LOGIN) and hmac.compare_digest(password, config.ADMIN_PASSWORD)
-    if not ok:
+def login(request: Request, login: str = Form(...), password: str = Form(...), db: Session = Depends(get_db)):
+    if not password_check(db, login, password):
         return templates.TemplateResponse(request, "login.html", {"error": "Zły login lub hasło."}, status_code=401)
     nxt = request.session.pop("next", None)
     request.session["user"] = login
     return redirect(nxt if nxt and nxt.startswith("/") and not nxt.startswith("//") else "/")
+
+
+def password_check(db: Session, login: str, pw: str) -> bool:
+    return password.check_login(db, login, pw)
+
+
+@app.get("/konto", response_class=HTMLResponse)
+def account(request: Request, db: Session = Depends(get_db)):
+    return render(request, db, "account.html")
+
+
+@app.post("/konto/haslo")
+def account_password(request: Request, old: str = Form(""), new: str = Form(""), repeat: str = Form(""),
+                     db: Session = Depends(get_db)):
+    user = request.session.get("user", "")
+    try:
+        password.change(db, user, old, new, repeat)
+    except ValueError as e:
+        return render(request, db, "account.html", error=str(e))
+    audit(db, web_actor(request), "account.password", "Zmieniono hasło logowania")
+    db.commit()
+    flash(request, "Hasło zmienione. Od teraz loguj się nowym hasłem.")
+    return redirect("/konto")
 
 
 @app.post("/logout")
@@ -222,7 +246,10 @@ def _form_context(db: Session, company: Company) -> dict:
         },
         ensure_ascii=False,
     )
-    return dict(contractors=contractors, cars=cars, contractors_json=contractors_json)
+    products = prod.search(db, active_only=True)
+    products_json = json.dumps(prod.picker_json(products), ensure_ascii=False)
+    return dict(contractors=contractors, cars=cars, contractors_json=contractors_json,
+                products=products, products_json=products_json)
 
 
 @app.get("/faktury/nowa", response_class=HTMLResponse)
@@ -314,6 +341,8 @@ def _apply_form(db: Session, inv: Invoice, form) -> None:
     units = form.getlist("item_unit")
     prices = form.getlist("item_price")
     rates = form.getlist("item_rate")
+    product_ids = form.getlist("item_product")
+    valid_products = set(db.scalars(select(Product.id)).all()) if any(product_ids) else set()
     # Pozycje "przed korekta" sa kopia faktury korygowanej i nie zmieniaja sie w formularzu.
     for it in [i for i in inv.items if not i.is_before]:
         inv.items.remove(it)
@@ -325,6 +354,8 @@ def _apply_form(db: Session, inv: Invoice, form) -> None:
         if price is None:
             raise ValueError(f"Brak ceny w pozycji „{name}”.")
         rate = rates[i] if i < len(rates) and rates[i] in VAT_RATES else "23"
+        pid = product_ids[i] if i < len(product_ids) else ""
+        pid = int(pid) if pid.isdigit() and int(pid) in valid_products else None
         inv.items.append(
             InvoiceItem(
                 name=name,
@@ -332,6 +363,7 @@ def _apply_form(db: Session, inv: Invoice, form) -> None:
                 unit=(units[i] if i < len(units) else "").strip() or "szt.",
                 unit_price=price,
                 vat_rate=rate,
+                product_id=pid,
             )
         )
     calc.recalculate(inv)
@@ -485,8 +517,9 @@ def invoice_copy(invoice_id: int, request: Request, db: Session = Depends(get_db
         paid=Decimal("0"),
     )
     inv.items = [
-        InvoiceItem(name=i.name, quantity=i.quantity, unit=i.unit, unit_price=i.unit_price, vat_rate=i.vat_rate)
-        for i in src.items
+        InvoiceItem(name=i.name, quantity=i.quantity, unit=i.unit, unit_price=i.unit_price, vat_rate=i.vat_rate,
+                    product_id=i.product_id)
+        for i in src.after_items
     ]
     inv.company = src.company
     calc.recalculate(inv)
@@ -672,6 +705,119 @@ def car_delete(car_id: int, request: Request, db: Session = Depends(get_db)):
     db.commit()
     flash(request, f"Usunięto auto {label}.")
     return redirect("/auta")
+
+
+# --- produkty -------------------------------------------------------------
+
+
+@app.get("/produkty", response_class=HTMLResponse)
+def product_list(request: Request, q: str = "", pokaz: str = "", db: Session = Depends(get_db)):
+    rows = prod.search(db, q, active_only=pokaz != "wszystkie")
+    return render(request, db, "products.html", products=rows, q=q, pokaz=pokaz)
+
+
+@app.get("/produkty/nowy", response_class=HTMLResponse)
+def product_new(request: Request, db: Session = Depends(get_db)):
+    return render(request, db, "product_form.html", product=Product(name="", code="", unit="szt.", vat_rate="23",
+                                                              ean="", description="", active=True))
+
+
+def _get_product(db: Session, pid: int) -> Product:
+    p = db.get(Product, pid)
+    if p is None:
+        raise HTTPException(404)
+    return p
+
+
+@app.get("/produkty/{pid}", response_class=HTMLResponse)
+def product_edit(pid: int, request: Request, db: Session = Depends(get_db)):
+    p = _get_product(db, pid)
+    used = db.scalar(select(func.count()).select_from(InvoiceItem).where(InvoiceItem.product_id == pid))
+    return render(request, db, "product_form.html", product=p, used=used)
+
+
+async def _save_product(request: Request, db: Session, p: Product):
+    form = await request.form()
+    is_new = p.id is None
+    try:
+        p.code = (form.get("code") or "").strip()
+        p.name = (form.get("name") or "").strip()
+        p.unit = (form.get("unit") or "").strip() or "szt."
+        p.vat_rate = form.get("vat_rate") or "23"
+        p.ean = (form.get("ean") or "").strip()
+        p.description = (form.get("description") or "").strip()
+        p.active = form.get("active") == "1"
+        net = calc.parse_decimal(form.get("price_net"), None)
+        gross = calc.parse_decimal(form.get("price_gross"), None)
+        if form.get("price_mode") == "gross" and gross is not None:
+            pct = Decimal(p.vat_rate) if p.vat_rate.isdigit() else Decimal("0")
+            net = (gross * 100 / (100 + pct)).quantize(Decimal("0.01"))
+        p.price_net = net
+        prod.validate(p)
+    except ValueError as e:
+        return render(request, db, "product_form.html", product=p, error=str(e))
+    files = [(f.filename or "", await f.read()) for f in form.getlist("photos") if getattr(f, "filename", None)]
+    errors = prod.add_photos(p, files)
+    db.add(p)
+    db.flush()
+    audit(db, web_actor(request), "product.create" if is_new else "product.update",
+          f"{'Dodano' if is_new else 'Zmieniono'} produkt {p.label}", entity="product", entity_id=p.id)
+    db.commit()
+    flash(request, f"Zapisano {p.label}." + (" " + " ".join(errors) if errors else ""))
+    return redirect(f"/produkty/{p.id}")
+
+
+@app.post("/produkty/nowy")
+async def product_create(request: Request, db: Session = Depends(get_db)):
+    return await _save_product(request, db, Product())
+
+
+@app.post("/produkty/{pid}")
+async def product_update(pid: int, request: Request, db: Session = Depends(get_db)):
+    return await _save_product(request, db, _get_product(db, pid))
+
+
+@app.post("/produkty/{pid}/usun")
+def product_delete(pid: int, request: Request, db: Session = Depends(get_db)):
+    p = _get_product(db, pid)
+    label = p.label
+    # Pozycje faktur zachowuja nazwe i cene; traca tylko powiazanie z katalogiem.
+    db.execute(update(InvoiceItem).where(InvoiceItem.product_id == pid).values(product_id=None))
+    audit(db, web_actor(request), "product.delete", f"Usunięto produkt {label}", entity="product")
+    db.delete(p)
+    db.commit()
+    flash(request, f"Usunięto {label}.")
+    return redirect("/produkty")
+
+
+@app.post("/produkty/{pid}/zdjecie/{photo_id}/usun")
+def product_photo_delete(pid: int, photo_id: int, request: Request, db: Session = Depends(get_db)):
+    p = _get_product(db, pid)
+    photo = next((ph for ph in p.photos if ph.id == photo_id), None)
+    if photo is None:
+        raise HTTPException(404)
+    p.photos.remove(photo)
+    audit(db, web_actor(request), "product.photo_delete", f"Usunięto zdjęcie produktu {p.label}",
+          entity="product", entity_id=p.id)
+    db.commit()
+    return redirect(f"/produkty/{pid}")
+
+
+@app.post("/produkty/{pid}/zdjecie/{photo_id}/glowne")
+def product_photo_main(pid: int, photo_id: int, db: Session = Depends(get_db)):
+    p = _get_product(db, pid)
+    prod.set_main_photo(p, photo_id)
+    db.commit()
+    return redirect(f"/produkty/{pid}")
+
+
+@app.get("/zdjecia/{photo_id}")
+def product_photo(photo_id: int, mini: int = 0, db: Session = Depends(get_db)):
+    photo = db.get(ProductPhoto, photo_id)
+    if photo is None:
+        raise HTTPException(404)
+    return Response(photo.thumb if mini else photo.data, media_type="image/jpeg",
+                    headers={"Cache-Control": "private, max-age=86400"})
 
 
 # --- ustawienia firmy -----------------------------------------------------

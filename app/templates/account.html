@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Konto{% endblock %}
+{% block content %}
+<h1>Konto</h1>
+<form method="post" action="/konto/haslo" class="card" style="max-width:420px">
+  <h2 style="margin-top:0">Zmiana hasła</h2>
+  <p class="muted">Login: <b>{{ request.session.get('user') }}</b></p>
+  <label>Obecne hasło</label><input type="password" name="old" autocomplete="current-password" required>
+  <label style="margin-top:10px">Nowe hasło (min. 10 znaków)</label><input type="password" name="new" autocomplete="new-password" minlength="10" required>
+  <label style="margin-top:10px">Powtórz nowe hasło</label><input type="password" name="repeat" autocomplete="new-password" minlength="10" required>
+  <div class="row" style="margin-top:14px"><button class="btn primary">Zmień hasło</button></div>
+</form>
+<form method="post" action="/logout"><button class="btn">Wyloguj</button></form>
+{% endblock %}

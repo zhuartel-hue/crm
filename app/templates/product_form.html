@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}Produkt{% endblock %}
+{% block content %}
+<h1>{{ product.label if product.id else 'Nowy produkt' }}</h1>
+<form method="post" action="{{ '/produkty/%d' % product.id if product.id else '/produkty/nowy' }}" enctype="multipart/form-data" class="card">
+<div class="grid">
+  <div><label>Kod</label><input name="code" value="{{ product.code or '' }}" placeholder="np. C17-6000"></div>
+  <div style="grid-column:1/-1"><label>Nazwa (na fakturze)</label><input name="name" value="{{ product.name or '' }}" required></div>
+  <div><label>Jednostka</label><input name="unit" value="{{ product.unit or 'szt.' }}"></div>
+  <div><label>VAT</label><select name="vat_rate" id="vat_rate">{% for r in VAT_RATES %}<option value="{{ r }}" {{ 'selected' if product.vat_rate == r }}>{{ r }}{{ '%' if r.isdigit() }}</option>{% endfor %}</select></div>
+  <div><label>Cena netto</label><input name="price_net" id="price_net" inputmode="decimal" value="{{ product.price_net|money if product.price_net is not none else '' }}"></div>
+  <div><label>Cena brutto</label><input name="price_gross" id="price_gross" inputmode="decimal" value="{{ product.price_gross|money if product.price_gross is not none else '' }}"></div>
+  <div><label>EAN</label><input name="ean" value="{{ product.ean or '' }}" inputmode="numeric"></div>
+  <div style="grid-column:1/-1"><label>Opis</label><textarea name="description" rows="8">{{ product.description or '' }}</textarea></div>
+  <div style="grid-column:1/-1"><label>Dodaj zdjęcia (JPG, PNG, WEBP; zmniejszane do 1600 px)</label><input type="file" name="photos" accept="image/*" multiple></div>
+  <div><label><input type="checkbox" name="active" value="1" {{ 'checked' if product.active }}> Aktywny (widoczny na fakturze)</label></div>
+</div>
+<input type="hidden" name="price_mode" id="price_mode" value="net">
+<div class="row"><button class="btn primary">Zapisz</button><a class="btn" href="/produkty">Wróć</a></div>
+</form>
+
+{% if product.id and product.photos %}
+<h2>Zdjęcia</h2>
+<div class="photos">
+{% for ph in product.photos %}
+<div class="photo card">
+  <a href="/zdjecia/{{ ph.id }}" target="_blank"><img src="/zdjecia/{{ ph.id }}?mini=1" alt="{{ ph.filename }}" loading="lazy"></a>
+  <div class="row">
+    {% if loop.first %}<span class="badge ok">główne</span>{% else %}
+    <form method="post" action="/produkty/{{ product.id }}/zdjecie/{{ ph.id }}/glowne"><button class="btn small">Ustaw jako główne</button></form>{% endif %}
+    <form method="post" action="/produkty/{{ product.id }}/zdjecie/{{ ph.id }}/usun" onsubmit="return confirm('Usunąć to zdjęcie?')"><button class="btn small danger">Usuń</button></form>
+  </div>
+</div>
+{% endfor %}
+</div>
+{% endif %}
+
+{% if product.id %}
+<p class="muted">{% if used %}Produkt jest na {{ used }} pozycjach faktur. Po usunięciu faktury zachowają nazwę i cenę.{% endif %}</p>
+<form method="post" action="/produkty/{{ product.id }}/usun" onsubmit="return confirm('Usunąć produkt razem ze zdjęciami?')"><button class="btn danger">Usuń produkt</button></form>
+{% endif %}
+{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  const net = document.getElementById('price_net'), gross = document.getElementById('price_gross');
+  const rate = document.getElementById('vat_rate'), mode = document.getElementById('price_mode');
+  const num = (s) => { const v = parseFloat(String(s || '').replace(/\s/g, '').replace(',', '.')); return isNaN(v) ? null : v; };
+  const pct = () => (/^\d+$/.test(rate.value) ? +rate.value : 0);
+  const f = (v) => (Math.round(v * 100) / 100).toFixed(2).replace('.', ',');
+  net.addEventListener('input', () => { mode.value = 'net'; const v = num(net.value); gross.value = v === null ? '' : f(v * (100 + pct()) / 100); });
+  gross.addEventListener('input', () => { mode.value = 'gross'; const v = num(gross.value); net.value = v === null ? '' : f(v * 100 / (100 + pct())); });
+  rate.addEventListener('change', () => net.dispatchEvent(new Event('input')));
+})();
+</script>
+{% endblock %}

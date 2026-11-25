@@ -20,6 +20,7 @@ from .models import (
     Contractor,
     Invoice,
     InvoiceItem,
+    Product,
 )
 
 
@@ -255,21 +256,31 @@ def list_invoices(db: Session, company=None, kind: str = "", month: str = "", st
     return db.scalars(stmt.order_by(Invoice.issue_date.desc(), Invoice.id.desc()).limit(min(limit, 200))).all()
 
 
-def _parse_items(items: list, is_before: bool = False) -> list[InvoiceItem]:
+def _parse_items(items: list, is_before: bool = False, db: Session | None = None, prices_gross: bool = True) -> list[InvoiceItem]:
+    """Pozycje z JSON. product_id bierze z katalogu nazwe, jednostke, cene (brutto/netto) i VAT, chyba ze podano."""
     out = []
     for n, it in enumerate(items, start=1):
-        name = (it.get("name") or "").strip()
+        product = None
+        if it.get("product_id") not in (None, ""):
+            product = db.get(Product, int(it["product_id"])) if db is not None else None
+            if product is None:
+                raise ServiceError(f"Pozycja {n}: nie ma produktu o id {it['product_id']}.")
+        name = (it.get("name") or (product.name if product else "")).strip()
         if not name:
             raise ServiceError(f"Pozycja {n}: brak nazwy.")
-        rate = str(it.get("vat_rate") or "23")
+        rate = str(it.get("vat_rate") or (product.vat_rate if product else "23"))
         if rate not in VAT_RATES:
             raise ServiceError(f"Pozycja {n}: stawka VAT jedna z {', '.join(VAT_RATES)}.")
-        price = _dec(it.get("unit_price"), f"items[{n}].unit_price")
+        default_price = None
+        if product is not None:
+            default_price = product.price_gross if prices_gross else product.price_net
+        price = _dec(it.get("unit_price"), f"items[{n}].unit_price", default_price)
         if price is None:
             raise ServiceError(f"Pozycja {n}: brak ceny.")
         out.append(InvoiceItem(
-            name=name, quantity=_dec(it.get("quantity"), "quantity", Decimal("1")), unit=it.get("unit") or "szt.",
-            unit_price=price, vat_rate=rate, is_before=is_before,
+            name=name, quantity=_dec(it.get("quantity"), "quantity", Decimal("1")),
+            unit=it.get("unit") or (product.unit if product else "szt."),
+            unit_price=price, vat_rate=rate, is_before=is_before, product_id=product.id if product else None,
         ))
     return out
 
@@ -347,7 +358,7 @@ def create_invoice_draft(db: Session, actor: str, data: dict) -> Invoice:
         inv.prices_gross = True
     if not items:
         raise ServiceError("Podaj pozycje (items) albo car_id.")
-    inv.items = _parse_items(items)
+    inv.items = _parse_items(items, db=db, prices_gross=inv.prices_gross)
     calc.recalculate(inv)
     db.add(inv)
     db.flush()
@@ -359,7 +370,7 @@ def create_invoice_draft(db: Session, actor: str, data: dict) -> Invoice:
 
 def _copy_item(i: InvoiceItem, is_before: bool = False) -> InvoiceItem:
     return InvoiceItem(name=i.name, quantity=i.quantity, unit=i.unit, unit_price=i.unit_price, vat_rate=i.vat_rate,
-                       is_before=is_before)
+                       is_before=is_before, product_id=i.product_id)
 
 
 def _derived_draft(src: Invoice, kind: str) -> Invoice:
@@ -396,7 +407,7 @@ def start_correction(db: Session, actor: str, invoice_id: int, reason: str = "",
     inv.sale_date = src.sale_date
     inv.correction_reason = (reason or "").strip()
     state = current_items(db, src)
-    after = _parse_items(items) if items else [_copy_item(i) for i in state]
+    after = _parse_items(items, db=db, prices_gross=src.prices_gross) if items else [_copy_item(i) for i in state]
     inv.items = [_copy_item(i, is_before=True) for i in state] + after
     calc.recalculate(inv)
     db.add(inv)

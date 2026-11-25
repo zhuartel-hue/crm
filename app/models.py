@@ -4,7 +4,7 @@ from __future__ import annotations
 import datetime as dt
 from decimal import Decimal
 
-from sqlalchemy import Date, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint, func
+from sqlalchemy import Date, DateTime, ForeignKey, Integer, LargeBinary, Numeric, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .db import Base
@@ -230,6 +230,7 @@ class InvoiceItem(Base):
     margin: Mapped[Decimal | None] = mapped_column(Money, nullable=True)
     # Korekta: True dla pozycji "przed korekta" (kopia z faktury korygowanej).
     is_before: Mapped[bool] = mapped_column(default=False)
+    product_id: Mapped[int | None] = mapped_column(ForeignKey("products.id", ondelete="SET NULL"))
 
     invoice: Mapped[Invoice] = relationship(back_populates="items")
 
@@ -317,3 +318,65 @@ class AuditLog(Base):
     entity: Mapped[str] = mapped_column(String(30), default="")
     entity_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     summary: Mapped[str] = mapped_column(Text, default="")
+
+
+class Product(Base):
+    """Produkt z katalogu (wspolny dla obu firm): kod, cena, VAT, opis i zdjecia."""
+
+    __tablename__ = "products"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code: Mapped[str] = mapped_column(String(60), default="", index=True)
+    name: Mapped[str] = mapped_column(String(300))
+    unit: Mapped[str] = mapped_column(String(20), default="szt.")
+    price_net: Mapped[Decimal | None] = mapped_column(Money)
+    vat_rate: Mapped[str] = mapped_column(String(5), default="23")
+    ean: Mapped[str] = mapped_column(String(20), default="")
+    description: Mapped[str] = mapped_column(Text, default="")
+    active: Mapped[bool] = mapped_column(default=True)
+    # Skad pochodzi (np. "firmao:123", "shopify:gid"), do ponownego importu bez dubli.
+    source_ref: Mapped[str] = mapped_column(String(120), default="", index=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    photos: Mapped[list["ProductPhoto"]] = relationship(
+        back_populates="product", cascade="all, delete-orphan", order_by="ProductPhoto.position",
+    )
+
+    @property
+    def price_gross(self) -> Decimal | None:
+        if self.price_net is None:
+            return None
+        pct = Decimal(self.vat_rate) if self.vat_rate.isdigit() else Decimal("0")
+        return (self.price_net * (100 + pct) / 100).quantize(Decimal("0.01"))
+
+    @property
+    def label(self) -> str:
+        return f"{self.code} · {self.name}" if self.code else self.name
+
+
+class ProductPhoto(Base):
+    """Zdjecie produktu w bazie (jest w nocnej kopii razem z danymi). JPEG max 1600 px + miniatura."""
+
+    __tablename__ = "product_photos"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    product_id: Mapped[int] = mapped_column(ForeignKey("products.id", ondelete="CASCADE"), index=True)
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    filename: Mapped[str] = mapped_column(String(200), default="")
+    width: Mapped[int] = mapped_column(Integer, default=0)
+    height: Mapped[int] = mapped_column(Integer, default=0)
+    data: Mapped[bytes] = mapped_column(LargeBinary)
+    thumb: Mapped[bytes] = mapped_column(LargeBinary)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
+
+    product: Mapped[Product] = relationship(back_populates="photos")
+
+
+class AppSetting(Base):
+    """Ustawienia programu zmieniane w aplikacji (np. skrot hasla administratora)."""
+
+    __tablename__ = "app_settings"
+
+    key: Mapped[str] = mapped_column(String(60), primary_key=True)
+    value: Mapped[str] = mapped_column(Text, default="")

@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse, Response
 from sqlalchemy.orm import Session
 
+from . import products as prod
 from . import services as svc
 from .auth import Principal, authenticate, base_url, unauthorized
 from .db import get_db
@@ -68,6 +69,11 @@ def _t_search_cars(db, p, a, base):
     return {"cars": svc.search_cars(db, a.get("company"), a.get("query", ""), a.get("status", ""), a.get("limit", 20))}
 
 
+def _t_search_products(db, p, a, base):
+    rows = prod.search(db, a.get("query", ""), active_only=not a.get("include_inactive"), limit=a.get("limit", 20))
+    return {"products": [prod.product_dict(x, base, with_description=bool(a.get("with_description"))) for x in rows]}
+
+
 def _t_create_car(db, p, a, base):
     return {"car": svc.create_car(db, p.actor, a)}
 
@@ -115,12 +121,13 @@ def _t_summary(db, p, a, base):
 
 
 ITEM = _obj({
+    "product_id": {"type": "integer", "description": "Produkt z katalogu (search_products): uzupełnia nazwę, jm., cenę i VAT."},
     "name": {"type": "string"},
     "quantity": {"type": ["string", "number"], "description": "Domyślnie 1."},
     "unit": {"type": "string", "description": "Domyślnie szt."},
-    "unit_price": {**MONEY, "description": "Cena jednostkowa: brutto, albo netto gdy prices_gross=false."},
+    "unit_price": {**MONEY, "description": "Cena jednostkowa: brutto, albo netto gdy prices_gross=false. Wymagana, gdy nie ma product_id albo produkt nie ma ceny."},
     "vat_rate": {"type": "string", "enum": VAT_RATES, "description": "Domyślnie 23."},
-}, ["name", "unit_price"])
+})
 
 TOOLS = [
     Tool("list_companies", "Firmy", "Lista firm, w imieniu których wystawiamy faktury.", "read", _obj({}), _t_companies),
@@ -143,6 +150,12 @@ TOOLS = [
                "purchase_date": {"type": "string", "format": "date"}, "purchase_price": MONEY,
                "purchase_document": {"type": "string"}, "asking_price": MONEY, "notes": {"type": "string"}},
               ["company", "make"]), _t_create_car, read_only=False),
+    Tool("search_products", "Szukaj produktów",
+         "Katalog produktów (wspólny dla obu firm) po kodzie, nazwie lub EAN: ceny netto/brutto, VAT, linki do zdjęć.",
+         "read",
+         _obj({"query": {"type": "string"}, "with_description": {"type": "boolean", "default": False},
+               "include_inactive": {"type": "boolean", "default": False},
+               "limit": {"type": "integer", "default": 20}}), _t_search_products),
     Tool("list_invoices", "Lista faktur", "Faktury z filtrami. Bez pozycji; szczegóły w get_invoice.", "read",
          _obj({"company": COMPANY,
                "month": {"type": "string", "description": "RRRR-MM"},
