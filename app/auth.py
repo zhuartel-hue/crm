@@ -127,7 +127,7 @@ def unauthorized(request: Request) -> JSONResponse:
 def protected_resource(request: Request):
     b = base_url(request)
     return {"resource": f"{b}/mcp", "authorization_servers": [b], "scopes_supported": list(SCOPES),
-            "bearer_methods_supported": ["header"], "resource_name": "Faktury"}
+            "bearer_methods_supported": ["header"], "resource_name": "Sygnavo"}
 
 
 @router.get("/.well-known/oauth-authorization-server")
