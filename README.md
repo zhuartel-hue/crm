@@ -15,8 +15,8 @@ biała lista VAT, wysyłka mailem, przeniesienie danych z Firmao.
 - **Auta na placu**: marka, model, VIN, rocznik, przebieg, nr rej., cena nabycia,
   cena sprzedaży. „Sprzedaj” wypełnia fakturę VAT danymi auta, a po wystawieniu
   auto dostaje status „Sprzedany”.
-- **Numeracja** bez dziur, osobno dla firmy i rodzaju faktury, od 1 co miesiąc
-  albo co rok; wzór do ustawienia (domyślnie `FV/{nr}/{MM}/{RRRR}` i `FM/{nr}/{MM}/{RRRR}`).
+- **Numeracja** bez dziur, osobno dla każdej firmy, od 1 co miesiąc
+  albo co rok; wzór do ustawienia (domyślnie `FV/{nr}/{MM}/{RRRR}`).
 - **Szkic → wystawienie**: numer nadaje się przy wystawieniu. Wystawionej faktury
   nie można zmienić ani usunąć (zmiany przez korektę w kolejnym etapie, potem KSeF).
 - PDF (A4, polskie znaki), logowanie hasłem, wygodne na iPhonie.
