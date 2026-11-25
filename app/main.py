@@ -53,7 +53,7 @@ async def lifespan(_app: FastAPI):
     yield
 
 
-app = FastAPI(title="Faktury", docs_url=None, redoc_url=None, lifespan=lifespan)
+app = FastAPI(title="Sygnavo", docs_url=None, redoc_url=None, lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
 
 PUBLIC_PATHS = ("/login", "/static", "/health", "/api/", "/mcp", "/oauth/", "/.well-known/")

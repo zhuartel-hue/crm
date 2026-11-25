@@ -1,6 +1,6 @@
-# Faktury: Margot i ARI ERDMANN WORLDS
+# Sygnavo: faktury i CRM dla Margot i ARI ERDMANN WORLDS
 
-Własny program do fakturowania dla autokomisu, zamiast Firmao. Dwie firmy w jednym
+Sygnavo to własny program do fakturowania dla autokomisu, zamiast Firmao. Dwie firmy w jednym
 miejscu, faktury VAT i VAT marża na auta używane, PDF. Kolejne etapy: KSeF 2.0,
 biała lista VAT, wysyłka mailem, przeniesienie danych z Firmao.
 
@@ -23,8 +23,7 @@ biała lista VAT, wysyłka mailem, przeniesienie danych z Firmao.
   nie można zmienić ani usunąć (zmiany przez korektę w kolejnym etapie, potem KSeF).
 - PDF (A4, polskie znaki), logowanie hasłem, wygodne na iPhonie.
 
-Do uzupełnienia po pierwszym uruchomieniu (Ustawienia, osobno dla każdej firmy):
-pełna nazwa, NIP, adres, konto bankowe. Na start są tam wartości zastępcze.
+Dane obu firm (nazwa, NIP, adres, konto) są wpisane z białej listy VAT; zmienia się je w Ustawieniach.
 
 ## Etap 2: konektor dla Claude
 

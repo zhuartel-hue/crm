@@ -19,9 +19,9 @@ from .db import get_db
 from .models import CAR_STATUSES, PAYMENT_METHODS, VAT_RATES
 
 PROTOCOL_VERSIONS = ["2025-11-25", "2025-06-18", "2025-03-26"]
-SERVER_INFO = {"name": "faktury-crm", "title": "Faktury (Margot, ARI ERDMANN WORLDS)", "version": "0.2.0"}
+SERVER_INFO = {"name": "sygnavo", "title": "Sygnavo: faktury i CRM (Margot, ARI ERDMANN WORLDS)", "version": "0.2.1"}
 INSTRUCTIONS = (
-    "Program do faktur autokomisu, dwie firmy: Margot (JDG) i ARI ERDMANN WORLDS (spółka). "
+    "Sygnavo: program do faktur i CRM autokomisu, dwie firmy: Margot (JDG) i ARI ERDMANN WORLDS (spółka). "
     "Kwoty w PLN jako tekst z kropką (np. \"36150.00\"). Faktura 'margin' to VAT marża na auta używane: "
     "cena brutto, VAT liczony od marży, na fakturze dla klienta nie ma kwoty VAT. "
     "Zasady: najpierw create_invoice_draft, pokaż użytkownikowi nabywcę, pozycje, kwotę brutto i marżę, "
