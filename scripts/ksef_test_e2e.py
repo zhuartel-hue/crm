@@ -65,6 +65,9 @@ def _tok_code(d) -> str:
     return st.get("code", "") if isinstance(st, dict) else str(st or "")
 
 
+CERT: dict = {}  # testowy certyfikat z logowania XAdES; drugi przebieg wysyla nim fakture
+
+
 def token_via_xades(http: httpx.Client, nip: str) -> str:
     from cryptography import x509
     from cryptography.hazmat.primitives import hashes, serialization
@@ -113,6 +116,9 @@ def token_via_xades(http: httpx.Client, nip: str) -> str:
     if _tok_code(st) != "Active":
         raise SystemExit(f"Token KSeF ma status {st['status']}")
     print("✓ token KSeF wygenerowany i aktywny")
+    CERT["crt"] = cert.public_bytes(serialization.Encoding.PEM)
+    CERT["key"] = key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8,
+                                    serialization.NoEncryption())
     return gen["token"]
 
 
@@ -179,6 +185,12 @@ def main():
     priv = send(issue(buyer={"name": "Jan Testowy", "address": "ul. Prywatna 3\n00-003 Warszawa"}, prices_gross=False,
                       payment_method="cash", items=[{"name": "Usługa", "unit_price": "100"}]), "Osoba prywatna, netto")
     ok &= priv.ksef_status == "accepted"
+    if CERT:
+        # Ta sama sciezka, ktorej uzyje program z certyfikatem KSeF (Ustawienia -> KSeF -> certyfikat).
+        ksef.set_token(db, "e2e", c, "test", None, auth="cert", cert=CERT["crt"], key=CERT["key"])
+        cert_inv = send(issue(items=[{"name": "Logowanie certyfikatem", "unit_price": "10.00"}]),
+                        "Faktura (logowanie certyfikatem XAdES)")
+        ok &= cert_inv.ksef_status == "accepted"
     print("WYNIK:", "wszystko przyjęte" if ok else "są błędy (szczegóły wyżej)")
     sys.exit(0 if ok else 1)
 

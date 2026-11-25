@@ -43,6 +43,10 @@ class Company(Base):
     # KSeF: "off" (wylaczony), "test", "demo", "prod"; token KSeF zaszyfrowany kluczem z SECRET_KEY (app/secretbox.py).
     ksef_env: Mapped[str] = mapped_column(String(10), default="off")
     ksef_token_enc: Mapped[str] = mapped_column(Text, default="")
+    # Logowanie: "token" albo "cert" (certyfikat KSeF: .crt jawnie, klucz prywatny zaszyfrowany secretboxem).
+    ksef_auth: Mapped[str] = mapped_column(String(10), default="token")
+    ksef_cert_pem: Mapped[str] = mapped_column(Text, default="")
+    ksef_key_enc: Mapped[str] = mapped_column(Text, default="")
 
     @property
     def address_lines(self) -> list[str]:

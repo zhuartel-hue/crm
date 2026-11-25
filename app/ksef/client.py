@@ -48,7 +48,7 @@ class SendResult:
 
 
 class KsefClient:
-    def __init__(self, env: str, nip: str, token: str, *, http: httpx.Client | None = None,
+    def __init__(self, env: str, nip: str, token, *, http: httpx.Client | None = None,
                  poll_interval: float = 1.0, poll_timeout: float = 60.0):
         if env not in ENVIRONMENTS:
             raise KsefError(f"Nieznane środowisko KSeF: {env}")
@@ -100,6 +100,11 @@ class KsefClient:
     # --- uwierzytelnienie -------------------------------------------------------
 
     def authenticate(self) -> str:
+        """Logowanie tokenem KSeF (token: str) albo certyfikatem (token: xades.KsefCertificate)."""
+        from .xades import KsefCertificate
+
+        if isinstance(self.token, KsefCertificate):
+            return self._authenticate_xades(self.token)
         ch = self._call("POST", "/auth/challenge")
         cert = self._cert("KsefTokenEncryption")
         body = {
@@ -110,6 +115,23 @@ class KsefClient:
         if cert.get("publicKeyId"):
             body["publicKeyId"] = cert["publicKeyId"]
         init = self._call("POST", "/auth/ksef-token", json=body)
+        return self._finish_auth(init)
+
+    def _authenticate_xades(self, kc) -> str:
+        from .xades import auth_request
+
+        ch = self._call("POST", "/auth/challenge")
+        body = auth_request(ch["challenge"], self.nip, kc)
+        try:
+            r = self.http.post("/auth/xades-signature", content=body,
+                               headers={"Content-Type": "application/xml", "Accept": "application/json"})
+        except httpx.HTTPError as e:
+            raise KsefError(f"Brak połączenia z KSeF ({self.env}): {e}") from e
+        if r.status_code >= 400:
+            raise KsefError(*_error_from(r))
+        return self._finish_auth(r.json())
+
+    def _finish_auth(self, init: dict) -> str:
         auth_token = init["authenticationToken"]["token"]
         ref = init["referenceNumber"]
         st = self._poll(lambda: self._call("GET", f"/auth/rev2/{ref}", bearer=auth_token),

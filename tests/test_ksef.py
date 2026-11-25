@@ -230,3 +230,83 @@ def test_send_flow_with_fake_client(client, db, monkeypatch):
     assert len(FakeClient.sent) == 1
     assert client.get(f"/faktury/{inv.id}/ksef/upo").text == "<UPO/>"
     assert client.get(f"/faktury/{inv.id}/ksef/xml").content == FakeClient.sent[-1]
+
+
+def _self_signed(nip="5551859956", ec_key=False, password=b"haslo-do-klucza"):
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import ec, rsa
+    from cryptography.x509.oid import NameOID, ObjectIdentifier
+
+    key = ec.generate_private_key(ec.SECP256R1()) if ec_key else rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "Jan Testowy"),
+                      x509.NameAttribute(ObjectIdentifier("2.5.4.97"), f"VATPL-{nip}")])
+    now = dt.datetime.now(dt.timezone.utc)
+    cert = (x509.CertificateBuilder().subject_name(name).issuer_name(name).public_key(key.public_key())
+            .serial_number(x509.random_serial_number()).not_valid_before(now - dt.timedelta(days=1))
+            .not_valid_after(now + dt.timedelta(days=365)).sign(key, hashes.SHA256()))
+    enc = serialization.BestAvailableEncryption(password) if password else serialization.NoEncryption()
+    return (cert.public_bytes(serialization.Encoding.PEM),
+            key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, enc))
+
+
+def test_certificate_settings_and_xades_login(client, db):
+    import httpx
+    from lxml import etree
+
+    from app.ksef import service
+    from app.ksef.client import KsefClient
+    from app.ksef.xades import KsefCertificate
+    from app.models import Company
+
+    crt, key = _self_signed()
+    files = {"ksef_cert": ("ksef.crt", crt, "application/x-x509-ca-cert"), "ksef_key": ("ksef.key", key, "application/octet-stream")}
+    r = client.post("/ustawienia/ksef", data={"ksef_env": "test", "ksef_auth": "cert", "ksef_key_password": "zle"}, files=files)
+    assert "Nie mogę odczytać klucza" in r.text
+    _, other_key = _self_signed(password=None)
+    r = client.post("/ustawienia/ksef", data={"ksef_env": "test", "ksef_auth": "cert", "ksef_key_password": ""},
+                    files={"ksef_cert": ("a.crt", crt, "x"), "ksef_key": ("b.key", other_key, "x")})
+    assert "nie pasuje do certyfikatu" in r.text
+    r = client.post("/ustawienia/ksef", data={"ksef_env": "test", "ksef_auth": "cert", "ksef_key_password": "haslo-do-klucza"},
+                    files=files, follow_redirects=False)
+    assert r.status_code == 303
+    db.expire_all()
+    comp = db.query(Company).filter_by(short_name="Margot").one()
+    assert comp.ksef_auth == "cert" and "BEGIN CERTIFICATE" in comp.ksef_cert_pem
+    assert comp.ksef_key_enc and "PRIVATE KEY" not in comp.ksef_key_enc
+    page = client.get("/ustawienia").text
+    assert "ważny do" in page and "PRIVATE" not in page
+    assert service.enabled(comp)
+    assert isinstance(service._client(comp).token, KsefCertificate)
+
+    # Logowanie XAdES: sprawdz, co trafia do KSeF (podpisany AuthTokenRequest z challenge i NIP).
+    seen = {}
+
+    def handler(req: httpx.Request):
+        if req.url.path.endswith("/auth/challenge"):
+            return httpx.Response(200, json={"challenge": "20270120-CR-ABC", "timestamp": "x", "timestampMs": 1})
+        if req.url.path.endswith("/auth/xades-signature"):
+            seen["xml"] = req.content
+            assert req.headers["content-type"] == "application/xml"
+            return httpx.Response(202, json={"referenceNumber": "R1", "authenticationToken": {"token": "AT"}})
+        if "/auth/rev2/R1" in req.url.path:
+            return httpx.Response(200, json={"status": {"code": 200, "description": "OK"}})
+        if req.url.path.endswith("/auth/token/redeem"):
+            return httpx.Response(200, json={"accessToken": {"token": "ACCESS"}, "refreshToken": {"token": "R"}})
+        raise AssertionError(req.url)
+
+    for ec_key in (False, True):
+        c2, k2 = _self_signed(ec_key=ec_key, password=None)
+        from app.ksef import xades
+        kc, info = xades.load(c2, k2)
+        cl = KsefClient("test", "5551859956", kc, http=httpx.Client(base_url="https://x/v2", transport=httpx.MockTransport(handler)),
+                        poll_interval=0)
+        assert cl.authenticate() == "ACCESS"
+        doc = etree.fromstring(seen["xml"])
+        ns = {"a": "http://ksef.mf.gov.pl/auth/token/2.0", "ds": "http://www.w3.org/2000/09/xmldsig#"}
+        assert doc.findtext("a:Challenge", namespaces=ns) == "20270120-CR-ABC"
+        assert doc.findtext("a:ContextIdentifier/a:Nip", namespaces=ns) == "5551859956"
+        assert doc.find("ds:Signature", namespaces=ns) is not None
+        assert b"SignedProperties" in seen["xml"]
+        from signxml import XMLVerifier
+        XMLVerifier().verify(seen["xml"], x509_cert=kc.cert_pem, expect_references=3)

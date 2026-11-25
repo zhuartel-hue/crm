@@ -11,13 +11,19 @@ from ..services import ServiceError, audit, get_invoice
 from . import ENVIRONMENTS, fa3, qr
 from .client import KsefClient, KsefError
 from .crypto import sha256_b64
+from .xades import CertificateError, KsefCertificate
+from . import xades
 
 # Klient do testow mozna podmienic: factory(env, nip, token) -> obiekt z send_invoice / invoice_status / upo.
 client_factory = KsefClient
 
 
 def enabled(company: Company) -> bool:
-    return company.ksef_env in ENVIRONMENTS and bool(company.ksef_token_enc)
+    if company.ksef_env not in ENVIRONMENTS:
+        return False
+    if company.ksef_auth == "cert":
+        return bool(company.ksef_cert_pem and company.ksef_key_enc)
+    return bool(company.ksef_token_enc)
 
 
 def can_send(inv: Invoice) -> bool:
@@ -28,10 +34,13 @@ def _client(company: Company):
     if not enabled(company):
         raise ServiceError(f"KSeF dla firmy {company.short_name} nie jest włączony (Ustawienia → KSeF).")
     try:
-        token = secretbox.open_(company.ksef_token_enc)
+        if company.ksef_auth == "cert":
+            cred = KsefCertificate(company.ksef_cert_pem, secretbox.open_(company.ksef_key_enc))
+        else:
+            cred = secretbox.open_(company.ksef_token_enc)
     except ValueError as e:
         raise ServiceError(str(e))
-    return client_factory(company.ksef_env, company.nip, token)
+    return client_factory(company.ksef_env, company.nip, cred)
 
 
 def _ksef_number_of(inv: Invoice) -> str:
@@ -144,12 +153,39 @@ def qr_url(inv: Invoice) -> str:
     return qr.invoice_url(inv.ksef_env, inv.company.nip, inv.issue_date, inv.ksef_xml.encode("utf-8"))
 
 
-def set_token(db: Session, actor: str, company: Company, env: str, token: str | None) -> None:
+def set_token(db: Session, actor: str, company: Company, env: str, token: str | None,
+              auth: str | None = None, cert: bytes | None = None, key: bytes | None = None,
+              key_password: str = "") -> None:
     if env != "off" and env not in ENVIRONMENTS:
         raise ServiceError("Środowisko KSeF: off, test, demo albo prod.")
+    notes = []
+    if cert or key:
+        if not (cert and key):
+            raise ServiceError("Wgraj oba pliki: certyfikat (.crt) i klucz prywatny (.key).")
+        try:
+            kc, info = xades.load(cert, key, key_password)
+        except CertificateError as e:
+            raise ServiceError(str(e))
+        company.ksef_cert_pem = kc.cert_pem
+        company.ksef_key_enc = secretbox.seal(kc.key_pem)
+        notes.append(f"nowy certyfikat ważny do {info['valid_to']}")
+        auth = auth or "cert"
+    if auth in ("token", "cert"):
+        company.ksef_auth = auth
     company.ksef_env = env
     if token:
         company.ksef_token_enc = secretbox.seal(token.strip())
-    audit(db, actor, "ksef.settings", f"KSeF {company.short_name}: środowisko {env}"
-          + (", nowy token" if token else ""), company_id=company.id)
+        notes.append("nowy token")
+    audit(db, actor, "ksef.settings", f"KSeF {company.short_name}: środowisko {env}, logowanie "
+          + ("certyfikatem" if company.ksef_auth == "cert" else "tokenem")
+          + (", " + ", ".join(notes) if notes else ""), company_id=company.id)
     db.commit()
+
+
+def cert_info(company: Company) -> dict | None:
+    if not company.ksef_cert_pem:
+        return None
+    try:
+        return xades.info(company.ksef_cert_pem)
+    except ValueError:
+        return None

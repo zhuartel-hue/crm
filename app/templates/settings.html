@@ -33,16 +33,27 @@
 </div>
 <p><button class="btn primary">Zapisz</button></p>
 </form>
-<form method="post" action="/ustawienia/ksef" class="card" autocomplete="off">
+<form method="post" action="/ustawienia/ksef" class="card" autocomplete="off" enctype="multipart/form-data">
 <h2 style="margin-top:0">KSeF · {{ company.short_name }}</h2>
-<p class="muted">Faktury wysyła się przyciskiem „Wyślij do KSeF” na wystawionej fakturze. Logowanie tokenem KSeF wygenerowanym
-dla NIP {{ company.nip }} (uprawnienia: wystawianie i przeglądanie faktur). Token jest zapisany w bazie w postaci zaszyfrowanej i nigdzie się nie wyświetla.</p>
+<p class="muted">Faktury wysyła się przyciskiem „Wyślij do KSeF” na wystawionej fakturze. Logowanie do KSeF dla NIP {{ company.nip }}:
+certyfikatem KSeF (typ „Uwierzytelnianie”) albo tokenem KSeF, oba z Aplikacji Podatnika KSeF. Klucz prywatny i token są zapisane
+w bazie w postaci zaszyfrowanej i nigdzie się nie wyświetlają; hasła do klucza nie zapisujemy.</p>
 <p class="muted">Środowiska testowe MF są publiczne: nie wysyłaj tam prawdziwych faktur ani danych klientów.</p>
+{% set ci = ksef_cert_info(company) %}
 <div class="grid">
   <div><label>Środowisko</label><select name="ksef_env">
     <option value="off" {{ 'selected' if company.ksef_env in ('off', None) }}>wyłączony</option>
     {% for k, v in KSEF_ENVS.items() %}<option value="{{ k }}" {{ 'selected' if company.ksef_env == k }}>{{ v.label }}</option>{% endfor %}
   </select></div>
+  <div><label>Logowanie</label><select name="ksef_auth">
+    <option value="cert" {{ 'selected' if company.ksef_auth == 'cert' }}>certyfikat KSeF</option>
+    <option value="token" {{ 'selected' if company.ksef_auth != 'cert' }}>token KSeF</option>
+  </select></div>
+  <div style="grid-column:1/-1"><b>Certyfikat KSeF</b>
+    {% if ci %}<br><span class="muted">wgrany: {{ ci.subject }}, ważny do {{ ci.valid_to }}. Wgraj nowe pliki, żeby zmienić.</span>{% endif %}</div>
+  <div><label>Certyfikat (.crt)</label><input type="file" name="ksef_cert" accept=".crt,.cer,.pem"></div>
+  <div><label>Klucz prywatny (.key)</label><input type="file" name="ksef_key" accept=".key,.pem"></div>
+  <div><label>Hasło do klucza</label><input type="password" name="ksef_key_password" value="" autocomplete="new-password"></div>
   <div style="grid-column:1/-1"><label>Token KSeF {% if company.ksef_token_enc %}(zapisany; wpisz nowy, żeby zmienić){% endif %}</label>
     <input type="password" name="ksef_token" value="" autocomplete="new-password" placeholder="{{ '••••••••' if company.ksef_token_enc else 'wklej token' }}"></div>
 </div>

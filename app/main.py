@@ -62,6 +62,9 @@ templates.env.globals.update(
     INVOICE_KINDS=INVOICE_KINDS, NEW_KINDS=NEW_KINDS, PAYMENT_METHODS=PAYMENT_METHODS, VAT_RATES=VAT_RATES, CAR_STATUSES=CAR_STATUSES
 )
 
+templates.env.globals["ksef_cert_info"] = ksef.cert_info
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     migrate.upgrade()
@@ -948,10 +951,19 @@ def settings_form(request: Request, db: Session = Depends(get_db)):
 async def settings_ksef(request: Request, db: Session = Depends(get_db)):
     company = current_company(request, db)
     form = await request.form()
+    async def _file(name):
+        f = form.get(name)
+        if getattr(f, "filename", None):
+            data = await f.read()
+            return data[:200_000] or None
+        return None
     try:
         ksef.set_token(db, web_actor(request), company, form.get("ksef_env") or "off",
-                       (form.get("ksef_token") or "").strip() or None)
+                       (form.get("ksef_token") or "").strip() or None, auth=form.get("ksef_auth") or None,
+                       cert=await _file("ksef_cert"), key=await _file("ksef_key"),
+                       key_password=form.get("ksef_key_password") or "")
     except ServiceError as e:
+        db.rollback()
         return render(request, db, "settings.html", KSEF_ENVS=KSEF_ENVS, error=str(e))
     flash(request, "Zapisano ustawienia KSeF.")
     return redirect("/ustawienia")
