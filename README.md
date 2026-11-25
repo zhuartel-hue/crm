@@ -61,6 +61,15 @@ zalogowanie do programu i zaznaczenie uprawnień. Instrukcja jest też w program
   `create_invoice_from_proforma`, `create_final_invoice_draft`; `create_invoice_draft`
   przyjmuje `kind` (`vat`, `proforma`, `advance` + `advance_gross`).
 
+## Bank: wpłaty z PKO BP
+
+Zakładka **Bank** wczytuje wyciągi MT940 z iPKO (Moje sprawy → Raporty → MT940 → „Włącz” przy
+rachunku firmowym; raporty są bezpłatne). Firma jest rozpoznawana po numerze rachunku z Ustawień.
+Wpłata z numerem faktury w tytule albo z kwotą i nadawcą pasującymi do jednej faktury księguje się
+sama (pole „Zapłacono”); pozostałe czekają w „Do sprawdzenia” z propozycją albo do ręcznego
+przypisania. Ten sam plik można wczytać wiele razy, powtórzone operacje są pomijane.
+Format: specyfikacja PKO „Struktura pliku wyjściowego - Raport MT940” (CP852, podpola `~NN`).
+
 ## Uruchomienie u siebie
 
 ```bash
