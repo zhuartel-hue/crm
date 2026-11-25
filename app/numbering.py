@@ -33,7 +33,7 @@ def next_number(db: Session, company: Company, kind: str, issue_date: dt.date) -
         seq_row = NumberSequence(company_id=company.id, kind=kind, period=period, last=0)
         db.add(seq_row)
     seq_row.last += 1
-    pattern = company.pattern_margin if kind == "margin" else company.pattern_vat
+    pattern = company.pattern_vat
     return seq_row.last, format_number(pattern, seq_row.last, issue_date)
 
 

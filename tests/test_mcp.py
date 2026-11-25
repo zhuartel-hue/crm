@@ -97,33 +97,34 @@ def test_sell_car_flow_via_mcp(client):
     assert {"create_invoice_draft", "issue_invoice", "search_cars"} <= names
 
     car = call(client, at, "create_car", company="margot", make="Ford", model="Transit", vin="WF0XXXTTGXKA12345",
-               year=2019, mileage_km=184000, purchase_price="30000", asking_price="36150")
+               year=2019, mileage_km=184000, purchase_price="30000", asking_price="36900")
     assert not car["isError"], car
     car_id = car["structuredContent"]["car"]["id"]
     found = call(client, at, "search_cars", company="Margot", query="ford transit")["structuredContent"]["cars"]
     assert [c["id"] for c in found] == [car_id]
 
-    draft = call(client, at, "create_invoice_draft", company="Margot", kind="margin", car_id=car_id,
+    draft = call(client, at, "create_invoice_draft", company="Margot", car_id=car_id,
                  buyer={"name": "Jan Kowalski", "address": "ul. Prosta 1\n00-001 Warszawa", "save_as_contractor": True})
     assert not draft["isError"], draft
     inv = draft["structuredContent"]["invoice"]
     assert inv["status"] == "draft" and inv["number"] is None
-    assert inv["total_gross"] == "36150.00" and inv["margin_total"] == "6150.00" and inv["vat_from_margin"] == "1150.00"
+    assert inv["total_gross"] == "36900.00" and inv["total_net"] == "30000.00" and inv["total_vat"] == "6900.00"
     assert "VIN: WF0XXXTTGXKA12345" in inv["items"][0]["name"]
     assert inv["pdf_url"].endswith(f"/faktury/{inv['id']}/pdf")
 
     issued = call(client, at, "issue_invoice", invoice_id=inv["id"])["structuredContent"]["invoice"]
-    assert issued["number"] == f"FM/1/{issued['issue_date'][5:7]}/{issued['issue_date'][:4]}"
-    again = call(client, at, "create_invoice_draft", company="Margot", kind="margin", car_id=car_id, buyer={"name": "X"})
+    assert issued["number"] == f"FV/1/{issued['issue_date'][5:7]}/{issued['issue_date'][:4]}"
+    again = call(client, at, "create_invoice_draft", company="Margot", car_id=car_id, buyer={"name": "X"})
     assert again["isError"] and "sprzedane" in again["content"][0]["text"]
 
     paid = call(client, at, "mark_invoice_paid", invoice_id=inv["id"])["structuredContent"]["invoice"]
     assert paid["to_pay"] == "0.00"
     summary = call(client, at, "sales_summary", company="margot", month=issued["issue_date"][:7])["structuredContent"]
-    assert summary["margin_invoices"]["margin"] == "6150.00"
+    assert summary["gross"] == "36900.00"
+    assert summary["cars_sold"][0]["profit"] == "0.00"
 
     log = client.get("/dziennik").text
-    assert "Claude (Claude)" in log and "Wystawiono FM/1/" in log
+    assert "Claude (Claude)" in log and "Wystawiono FV/1/" in log
 
 
 def test_scopes_limit_tools(client):

@@ -2,12 +2,10 @@
 {% block title %}Pulpit{% endblock %}
 {% block content %}
 <div class="row"><h1>{{ company.short_name }}</h1><span class="spacer"></span>
-<a class="btn" href="/faktury/nowa?rodzaj=vat">+ Faktura VAT</a>
-<a class="btn primary" href="/faktury/nowa?rodzaj=margin">+ Faktura marża</a></div>
+<a class="btn primary" href="/faktury/nowa">+ Faktura</a></div>
 <div class="grid stats">
   <div class="card stat"><div class="l">Faktur w tym miesiącu</div><div class="v">{{ stats.month_count }}</div></div>
   <div class="card stat"><div class="l">Sprzedaż brutto w tym miesiącu</div><div class="v">{{ stats.month_gross|money }} zł</div></div>
-  <div class="card stat"><div class="l">Marża w tym miesiącu</div><div class="v">{{ stats.month_margin|money }} zł</div></div>
   <div class="card stat"><div class="l">Nieopłacone ({{ stats.unpaid_count }})</div><div class="v">{{ stats.unpaid_sum|money }} zł</div></div>
 </div>
 <h2>Ostatnie faktury</h2>
@@ -18,7 +16,7 @@
 {% for c in cars %}
 <tr><td><a href="/auta/{{ c.id }}">{{ c.label }}</a></td><td class="hide-sm">{{ c.vin }}</td>
 <td class="n">{{ c.purchase_price|money }}</td><td class="n">{{ c.asking_price|money }}</td>
-<td><a class="btn small" href="/faktury/nowa?rodzaj=margin&auto={{ c.id }}">Sprzedaj</a></td></tr>
+<td><a class="btn small" href="/faktury/nowa?auto={{ c.id }}">Sprzedaj</a></td></tr>
 {% else %}<tr><td colspan="5" class="muted">Brak aut. <a href="/auta/nowe">Dodaj auto</a></td></tr>{% endfor %}
 </table></div>
 {% endblock %}

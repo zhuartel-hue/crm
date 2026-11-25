@@ -7,30 +7,22 @@
   const grossBox = document.getElementById('prices_gross');
 
   function recalc() {
-    let net = 0, vat = 0, gross = 0, margin = 0;
-    const isGross = MARGIN || (grossBox && grossBox.checked);
+    let net = 0, vat = 0, gross = 0;
+    const isGross = grossBox && grossBox.checked;
     items.querySelectorAll('.item').forEach((row) => {
       const q = num(row.querySelector('[name=item_qty]').value);
       const p = num(row.querySelector('[name=item_price]').value);
       const value = r2(q * p);
       let n, v, g, info;
-      if (MARGIN) {
-        const m = r2(value - num(row.querySelector('[name=item_purchase]').value));
-        v = m > 0 ? r2(m * 23 / 123) : 0; g = value; n = g - v; margin += m;
-        info = `Marża ${fmt(m)} zł, VAT od marży ${fmt(v)} zł (nie drukuje się na fakturze)`;
-      } else {
-        const rate = row.querySelector('[name=item_rate]').value;
-        const pct = /^\d+$/.test(rate) ? +rate : 0;
-        if (isGross) { g = value; v = r2(g * pct / (100 + pct)); n = r2(g - v); }
-        else { n = value; v = r2(n * pct / 100); g = r2(n + v); }
-        info = `Netto ${fmt(n)} · VAT ${fmt(v)} · Brutto ${fmt(g)}`;
-      }
+      const rate = row.querySelector('[name=item_rate]').value;
+      const pct = /^\d+$/.test(rate) ? +rate : 0;
+      if (isGross) { g = value; v = r2(g * pct / (100 + pct)); n = r2(g - v); }
+      else { n = value; v = r2(n * pct / 100); g = r2(n + v); }
+      info = `Netto ${fmt(n)} · VAT ${fmt(v)} · Brutto ${fmt(g)}`;
       row.querySelector('.calc').textContent = info;
       net += n; vat += v; gross += g;
     });
-    document.getElementById('totals').innerHTML = MARGIN
-      ? `Do zapłaty: <b>${fmt(gross)} zł</b> · marża razem ${fmt(margin)} zł · VAT od marży ${fmt(vat)} zł`
-      : `Netto ${fmt(net)} · VAT ${fmt(vat)} · <b>Brutto ${fmt(gross)} zł</b>`;
+    document.getElementById('totals').innerHTML = `Netto ${fmt(net)} · VAT ${fmt(vat)} · <b>Brutto ${fmt(gross)} zł</b>`;
     document.querySelectorAll('.price-label').forEach((l) => { l.textContent = isGross ? 'Cena brutto' : 'Cena netto'; });
   }
 

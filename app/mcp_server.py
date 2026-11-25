@@ -22,9 +22,8 @@ PROTOCOL_VERSIONS = ["2025-11-25", "2025-06-18", "2025-03-26"]
 SERVER_INFO = {"name": "sygnavo", "title": "Sygnavo: faktury i CRM (Margot, ARI ERDMANN WORLDS)", "version": "0.2.1"}
 INSTRUCTIONS = (
     "Sygnavo: program do faktur i CRM autokomisu, dwie firmy: Margot (JDG) i ARI ERDMANN WORLDS (spółka). "
-    "Kwoty w PLN jako tekst z kropką (np. \"36150.00\"). Faktura 'margin' to VAT marża na auta używane: "
-    "cena brutto, VAT liczony od marży, na fakturze dla klienta nie ma kwoty VAT. "
-    "Zasady: najpierw create_invoice_draft, pokaż użytkownikowi nabywcę, pozycje, kwotę brutto i marżę, "
+    "Kwoty w PLN jako tekst z kropką (np. \"36150.00\"). Program wystawia tylko faktury VAT. "
+    "Zasady: najpierw create_invoice_draft, pokaż użytkownikowi nabywcę, pozycje, kwoty netto, VAT i brutto, "
     "a issue_invoice wywołaj dopiero po wyraźnym potwierdzeniu użytkownika w tej rozmowie. "
     "Gdy nie wiesz, której firmy dotyczy prośba, zapytaj."
 )
@@ -73,7 +72,7 @@ def _t_create_car(db, p, a, base):
 
 
 def _t_list_invoices(db, p, a, base):
-    rows = svc.list_invoices(db, a.get("company"), a.get("kind", ""), a.get("month", ""), a.get("status", ""),
+    rows = svc.list_invoices(db, a.get("company"), "", a.get("month", ""), a.get("status", ""),
                              bool(a.get("unpaid_only")), a.get("query", ""), a.get("limit", 30))
     return {"invoices": [svc.invoice_dict(i, base, with_items=False) for i in rows]}
 
@@ -104,9 +103,8 @@ ITEM = _obj({
     "name": {"type": "string"},
     "quantity": {"type": ["string", "number"], "description": "Domyślnie 1."},
     "unit": {"type": "string", "description": "Domyślnie szt."},
-    "unit_price": {**MONEY, "description": "Cena jednostkowa: brutto (marża zawsze brutto) albo netto, gdy prices_gross=false."},
-    "vat_rate": {"type": "string", "enum": VAT_RATES, "description": "Tylko faktura vat. Domyślnie 23."},
-    "purchase_price": {**MONEY, "description": "Tylko marża: łączna cena nabycia pozycji."},
+    "unit_price": {**MONEY, "description": "Cena jednostkowa: brutto, albo netto gdy prices_gross=false."},
+    "vat_rate": {"type": "string", "enum": VAT_RATES, "description": "Domyślnie 23."},
 }, ["name", "unit_price"])
 
 TOOLS = [
@@ -124,27 +122,26 @@ TOOLS = [
          _obj({"company": COMPANY, "query": {"type": "string"},
                "status": {"type": "string", "enum": list(CAR_STATUSES)}, "limit": {"type": "integer", "default": 20}}),
          _t_search_cars),
-    Tool("create_car", "Nowe auto", "Dodaje auto na plac. Cena nabycia jest podstawą marży.", "write",
+    Tool("create_car", "Nowe auto", "Dodaje auto na plac (cena zakupu służy do liczenia zysku na aucie).", "write",
          _obj({"company": COMPANY, "make": {"type": "string"}, "model": {"type": "string"}, "vin": {"type": "string"},
                "year": {"type": "integer"}, "mileage_km": {"type": "integer"}, "registration": {"type": "string"},
                "purchase_date": {"type": "string", "format": "date"}, "purchase_price": MONEY,
                "purchase_document": {"type": "string"}, "asking_price": MONEY, "notes": {"type": "string"}},
               ["company", "make"]), _t_create_car, read_only=False),
     Tool("list_invoices", "Lista faktur", "Faktury z filtrami. Bez pozycji; szczegóły w get_invoice.", "read",
-         _obj({"company": COMPANY, "kind": {"type": "string", "enum": ["vat", "margin"]},
+         _obj({"company": COMPANY,
                "month": {"type": "string", "description": "RRRR-MM"},
                "status": {"type": "string", "enum": ["draft", "issued"]}, "unpaid_only": {"type": "boolean"},
                "query": {"type": "string", "description": "Numer, nabywca albo NIP."},
                "limit": {"type": "integer", "default": 30}}), _t_list_invoices),
-    Tool("get_invoice", "Faktura", "Szczegóły faktury z pozycjami, marżą i linkiem do PDF.", "read",
+    Tool("get_invoice", "Faktura", "Szczegóły faktury z pozycjami i linkiem do PDF.", "read",
          _obj({"invoice_id": {"type": "integer"}}, ["invoice_id"]), _t_get_invoice),
     Tool("create_invoice_draft", "Szkic faktury",
          "Tworzy SZKIC faktury (bez numeru). Nabywca: buyer.contractor_id albo buyer.name/nip/address. "
-         "Sprzedaż auta: podaj car_id; bez items pozycja powstaje z danych auta, cena = price albo cena z karty auta, "
-         "cena nabycia z karty auta. kind='margin' dla aut używanych w procedurze marży.", "write",
+         "Sprzedaż auta: podaj car_id; bez items pozycja powstaje z danych auta (VIN, rocznik, przebieg), "
+         "cena brutto = price albo cena z karty auta, VAT 23%.", "write",
          _obj({
              "company": COMPANY,
-             "kind": {"type": "string", "enum": ["vat", "margin"]},
              "buyer": _obj({"contractor_id": {"type": "integer"}, "name": {"type": "string"}, "nip": {"type": "string"},
                             "address": {"type": "string", "description": "Ulica, w drugiej linii kod i miasto."},
                             "save_as_contractor": {"type": "boolean"}}),
@@ -157,7 +154,7 @@ TOOLS = [
              "payment_method": {"type": "string", "enum": list(PAYMENT_METHODS)},
              "due_days": {"type": "integer"},
              "notes": {"type": "string"},
-         }, ["company", "kind", "buyer"]), _t_create_draft, read_only=False),
+         }, ["company", "buyer"]), _t_create_draft, read_only=False),
     Tool("issue_invoice", "Wystaw fakturę",
          "Wystawia szkic: nadaje kolejny numer i blokuje zmiany; sprzedane auto dostaje status 'sold'. "
          "Nieodwracalne. Wywołuj tylko po wyraźnym potwierdzeniu użytkownika.", "issue",
@@ -166,7 +163,7 @@ TOOLS = [
          "Zapisuje zapłaconą kwotę na wystawionej fakturze (bez amount = cała kwota).", "write",
          _obj({"invoice_id": {"type": "integer"}, "amount": MONEY}, ["invoice_id"]), _t_paid, read_only=False),
     Tool("sales_summary", "Podsumowanie miesiąca",
-         "Liczba faktur, sprzedaż netto/VAT/brutto, suma marży i VAT od marży w miesiącu.", "read",
+         "Liczba faktur, sprzedaż netto/VAT/brutto i zysk na sprzedanych autach (netto minus cena zakupu) w miesiącu.", "read",
          _obj({"company": COMPANY, "month": {"type": "string", "description": "RRRR-MM"}}, ["company", "month"]),
          _t_summary),
 ]

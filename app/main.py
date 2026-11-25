@@ -179,7 +179,6 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
     stats = dict(
         month_count=len(month_invoices),
         month_gross=sum((i.total_gross for i in month_invoices), Decimal("0")),
-        month_margin=sum((i.margin_total for i in month_invoices if i.kind == "margin"), Decimal("0")),
         unpaid_count=len(unpaid),
         unpaid_sum=sum((i.to_pay for i in unpaid), Decimal("0")),
     )
@@ -277,7 +276,7 @@ def _apply_form(db: Session, inv: Invoice, form) -> None:
     inv.due_date = date("due_date", required=False)
     inv.issue_place = form.get("issue_place", "").strip()
     inv.payment_method = form.get("payment_method", "transfer")
-    inv.prices_gross = inv.kind == "margin" or form.get("prices_gross") == "1"
+    inv.prices_gross = form.get("prices_gross") == "1"
     inv.paid = calc.parse_decimal(form.get("paid"), Decimal("0"))
     inv.notes = form.get("notes", "").strip()
     inv.buyer_name = form.get("buyer_name", "").strip()
@@ -306,7 +305,6 @@ def _apply_form(db: Session, inv: Invoice, form) -> None:
     units = form.getlist("item_unit")
     prices = form.getlist("item_price")
     rates = form.getlist("item_rate")
-    purchases = form.getlist("item_purchase")
     inv.items.clear()
     for i, name in enumerate(names):
         name = name.strip()
@@ -323,7 +321,6 @@ def _apply_form(db: Session, inv: Invoice, form) -> None:
                 unit=(units[i] if i < len(units) else "").strip() or "szt.",
                 unit_price=price,
                 vat_rate=rate,
-                purchase_price=calc.parse_decimal(purchases[i] if i < len(purchases) else "", Decimal("0")),
             )
         )
     calc.recalculate(inv)
@@ -601,7 +598,7 @@ async def car_update(car_id: int, request: Request, db: Session = Depends(get_db
 # --- ustawienia firmy -----------------------------------------------------
 
 COMPANY_FIELDS = ["short_name", "name", "nip", "street", "postal_code", "city", "bank_name", "bank_account",
-                  "email", "phone", "issue_place", "pattern_vat", "pattern_margin"]
+                  "email", "phone", "issue_place", "pattern_vat"]
 
 
 @app.get("/ustawienia", response_class=HTMLResponse)
@@ -619,7 +616,7 @@ async def settings_save(request: Request, db: Session = Depends(get_db)):
     company.numbering_reset = "year" if form.get("numbering_reset") == "year" else "month"
     days = form.get("default_payment_days") or "7"
     company.default_payment_days = int(days) if days.isdigit() else 7
-    for p in (company.pattern_vat, company.pattern_margin):
+    for p in (company.pattern_vat,):
         if "{nr}" not in p:
             db.rollback()
             return render(request, db, "settings.html", error="Wzór numeru musi zawierać {nr}.")

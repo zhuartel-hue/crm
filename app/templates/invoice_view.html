@@ -23,15 +23,13 @@
 </div>
 <div class="card tbl"><table>
 <tr><th>Nazwa</th><th class="n">Ilość</th><th class="n">Cena</th>
-{% if inv.kind == 'margin' %}<th class="n">Nabycie</th><th class="n">Marża</th><th class="n">VAT od marży</th>{% else %}<th class="n">VAT</th><th class="n">Netto</th><th class="n">VAT zł</th>{% endif %}<th class="n">Brutto</th></tr>
+<th class="n">VAT</th><th class="n">Netto</th><th class="n">VAT zł</th><th class="n">Brutto</th></tr>
 {% for it in inv.items %}
 <tr><td>{{ it.name }}</td><td class="n">{{ it.quantity|qty }} {{ it.unit }}</td><td class="n">{{ it.unit_price|money }}</td>
-{% if inv.kind == 'margin' %}<td class="n">{{ it.purchase_price|money }}</td><td class="n">{{ it.margin|money }}</td><td class="n">{{ it.vat|money }}</td>
-{% else %}<td class="n">{{ it.vat_rate }}{{ '%' if it.vat_rate.isdigit() }}</td><td class="n">{{ it.net|money }}</td><td class="n">{{ it.vat|money }}</td>{% endif %}
+<td class="n">{{ it.vat_rate }}{{ '%' if it.vat_rate.isdigit() }}</td><td class="n">{{ it.net|money }}</td><td class="n">{{ it.vat|money }}</td>
 <td class="n">{{ it.gross|money }}</td></tr>
 {% endfor %}
 <tr><td colspan="{{ 6 }}"><b>Razem</b></td><td class="n"><b>{{ inv.total_gross|money }}</b></td></tr>
 </table></div>
-{% if inv.kind == 'margin' %}<p class="muted">Marża i VAT od marży są tylko do Twojej ewidencji. Na fakturze dla klienta drukuje się sama kwota brutto i adnotacja „procedura marży – towary używane”.</p>{% endif %}
 {% if inv.notes %}<div class="card"><div class="muted">Uwagi</div><span style="white-space:pre-line">{{ inv.notes }}</span></div>{% endif %}
 {% endblock %}

@@ -18,10 +18,9 @@
   <div><label>Telefon</label><input name="phone" value="{{ company.phone }}"></div>
 </div>
 <h2>Numeracja</h2>
-<p class="muted">{nr} – kolejny numer, {MM} – miesiąc, {RRRR} – rok. Faktury VAT i marża mają osobne liczniki.</p>
+<p class="muted">{nr} – kolejny numer, {MM} – miesiąc, {RRRR} – rok.</p>
 <div class="grid">
-  <div><label>Wzór: faktura VAT</label><input name="pattern_vat" value="{{ company.pattern_vat }}"></div>
-  <div><label>Wzór: faktura marża</label><input name="pattern_margin" value="{{ company.pattern_margin }}"></div>
+  <div><label>Wzór numeru faktury</label><input name="pattern_vat" value="{{ company.pattern_vat }}"></div>
   <div><label>Numeracja od 1</label><select name="numbering_reset">
     <option value="month" {{ 'selected' if company.numbering_reset == 'month' }}>co miesiąc</option>
     <option value="year" {{ 'selected' if company.numbering_reset == 'year' }}>co rok</option></select></div>
