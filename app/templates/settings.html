@@ -26,6 +26,7 @@
   <div><label>Faktura zaliczkowa</label><input name="pattern_advance" value="{{ company.pattern_advance }}"></div>
   <div><label>Proforma</label><input name="pattern_proforma" value="{{ company.pattern_proforma }}"></div>
   <div><label>WZ (wydanie towaru)</label><input name="pattern_wz" value="{{ company.pattern_wz }}"></div>
+  <div><label>PZ (przyjęcie towaru)</label><input name="pattern_pz" value="{{ company.pattern_pz }}"></div>
   <div><label>Numeracja od 1</label><select name="numbering_reset">
     <option value="month" {{ 'selected' if company.numbering_reset == 'month' }}>co miesiąc</option>
     <option value="year" {{ 'selected' if company.numbering_reset == 'year' }}>co rok</option></select></div>

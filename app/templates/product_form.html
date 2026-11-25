@@ -14,6 +14,11 @@
   <div style="grid-column:1/-1"><label>Opis</label><textarea name="description" rows="8">{{ product.description or '' }}</textarea></div>
   <div style="grid-column:1/-1"><label>Dodaj zdjęcia (JPG, PNG, WEBP; zmniejszane do 1600 px)</label><input type="file" name="photos" accept="image/*" multiple></div>
   <div><label><input type="checkbox" name="active" value="1" {{ 'checked' if product.active }}> Aktywny (widoczny na fakturze)</label></div>
+  <div><label><input type="checkbox" name="is_service" value="1" {{ 'checked' if product.is_service }}> Usługa (bez stanu magazynowego, np. dojazd, robocizna)</label></div>
+  {% if not product.is_service %}
+  <div><label>Stan magazynowy ({{ product.unit or 'szt.' }})</label><input name="stock" inputmode="decimal" value="{{ product.stock|qty if product.stock is not none else '0' }}"></div>
+  <div><label>Powód zmiany stanu (opcjonalnie)</label><input name="stock_note" placeholder="np. inwentaryzacja"></div>
+  {% endif %}
 </div>
 <input type="hidden" name="price_mode" id="price_mode" value="net">
 <div class="row"><button class="btn primary">Zapisz</button><a class="btn" href="/produkty">Wróć</a></div>
@@ -33,6 +38,15 @@
 </div>
 {% endfor %}
 </div>
+{% endif %}
+
+{% if moves %}
+<h2>Ruchy magazynowe</h2>
+<div class="card tbl"><table>
+<tr><th>Data</th><th>Dokument / opis</th><th class="n">Ilość</th></tr>
+{% for m in moves %}<tr><td>{{ m.date|date }}</td><td>{% if m.delivery %}<a href="/wz/{{ m.delivery_id }}">{{ m.delivery.display_number }}</a> · {{ m.delivery.recipient_name }}{% else %}{{ m.note }}{% endif %}</td>
+<td class="n">{{ '+' if m.quantity > 0 }}{{ m.quantity|qty }}</td></tr>{% endfor %}
+</table></div>
 {% endif %}
 
 {% if product.id %}

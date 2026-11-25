@@ -1,17 +1,19 @@
 {% extends "base.html" %}
-{% block title %}WZ{% endblock %}
+{% block title %}Magazyn{% endblock %}
 {% block content %}
-<div class="row"><h1>WZ · wydania towaru</h1><span class="spacer"></span><a class="btn primary" href="/wz/nowa">+ WZ</a></div>
+<div class="row"><h1>Magazyn · WZ i PZ</h1><span class="spacer"></span><a class="btn primary" href="/wz/nowa">+ WZ</a><a class="btn" href="/wz/nowa?rodzaj=pz">+ PZ</a></div>
 <form class="row" style="margin-bottom:12px" method="get">
+  <select name="rodzaj" style="max-width:160px" onchange="this.form.submit()"><option value="">WZ i PZ</option>
+    <option value="wz" {{ 'selected' if rodzaj == 'wz' }}>tylko WZ</option><option value="pz" {{ 'selected' if rodzaj == 'pz' }}>tylko PZ</option></select>
   <input name="q" value="{{ q }}" placeholder="Numer albo odbiorca" style="max-width:320px"><button class="btn">Szukaj</button>
 </form>
 <div class="card tbl"><table>
-<tr><th>Numer</th><th>Data</th><th>Odbiorca</th><th class="hide-sm">Faktura</th><th>Podpis</th></tr>
+<tr><th>Numer</th><th>Data</th><th>Odbiorca / dostawca</th><th class="n hide-sm">Brutto</th><th class="hide-sm">Faktura</th><th>Podpis</th></tr>
 {% for d in rows %}
 <tr><td><a href="/wz/{{ d.id }}">{{ d.display_number }}</a>{% if d.status == 'draft' %} <span class="badge warn">szkic</span>{% endif %}</td>
-<td>{{ d.issue_date|date }}</td><td>{{ d.recipient_name }}</td>
+<td>{{ d.issue_date|date }}</td><td>{{ d.recipient_name }}</td><td class="n hide-sm">{{ d.total_gross|money if d.total_gross }}</td>
 <td class="hide-sm">{% if d.invoice %}<a href="/faktury/{{ d.invoice_id }}">{{ d.invoice.display_number }}</a>{% endif %}</td>
-<td>{% if d.signature_png %}<span class="badge ok">podpisana</span>{% elif d.status == 'issued' %}<span class="badge">bez podpisu</span>{% endif %}</td></tr>
-{% else %}<tr><td colspan="5" class="muted">Brak dokumentów WZ.</td></tr>{% endfor %}
+<td>{% if d.kind == 'pz' %}<span class="badge">PZ</span>{% elif d.signature_png %}<span class="badge ok">podpisana</span>{% elif d.status == 'issued' %}<span class="badge">bez podpisu</span>{% endif %}</td></tr>
+{% else %}<tr><td colspan="6" class="muted">Brak dokumentów.</td></tr>{% endfor %}
 </table></div>
 {% endblock %}

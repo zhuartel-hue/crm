@@ -21,23 +21,26 @@ table.items td { padding: 2mm 1.5mm; border-bottom: 1px solid #ddd; vertical-ali
 .draft { color: #b42318; font-weight: bold; }
 </style></head><body>
 <div class="top">
-  <div><h1>WZ – wydanie zewnętrzne</h1><div class="big"><b>{{ d.number or 'SZKIC' }}</b></div>
+  <div><h1>{{ 'PZ – przyjęcie zewnętrzne' if d.kind == 'pz' else 'WZ – wydanie zewnętrzne' }}</h1><div class="big"><b>{{ d.number or 'SZKIC' }}</b></div>
   {% if d.status != 'issued' %}<div class="draft">Szkic – dokument nie został wystawiony</div>{% endif %}</div>
-  <div>Data wydania: <b>{{ d.issue_date|date }}</b>{% if d.invoice and d.invoice.number %}<br>Do faktury: {{ d.invoice.number }}{% endif %}</div>
+  <div>{{ 'Data przyjęcia' if d.kind == 'pz' else 'Data wydania' }}: <b>{{ d.issue_date|date }}</b>{% if d.invoice and d.invoice.number %}<br>Do faktury: {{ d.invoice.number }}{% endif %}</div>
 </div>
 <div class="parties">
-  <div class="party"><div class="h">Wydający</div><b>{{ d.company.name }}</b><br>{% for l in d.company.address_lines %}{{ l }}<br>{% endfor %}{% if d.company.nip %}NIP {{ d.company.nip }}{% endif %}</div>
-  <div class="party"><div class="h">Odbiorca</div><b>{{ d.recipient_name }}</b><br><span style="white-space:pre-line">{{ d.recipient_address }}</span>
+  <div class="party"><div class="h">{{ 'Przyjmujący' if d.kind == 'pz' else 'Wydający' }}</div><b>{{ d.company.name }}</b><br>{% for l in d.company.address_lines %}{{ l }}<br>{% endfor %}{% if d.company.nip %}NIP {{ d.company.nip }}{% endif %}</div>
+  <div class="party"><div class="h">{{ 'Dostawca' if d.kind == 'pz' else 'Odbiorca' }}</div><b>{{ d.recipient_name }}</b><br><span style="white-space:pre-line">{{ d.recipient_address }}</span>
     {% if d.contractor and d.contractor.nip %}<br>NIP {{ d.contractor.nip }}{% endif %}</div>
 </div>
 <table class="items">
-<tr><th>Lp.</th><th>Kod</th><th>Nazwa towaru</th><th class="n">Ilość</th><th>J.m.</th></tr>
-{% for it in d.items %}<tr><td>{{ it.position }}</td><td>{{ it.code }}</td><td>{{ it.name }}</td><td class="n">{{ it.quantity|qty }}</td><td>{{ it.unit }}</td></tr>{% endfor %}
+{% set priced = d.items|selectattr('unit_price', 'ne', none)|list %}
+<tr><th>Lp.</th><th>Kod</th><th>Nazwa</th><th class="n">Ilość</th><th>J.m.</th>{% if priced %}<th class="n">Cena {{ 'brutto' if d.prices_gross else 'netto' }}</th><th class="n">VAT</th><th class="n">Netto</th><th class="n">Brutto</th>{% endif %}</tr>
+{% for it in d.items %}<tr><td>{{ it.position }}</td><td>{{ it.code }}</td><td>{{ it.name }}</td><td class="n">{{ it.quantity|qty }}</td><td>{{ it.unit }}</td>
+{% if priced %}<td class="n">{{ it.unit_price|money if it.unit_price is not none }}</td><td class="n">{{ it.vat_rate }}{{ '%' if it.vat_rate.isdigit() }}</td><td class="n">{{ it.net|money if it.unit_price is not none }}</td><td class="n">{{ it.gross|money if it.unit_price is not none }}</td>{% endif %}</tr>{% endfor %}
+{% if priced %}<tr><td colspan="7" class="n"><b>Razem</b></td><td class="n"><b>{{ d.total_net|money }}</b></td><td class="n"><b>{{ d.total_gross|money }}</b></td></tr>{% endif %}
 </table>
 {% if d.notes %}<div class="notes">{{ d.notes }}</div>{% endif %}
 <div class="sign">
-  <div><div class="line">Wydał</div></div>
+  <div><div class="line">{{ 'Dostarczył' if d.kind == 'pz' else 'Wydał' }}</div></div>
   <div>{% if signature %}<img src="{{ signature }}" alt="">{% endif %}
-    <div class="line">Odebrał{% if d.signed_by %}: {{ d.signed_by }}{% endif %}{% if d.signed_at %}, {{ d.signed_at.strftime('%d.%m.%Y %H:%M') }}{% endif %}</div></div>
+    <div class="line">{{ 'Przyjął' if d.kind == 'pz' else 'Odebrał' }}{% if d.signed_by %}: {{ d.signed_by }}{% endif %}{% if d.signed_at %}, {{ d.signed_at.strftime('%d.%m.%Y %H:%M') }}{% endif %}</div></div>
 </div>
 </body></html>

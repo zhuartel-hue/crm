@@ -1,20 +1,24 @@
 {% extends "base.html" %}
-{% block title %}{{ 'Edycja ' ~ d.display_number if d.id else 'Nowa WZ' }}{% endblock %}
+{% block title %}{{ 'Edycja ' ~ d.display_number if d.id else ('Nowa PZ' if d.kind == 'pz' else 'Nowa WZ') }}{% endblock %}
 {% block content %}
-<h1>{{ 'Edycja ' ~ d.display_number if d.id else 'Nowa WZ' }}</h1>
+{% set is_pz = d.kind == 'pz' %}
+<h1>{{ 'Edycja ' ~ d.display_number if d.id else ('Nowa PZ (przyjęcie towaru)' if is_pz else 'Nowa WZ') }}</h1>
 <form method="post" class="card" action="{{ '/wz/%d/edytuj' % d.id if d.id else '/wz/nowa' }}">
 <input type="hidden" name="invoice_id" value="{{ d.invoice_id or '' }}">
+<input type="hidden" name="kind" value="{{ d.kind or 'wz' }}">
 <div class="grid">
-  <div><label>Data wydania</label><input type="date" name="issue_date" value="{{ d.issue_date.isoformat() if d.issue_date }}"></div>
+  <div><label>{{ 'Data przyjęcia' if is_pz else 'Data wydania' }}</label><input type="date" name="issue_date" value="{{ d.issue_date.isoformat() if d.issue_date }}"></div>
   <div><label>Kontrahent z bazy</label><select name="contractor_id" id="contractor">
     <option value="">—</option>
     {% for c in contractors %}<option value="{{ c.id }}" data-name="{{ c.name }}" data-address="{{ c.address_lines|join('\n') }}" {{ 'selected' if c.id == d.contractor_id }}>{{ c.name }}</option>{% endfor %}
   </select></div>
-  <div style="grid-column:1/-1"><label>Odbiorca</label><input name="recipient_name" id="recipient_name" value="{{ d.recipient_name }}" required></div>
-  <div style="grid-column:1/-1"><label>Adres odbiorcy</label><textarea name="recipient_address" id="recipient_address" rows="2">{{ d.recipient_address }}</textarea></div>
+  <div style="grid-column:1/-1"><label>{{ 'Dostawca' if is_pz else 'Odbiorca' }}</label><input name="recipient_name" id="recipient_name" value="{{ d.recipient_name }}" required></div>
+  <div style="grid-column:1/-1"><label>{{ 'Adres dostawcy' if is_pz else 'Adres odbiorcy' }}</label><textarea name="recipient_address" id="recipient_address" rows="2">{{ d.recipient_address }}</textarea></div>
 </div>
 {% if d.invoice %}<p class="muted">Do faktury <a href="/faktury/{{ d.invoice_id }}">{{ d.invoice.display_number }}</a></p>{% endif %}
-<h2>Towar</h2>
+<h2>Pozycje</h2>
+<p><label><input type="checkbox" name="prices_gross" value="1" id="prices_gross" {{ 'checked' if d.prices_gross }}> Ceny brutto</label>
+<span class="muted"> · cena jest opcjonalna; z cenami można od razu wystawić fakturę z dokumentu</span></p>
 <div id="items">
 {% for it in (d.items or [none]) %}
   <div class="item grid">
@@ -23,15 +27,21 @@
       <input type="hidden" name="item_product" value="{{ (it.product_id or '') if it else '' }}"></div>
     <div><label>Ilość</label><input name="item_qty" inputmode="decimal" value="{{ it.quantity|qty if it else '1' }}"></div>
     <div><label>Jedn.</label><input name="item_unit" value="{{ it.unit if it else 'szt.' }}"></div>
+    <div><label>Cena</label><input name="item_price" inputmode="decimal" value="{{ it.unit_price|money if it and it.unit_price is not none else '' }}"></div>
+    <div><label>VAT</label><select name="item_rate">{% for r in VAT_RATES %}<option value="{{ r }}" {{ 'selected' if (it.vat_rate if it else '23') == r }}>{{ r }}{{ '%' if r.isdigit() }}</option>{% endfor %}</select></div>
     <div><label>&nbsp;</label><button type="button" class="btn small remove">Usuń pozycję</button></div>
   </div>
 {% endfor %}
 </div>
 <datalist id="product-list">{% for pr in products %}<option value="{{ pr.label }}"></option>{% endfor %}</datalist>
-<p><button type="button" class="btn" id="add">+ Pozycja</button></p>
+<p class="row"><button type="button" class="btn" id="add">+ Pozycja</button>
+{% if not is_pz %}<button type="button" class="btn" data-quick="Dojazd" data-unit="km">+ Dojazd (km)</button>
+<button type="button" class="btn" data-quick="Roboczogodziny" data-unit="rbh">+ Roboczogodziny</button>{% endif %}
+<span class="spacer"></span><b id="total"></b></p>
 <div><label>Uwagi</label><textarea name="notes" rows="2">{{ d.notes }}</textarea></div>
 <p class="row"><button class="btn" name="action" value="save">Zapisz szkic</button>
-<button class="btn primary" name="action" value="issue">Wystaw WZ</button></p>
+<button class="btn primary" name="action" value="issue">Wystaw {{ 'PZ' if is_pz else 'WZ' }}</button></p>
+<p class="muted">Wystawienie {{ 'zwiększa' if is_pz else 'zmniejsza' }} stan magazynowy produktów z katalogu (usług nie liczy).</p>
 </form>
 {% endblock %}
 {% block scripts %}

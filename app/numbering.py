@@ -16,6 +16,7 @@ def period_for(company: Company, date: dt.date) -> str:
 def format_number(pattern: str, seq: int, date: dt.date) -> str:
     return (
         pattern.replace("{nr}", str(seq))
+        .replace("{NNN}", f"{seq:03d}")
         .replace("{MM}", f"{date:%m}")
         .replace("{RRRR}", f"{date:%Y}")
         .replace("{RR}", f"{date:%y}")
@@ -23,7 +24,7 @@ def format_number(pattern: str, seq: int, date: dt.date) -> str:
 
 
 PATTERNS = {"vat": "pattern_vat", "proforma": "pattern_proforma", "advance": "pattern_advance",
-            "correction": "pattern_correction", "wz": "pattern_wz"}
+            "correction": "pattern_correction", "wz": "pattern_wz", "pz": "pattern_pz"}
 
 
 def next_number(db: Session, company: Company, kind: str, issue_date: dt.date) -> tuple[int, str]:

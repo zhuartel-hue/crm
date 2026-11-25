@@ -37,6 +37,7 @@ class Company(Base):
     pattern_correction: Mapped[str] = mapped_column(String(60), default="FK/{nr}/{MM}/{RRRR}")
     pattern_advance: Mapped[str] = mapped_column(String(60), default="FZ/{nr}/{MM}/{RRRR}")
     pattern_wz: Mapped[str] = mapped_column(String(60), default="WZ/{nr}/{MM}/{RRRR}")
+    pattern_pz: Mapped[str] = mapped_column(String(60), default="PZ/{nr}/{MM}/{RRRR}")
     # "month" - numeracja od 1 co miesiac, "year" - co rok.
     numbering_reset: Mapped[str] = mapped_column(String(10), default="month")
     default_payment_days: Mapped[int] = mapped_column(Integer, default=7)
@@ -361,6 +362,9 @@ class Product(Base):
     ean: Mapped[str] = mapped_column(String(20), default="")
     description: Mapped[str] = mapped_column(Text, default="")
     active: Mapped[bool] = mapped_column(default=True)
+    # Usluga (dojazd, roboczogodziny...) nie ma stanu magazynowego.
+    is_service: Mapped[bool] = mapped_column(default=False)
+    stock: Mapped[Decimal] = mapped_column(Numeric(12, 3), default=Decimal("0"))
     # Skad pochodzi (np. "firmao:123", "shopify:gid"), do ponownego importu bez dubli.
     source_ref: Mapped[str] = mapped_column(String(120), default="", index=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
@@ -529,19 +533,27 @@ class MailAttachment(Base):
     message: Mapped[MailMessage] = relationship(back_populates="attachments")
 
 
+DELIVERY_KINDS = {"wz": "WZ – wydanie zewnętrzne", "pz": "PZ – przyjęcie zewnętrzne"}
+
+
 class Delivery(Base):
-    """WZ: wydanie zewnetrzne towaru (z podpisem odbiorcy)."""
+    """Dokument magazynowy: WZ (wydanie towaru odbiorcy, z podpisem) albo PZ (przyjecie od dostawcy)."""
 
     __tablename__ = "deliveries"
     __table_args__ = (UniqueConstraint("company_id", "number", name="uq_delivery_number"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"))
+    kind: Mapped[str] = mapped_column(String(3), default="wz")  # DELIVERY_KINDS
     status: Mapped[str] = mapped_column(String(10), default="draft")  # draft / issued
     number: Mapped[str | None] = mapped_column(String(60), nullable=True)
     seq: Mapped[int | None] = mapped_column(Integer, nullable=True)
     issue_date: Mapped[dt.date] = mapped_column(Date)
     contractor_id: Mapped[int | None] = mapped_column(ForeignKey("contractors.id", ondelete="SET NULL"), nullable=True)
+    prices_gross: Mapped[bool] = mapped_column(default=False)
+    total_net: Mapped[Decimal] = mapped_column(Money, default=Decimal("0"))
+    total_vat: Mapped[Decimal] = mapped_column(Money, default=Decimal("0"))
+    total_gross: Mapped[Decimal] = mapped_column(Money, default=Decimal("0"))
     recipient_name: Mapped[str] = mapped_column(String(300), default="")
     recipient_address: Mapped[str] = mapped_column(Text, default="")
     invoice_id: Mapped[int | None] = mapped_column(ForeignKey("invoices.id", ondelete="SET NULL"), nullable=True)
@@ -559,8 +571,12 @@ class Delivery(Base):
     )
 
     @property
+    def kind_short(self) -> str:
+        return (self.kind or "wz").upper()
+
+    @property
     def display_number(self) -> str:
-        return self.number or f"Szkic WZ #{self.id}"
+        return self.number or f"Szkic {self.kind_short} #{self.id}"
 
 
 class DeliveryItem(Base):
@@ -574,6 +590,28 @@ class DeliveryItem(Base):
     name: Mapped[str] = mapped_column(String(500))
     quantity: Mapped[Decimal] = mapped_column(Numeric(12, 3), default=Decimal("1"))
     unit: Mapped[str] = mapped_column(String(10), default="szt.")
+    unit_price: Mapped[Decimal | None] = mapped_column(Money, nullable=True)  # netto albo brutto wg delivery.prices_gross
+    vat_rate: Mapped[str] = mapped_column(String(3), default="23")
+    net: Mapped[Decimal] = mapped_column(Money, default=Decimal("0"))
+    vat: Mapped[Decimal] = mapped_column(Money, default=Decimal("0"))
+    gross: Mapped[Decimal] = mapped_column(Money, default=Decimal("0"))
 
     delivery: Mapped[Delivery] = relationship(back_populates="items")
     product: Mapped["Product | None"] = relationship()
+
+
+class StockMovement(Base):
+    """Ruch magazynowy produktu: WZ (minus), PZ (plus), korekta reczna."""
+
+    __tablename__ = "stock_movements"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    product_id: Mapped[int] = mapped_column(ForeignKey("products.id", ondelete="CASCADE"), index=True)
+    delivery_id: Mapped[int | None] = mapped_column(ForeignKey("deliveries.id", ondelete="SET NULL"), nullable=True)
+    date: Mapped[dt.date] = mapped_column(Date)
+    quantity: Mapped[Decimal] = mapped_column(Numeric(12, 3))  # ze znakiem
+    note: Mapped[str] = mapped_column(String(200), default="")
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
+
+    product: Mapped[Product] = relationship()
+    delivery: Mapped[Delivery | None] = relationship()

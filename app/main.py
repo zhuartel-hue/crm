@@ -30,6 +30,7 @@ from .services import ServiceError, audit, car_item_name
 from .db import SessionLocal, get_db
 from .models import (
     CAR_STATUSES,
+    DELIVERY_KINDS,
     SCOPES,
     ApiToken,
     AuditLog,
@@ -45,10 +46,12 @@ from .models import (
     Company,
     Contractor,
     Delivery,
+    DeliveryItem,
     Invoice,
     InvoiceItem,
     Product,
     ProductPhoto,
+    StockMovement,
 )
 from .seed import seed
 
@@ -848,7 +851,9 @@ def _get_product(db: Session, pid: int) -> Product:
 def product_edit(pid: int, request: Request, db: Session = Depends(get_db)):
     p = _get_product(db, pid)
     used = db.scalar(select(func.count()).select_from(InvoiceItem).where(InvoiceItem.product_id == pid))
-    return render(request, db, "product_form.html", product=p, used=used)
+    moves = db.scalars(select(StockMovement).where(StockMovement.product_id == pid)
+                       .order_by(StockMovement.date.desc(), StockMovement.id.desc()).limit(50)).all()
+    return render(request, db, "product_form.html", product=p, used=used, moves=moves)
 
 
 async def _save_product(request: Request, db: Session, p: Product):
@@ -862,6 +867,7 @@ async def _save_product(request: Request, db: Session, p: Product):
         p.ean = (form.get("ean") or "").strip()
         p.description = (form.get("description") or "").strip()
         p.active = form.get("active") == "1"
+        p.is_service = form.get("is_service") == "1"
         net = calc.parse_decimal(form.get("price_net"), None)
         gross = calc.parse_decimal(form.get("price_gross"), None)
         if form.get("price_mode") == "gross" and gross is not None:
@@ -869,7 +875,15 @@ async def _save_product(request: Request, db: Session, p: Product):
             net = (gross * 100 / (100 + pct)).quantize(Decimal("0.01"))
         p.price_net = net
         prod.validate(p)
+        stock = calc.parse_decimal(form.get("stock"), None)
+        if stock is not None and not p.is_service:
+            if is_new:
+                p.stock = Decimal("0")
+                db.add(p)
+                db.flush()
+            wz.adjust_stock(db, p, stock, (form.get("stock_note") or "").strip())
     except ValueError as e:
+        db.rollback()
         return render(request, db, "product_form.html", product=p, error=str(e))
     files = [(f.filename or "", await f.read()) for f in form.getlist("photos") if getattr(f, "filename", None)]
     errors = prod.add_photos(p, files)
@@ -898,6 +912,7 @@ def product_delete(pid: int, request: Request, db: Session = Depends(get_db)):
     label = p.label
     # Pozycje faktur zachowuja nazwe i cene; traca tylko powiazanie z katalogiem.
     db.execute(update(InvoiceItem).where(InvoiceItem.product_id == pid).values(product_id=None))
+    db.execute(update(DeliveryItem).where(DeliveryItem.product_id == pid).values(product_id=None))
     audit(db, web_actor(request), "product.delete", f"Usunięto produkt {label}", entity="product")
     db.delete(p)
     db.commit()
@@ -939,7 +954,7 @@ def product_photo(photo_id: int, mini: int = 0, db: Session = Depends(get_db)):
 
 COMPANY_FIELDS = ["short_name", "name", "nip", "street", "postal_code", "city", "bank_name", "bank_account",
                   "email", "phone", "issue_place", "pattern_vat", "pattern_proforma", "pattern_advance", "pattern_wz",
-                  "pattern_correction"]
+                  "pattern_pz", "pattern_correction"]
 
 
 @app.get("/ustawienia", response_class=HTMLResponse)
@@ -980,10 +995,11 @@ async def settings_save(request: Request, db: Session = Depends(get_db)):
     company.numbering_reset = "year" if form.get("numbering_reset") == "year" else "month"
     days = form.get("default_payment_days") or "7"
     company.default_payment_days = int(days) if days.isdigit() else 7
-    for p in (company.pattern_vat, company.pattern_correction, company.pattern_advance, company.pattern_proforma, company.pattern_wz):
-        if "{nr}" not in p:
+    for p in (company.pattern_vat, company.pattern_correction, company.pattern_advance, company.pattern_proforma, company.pattern_wz,
+              company.pattern_pz):
+        if "{nr}" not in p and "{NNN}" not in p:
             db.rollback()
-            return render(request, db, "settings.html", KSEF_ENVS=KSEF_ENVS, error="Wzór numeru musi zawierać {nr}.")
+            return render(request, db, "settings.html", KSEF_ENVS=KSEF_ENVS, error="Wzór numeru musi zawierać {nr} albo {NNN}.")
     db.commit()
     flash(request, "Zapisano ustawienia firmy.")
     return redirect("/ustawienia")
@@ -1406,24 +1422,27 @@ def _wz_form(request: Request, db: Session, d: Delivery, error: str | None = Non
 
 
 @app.get("/wz", response_class=HTMLResponse)
-def wz_list(request: Request, q: str = "", db: Session = Depends(get_db)):
+def wz_list(request: Request, q: str = "", rodzaj: str = "", db: Session = Depends(get_db)):
     company = current_company(request, db)
     stmt = select(Delivery).where(Delivery.company_id == company.id)
+    if rodzaj in DELIVERY_KINDS:
+        stmt = stmt.where(Delivery.kind == rodzaj)
     if q:
         like = f"%{q}%"
         stmt = stmt.where(or_(Delivery.number.ilike(like), Delivery.recipient_name.ilike(like)))
     rows = db.scalars(stmt.order_by(Delivery.issue_date.desc(), Delivery.id.desc()).limit(200)).all()
-    return render(request, db, "wz_list.html", rows=rows, q=q)
+    return render(request, db, "wz_list.html", rows=rows, q=q, rodzaj=rodzaj)
 
 
 @app.get("/wz/nowa", response_class=HTMLResponse)
-def wz_new(request: Request, faktura: int = 0, db: Session = Depends(get_db)):
+def wz_new(request: Request, faktura: int = 0, rodzaj: str = "wz", db: Session = Depends(get_db)):
     company = current_company(request, db)
     if faktura:
         d = wz.from_invoice(get_invoice(db, request, faktura))
     else:
-        d = Delivery(company_id=company.id, status="draft", issue_date=dt.date.today(), recipient_name="",
-                     recipient_address="", notes="", signed_by="")
+        d = Delivery(company_id=company.id, kind=rodzaj if rodzaj in DELIVERY_KINDS else "wz", status="draft",
+                     issue_date=dt.date.today(), recipient_name="", recipient_address="", notes="", signed_by="",
+                     prices_gross=False)
     return _wz_form(request, db, d)
 
 
@@ -1432,6 +1451,9 @@ async def _wz_save(request: Request, db: Session, d: Delivery):
     d.recipient_name = (form.get("recipient_name") or "").strip()[:300]
     d.recipient_address = (form.get("recipient_address") or "").strip()
     d.notes = (form.get("notes") or "").strip()
+    if d.id is None and form.get("kind") in DELIVERY_KINDS:
+        d.kind = form.get("kind")
+    d.prices_gross = form.get("prices_gross") == "1"
     cid = form.get("contractor_id") or ""
     d.contractor_id = int(cid) if cid.isdigit() and db.get(Contractor, int(cid)) else None
     iid = form.get("invoice_id") or ""
@@ -1444,7 +1466,7 @@ async def _wz_save(request: Request, db: Session, d: Delivery):
         d.issue_date = dt.date.today()
     try:
         wz.set_items(db, d, form.getlist("item_name"), form.getlist("item_qty"), form.getlist("item_unit"),
-                     form.getlist("item_product"))
+                     form.getlist("item_product"), form.getlist("item_price"), form.getlist("item_rate"))
         db.add(d)
         db.flush()
         if form.get("action") == "issue":
@@ -1455,14 +1477,14 @@ async def _wz_save(request: Request, db: Session, d: Delivery):
     except ValueError as e:
         db.rollback()
         return _wz_form(request, db, d, error=str(e))
-    flash(request, f"Wystawiono {d.number}." if d.status == "issued" else "Zapisano szkic WZ.")
+    flash(request, f"Wystawiono {d.number}." if d.status == "issued" else f"Zapisano szkic {d.kind_short}.")
     return redirect(f"/wz/{d.id}")
 
 
 @app.post("/wz/nowa")
 async def wz_create(request: Request, db: Session = Depends(get_db)):
     company = current_company(request, db)
-    return await _wz_save(request, db, Delivery(company_id=company.id, status="draft", signed_by=""))
+    return await _wz_save(request, db, Delivery(company_id=company.id, kind="wz", status="draft", signed_by=""))
 
 
 @app.get("/wz/{wid}", response_class=HTMLResponse)
@@ -1475,7 +1497,7 @@ def wz_view(wid: int, request: Request, db: Session = Depends(get_db)):
 def wz_edit(wid: int, request: Request, db: Session = Depends(get_db)):
     d = _get_wz(db, request, wid)
     if d.status != "draft":
-        raise HTTPException(409, "WZ jest już wystawiona.")
+        raise HTTPException(409, "Dokument jest już wystawiony.")
     return _wz_form(request, db, d)
 
 
@@ -1483,7 +1505,7 @@ def wz_edit(wid: int, request: Request, db: Session = Depends(get_db)):
 async def wz_update(wid: int, request: Request, db: Session = Depends(get_db)):
     d = _get_wz(db, request, wid)
     if d.status != "draft":
-        raise HTTPException(409, "WZ jest już wystawiona.")
+        raise HTTPException(409, "Dokument jest już wystawiony.")
     return await _wz_save(request, db, d)
 
 
@@ -1518,6 +1540,19 @@ async def wz_sign(wid: int, request: Request, db: Session = Depends(get_db)):
     return redirect(f"/wz/{d.id}")
 
 
+@app.post("/wz/{wid}/faktura")
+def wz_to_invoice(wid: int, request: Request, db: Session = Depends(get_db)):
+    d = _get_wz(db, request, wid)
+    try:
+        inv = wz.to_invoice(db, web_actor(request), d)
+    except ValueError as e:
+        db.rollback()
+        flash(request, str(e))
+        return redirect(f"/wz/{d.id}")
+    flash(request, f"Utworzono szkic faktury z {d.number}. Sprawdź i wystaw.")
+    return redirect(f"/faktury/{inv.id}/edytuj")
+
+
 @app.get("/wz/{wid}/pdf")
 def wz_pdf(wid: int, request: Request, db: Session = Depends(get_db), pobierz: int = 0):
     d = _get_wz(db, request, wid)
@@ -1531,11 +1566,11 @@ def wz_pdf(wid: int, request: Request, db: Session = Depends(get_db), pobierz: i
 def wz_delete(wid: int, request: Request, db: Session = Depends(get_db)):
     d = _get_wz(db, request, wid)
     if d.status != "draft":
-        flash(request, "Wystawionej WZ nie można usunąć.")
+        flash(request, "Wystawionego dokumentu nie można usunąć.")
         return redirect(f"/wz/{d.id}")
     db.delete(d)
     db.commit()
-    flash(request, "Usunięto szkic WZ.")
+    flash(request, f"Usunięto szkic {d.kind_short}.")
     return redirect("/wz")
 
 

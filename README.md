@@ -86,6 +86,12 @@ numeracja `WZ/{nr}/{MM}/{RRRR}` (Ustawienia), podpis odbiorcy palcem na telefoni
 Sygnavo można dodać do ekranu początkowego telefonu (Safari → Udostępnij → „Do ekranu początkowego”):
 otwiera się wtedy jak aplikacja, z ikoną. Service worker niczego nie zapisuje offline.
 
+Zakładka **Magazyn** (jak w Firmao): WZ i PZ. Pozycje mogą mieć cenę i VAT, są przyciski „+ Dojazd (km)”
+i „+ Roboczogodziny”; z wystawionej WZ przycisk „Wystaw fakturę z WZ” tworzy szkic faktury VAT.
+Wystawienie WZ zmniejsza, a PZ zwiększa stan produktu z katalogu (usługi nie mają stanu). Stan i historię ruchów
+widać na karcie produktu; tam też ręczna korekta stanu (np. inwentaryzacja). W numeracji `{NNN}` daje numer
+z zerami (`{RRRR}/{MM}/{NNN}/WZ` → `2027/02/001/WZ`, jak w Firmao).
+
 ## Uruchomienie u siebie
 
 ```bash

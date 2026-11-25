@@ -1,11 +1,14 @@
 {% extends "base.html" %}
 {% block title %}{{ d.display_number }}{% endblock %}
 {% block content %}
-<div class="row"><h1>WZ {{ d.display_number }}</h1>
+<div class="row"><h1>{{ d.kind_short }} {{ d.display_number }}</h1>
 {% if d.status == 'draft' %}<span class="badge warn">szkic</span>{% elif d.signature_png %}<span class="badge ok">podpisana</span>{% endif %}</div>
 <div class="row" style="margin-bottom:16px">
   <a class="btn" href="/wz/{{ d.id }}/pdf" target="_blank">PDF</a>
   <a class="btn" href="/wz/{{ d.id }}/pdf?pobierz=1">Pobierz PDF</a>
+  {% if d.status == 'issued' and d.kind == 'wz' and not d.invoice_id %}
+  <form method="post" action="/wz/{{ d.id }}/faktura"><button class="btn primary">Wystaw fakturę z WZ</button></form>
+  {% endif %}
   {% if d.status == 'draft' %}
   <a class="btn" href="/wz/{{ d.id }}/edytuj">Edytuj</a>
   <form method="post" action="/wz/{{ d.id }}/wystaw"><button class="btn primary">Wystaw</button></form>
@@ -13,17 +16,20 @@
   {% endif %}
 </div>
 <div class="grid">
-  <div class="card"><div class="muted">Odbiorca</div><b>{{ d.recipient_name }}</b><br><span style="white-space:pre-line">{{ d.recipient_address }}</span></div>
-  <div class="card">Data wydania {{ d.issue_date|date }}
+  <div class="card"><div class="muted">{{ 'Dostawca' if d.kind == 'pz' else 'Odbiorca' }}</div><b>{{ d.recipient_name }}</b><br><span style="white-space:pre-line">{{ d.recipient_address }}</span></div>
+  <div class="card">{{ 'Data przyjęcia' if d.kind == 'pz' else 'Data wydania' }} {{ d.issue_date|date }}
     {% if d.invoice %}<br>Faktura: <a href="/faktury/{{ d.invoice_id }}">{{ d.invoice.display_number }}</a>{% endif %}
     {% if d.notes %}<br><span style="white-space:pre-line">{{ d.notes }}</span>{% endif %}</div>
 </div>
 <div class="card tbl"><table>
-<tr><th>Lp.</th><th>Towar</th><th class="n">Ilość</th><th>Jedn.</th></tr>
+{% set priced = d.items|selectattr('unit_price', 'ne', none)|list %}
+<tr><th>Lp.</th><th>Pozycja</th><th class="n">Ilość</th><th>Jedn.</th>{% if priced %}<th class="n">Cena {{ 'brutto' if d.prices_gross else 'netto' }}</th><th class="n hide-sm">VAT</th><th class="n">Brutto</th>{% endif %}</tr>
 {% for it in d.items %}<tr><td>{{ it.position }}</td><td>{{ it.name }}{% if it.code %}<br><span class="muted">{{ it.code }}</span>{% endif %}</td>
-<td class="n">{{ it.quantity|qty }}</td><td>{{ it.unit }}</td></tr>{% endfor %}
+<td class="n">{{ it.quantity|qty }}</td><td>{{ it.unit }}</td>
+{% if priced %}<td class="n">{{ it.unit_price|money if it.unit_price is not none }}</td><td class="n hide-sm">{{ it.vat_rate }}{{ '%' if it.vat_rate.isdigit() }}</td><td class="n">{{ it.gross|money if it.unit_price is not none }}</td>{% endif %}</tr>{% endfor %}
+{% if priced %}<tr><td colspan="4"></td><td class="n" colspan="2">Netto {{ d.total_net|money }} · VAT {{ d.total_vat|money }}</td><td class="n"><b>{{ d.total_gross|money }} zł</b></td></tr>{% endif %}
 </table></div>
-{% if d.status == 'issued' %}
+{% if d.status == 'issued' and d.kind == 'wz' %}
 <div class="card">
   <h2 style="margin-top:0">Podpis odbiorcy</h2>
   {% if signature %}<img src="{{ signature }}" alt="podpis" style="max-width:100%;height:120px;object-fit:contain;background:#fff;border:1px solid #ddd">
