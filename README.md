@@ -19,6 +19,7 @@ biała lista VAT, wysyłka mailem, przeniesienie danych z Firmao.
   albo co rok; wzór do ustawienia (domyślnie `FV/{nr}/{MM}/{RRRR}`).
 - **Szkic → wystawienie**: numer nadaje się przy wystawieniu. Wystawionej faktury
   nie można zmienić ani usunąć (zmiany przez korektę w kolejnym etapie, potem KSeF).
+- Usuwanie auta i kontrahenta, jeśli nie ma wystawionych faktur (szkice tracą tylko powiązanie).
 - PDF (A4, polskie znaki), logowanie hasłem, wygodne na iPhonie.
 
 Dane obu firm (nazwa, NIP, adres, konto) są wpisane z białej listy VAT; zmienia się je w Ustawieniach.
@@ -71,6 +72,11 @@ Instalacja i aktualizacja (root):
 git clone <repo> /opt/crm   # albo skopiowanie katalogu
 bash /opt/crm/deploy/install.sh
 ```
+
+Własny adres (np. `crm.margotsystem.com`): rekord DNS A na IP serwera, w `/opt/crm/.env` linia
+`APP_DOMAIN=crm.margotsystem.com` i ponownie `install.sh`. Skrypt ustawia `PUBLIC_URL`, blok w Caddyfile
+(oznaczony `# >>> crm` … `# <<< crm`) i przekierowanie ze starego `faktury.<adres-serwera>`. Konektor Claude
+trzeba potem podłączyć raz pod nowym adresem `/mcp`.
 
 Skrypt robi najpierw kopię serwera (`/opt/sygnavo/kopia.sh`, jeśli jest), buduje
 obraz, uruchamia kontenery i dopisuje blok `faktury.{$DOMAIN}` do Caddyfile ChirpStacka.

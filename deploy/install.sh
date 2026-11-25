@@ -11,7 +11,11 @@ log() { printf '\n==> %s\n' "$*"; }
 CHIRPSTACK_DIR="${CHIRPSTACK_DIR:-/opt/chirpstack}"
 [ -f "$CHIRPSTACK_DIR/.env" ] || { echo "Nie widze ChirpStacka w $CHIRPSTACK_DIR."; exit 1; }
 CS_DOMAIN="$(grep '^DOMAIN=' "$CHIRPSTACK_DIR/.env" | cut -d= -f2-)"
-APP_DOMAIN="faktury.$CS_DOMAIN"
+DEFAULT_DOMAIN="faktury.$CS_DOMAIN"
+# Wlasny adres (np. crm.margotsystem.com) ustawia sie w /opt/crm/.env: APP_DOMAIN=...
+# Rekord DNS A tego adresu musi wskazywac na serwer. Stary adres faktury.<domena> przekierowuje na nowy.
+APP_DOMAIN="$( (grep '^APP_DOMAIN=' .env 2>/dev/null || true) | cut -d= -f2-)"
+APP_DOMAIN="${APP_DOMAIN:-$DEFAULT_DOMAIN}"
 
 # Najpierw pelna kopia serwera, jesli jest skrypt kopii Sygnavo.
 if [ -f /opt/sygnavo/kopia.sh ]; then bash /opt/sygnavo/kopia.sh || echo "Kopia sie nie udala, kontynuuje."; fi
@@ -36,25 +40,40 @@ ENV
 fi
 
 # Adres publiczny (potrzebny dla logowania konektora Claude przez OAuth).
-grep -q '^PUBLIC_URL=' .env || echo "PUBLIC_URL=https://$APP_DOMAIN" >> .env
+sed -i '/^PUBLIC_URL=/d' .env
+echo "PUBLIC_URL=https://$APP_DOMAIN" >> .env
 
 log "Buduje i uruchamiam program"
 docker compose build
 docker compose up -d --remove-orphans
 
 log "Adres HTTPS w Caddy: $APP_DOMAIN"
-if ! grep -q 'crm-app' "$CHIRPSTACK_DIR/Caddyfile"; then
-  cat >> "$CHIRPSTACK_DIR/Caddyfile" <<'CADDY'
-
-# Program do faktur (katalog /opt/crm).
-faktury.{$DOMAIN} {
-	encode gzip
-	reverse_proxy crm-app:8000
-}
-CADDY
-  (cd "$CHIRPSTACK_DIR" && docker compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile) \
-    || (cd "$CHIRPSTACK_DIR" && docker compose restart caddy)
+CADDYFILE="$CHIRPSTACK_DIR/Caddyfile"
+if [ "$APP_DOMAIN" = "$DEFAULT_DOMAIN" ]; then
+  BLOCK="$(printf '%s\n' '# >>> crm (program do faktur, /opt/crm; blok zarzadzany przez deploy/install.sh)' \
+    'faktury.{$DOMAIN} {' '	encode gzip' '	reverse_proxy crm-app:8000' '}' '# <<< crm')"
+else
+  BLOCK="$(printf '%s\n' '# >>> crm (program do faktur, /opt/crm; blok zarzadzany przez deploy/install.sh)' \
+    "$APP_DOMAIN {" '	encode gzip' '	reverse_proxy crm-app:8000' '}' \
+    'faktury.{$DOMAIN} {' "	redir https://$APP_DOMAIN{uri} permanent" '}' '# <<< crm')"
 fi
+# Usun stary blok (bez znacznikow z pierwszej instalacji albo ze znacznikami) i dopisz aktualny.
+python3 - "$CADDYFILE" "$BLOCK" <<'PY'
+import re, sys
+path, block = sys.argv[1], sys.argv[2]
+text = open(path).read()
+new = re.sub(r"\n*# >>> crm.*?# <<< crm\n?", "\n", text, flags=re.S)
+new = re.sub(r"\n*# Program do faktur \(katalog /opt/crm\)\.\nfaktury\.\{\$DOMAIN\} \{\n\tencode gzip\n\treverse_proxy crm-app:8000\n\}\n?", "\n", new)
+new = new.rstrip("\n") + "\n\n" + block + "\n"
+if new != text:
+    open(path + ".przed-crm-install", "w").write(text)
+    open(path, "w").write(new)
+    print("Caddyfile zmieniony (poprzedni: " + path + ".przed-crm-install)")
+else:
+    print("Caddyfile bez zmian")
+PY
+(cd "$CHIRPSTACK_DIR" && docker compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile) \
+  || (cd "$CHIRPSTACK_DIR" && docker compose restart caddy)
 
 log "Czekam na program"
 for _ in $(seq 1 60); do

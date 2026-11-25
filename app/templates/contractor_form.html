@@ -18,5 +18,7 @@
 </div>
 <div class="row"><button class="btn primary">Zapisz</button><a class="btn" href="/kontrahenci">Anuluj</a></div>
 </form>
+{% if c.id and not (invoices|selectattr('status', 'equalto', 'issued')|list) %}
+<form method="post" action="/kontrahenci/{{ c.id }}/usun" onsubmit="return confirm('Usunąć tego kontrahenta?')" style="margin-top:12px"><button class="btn danger">Usuń kontrahenta</button></form>{% endif %}
 {% if invoices %}<h2>Faktury</h2>{% include "_invoice_rows.html" %}{% endif %}
 {% endblock %}
