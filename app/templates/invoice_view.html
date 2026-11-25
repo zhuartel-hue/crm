@@ -77,5 +77,8 @@
 {% for s in summary %}<tr><td>{{ s.rate }}{{ '%' if s.rate.isdigit() }}</td><td class="n">{{ s.net|money }}</td><td class="n">{{ s.vat|money }}</td><td class="n">{{ s.gross|money }}</td></tr>{% endfor %}
 <tr><td><b>Razem</b></td><td class="n">{{ inv.total_net|money }}</td><td class="n">{{ inv.total_vat|money }}</td><td class="n"><b>{{ inv.total_gross|money }}</b></td></tr>
 </table></div>
+{% if bank_payments %}<div class="card"><div class="muted">Wpłaty z banku</div>
+{% for t in bank_payments %}{{ t.booking_date|date }} · <b>{{ t.applied_amount|money }} zł</b> · {{ t.counterparty or '—' }} <span class="muted">({{ 'auto' if t.state == 'auto' else ('ręcznie' if t.state == 'manual' else 'propozycja') }})</span><br>{% endfor %}
+<a href="/bank?pokaz=wszystkie">Bank →</a></div>{% endif %}
 {% if inv.notes %}<div class="card"><div class="muted">Uwagi</div><span style="white-space:pre-line">{{ inv.notes }}</span></div>{% endif %}
 {% endblock %}

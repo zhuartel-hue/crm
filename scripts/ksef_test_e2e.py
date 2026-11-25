@@ -59,6 +59,12 @@ def check(r: httpx.Response):
     return r.json() if r.content else {}
 
 
+def _tok_code(d) -> str:
+    """/tokens/rev2/{ref}: status to obiekt TokenStatusRev2 {code, rawCode, displayName}."""
+    st = d.get("status")
+    return st.get("code", "") if isinstance(st, dict) else str(st or "")
+
+
 def token_via_xades(http: httpx.Client, nip: str) -> str:
     from cryptography import x509
     from cryptography.hazmat.primitives import hashes, serialization
@@ -103,8 +109,8 @@ def token_via_xades(http: httpx.Client, nip: str) -> str:
     gen = check(http.post("/tokens/rev2", headers={"Authorization": f"Bearer {at}"},
                           json={"permissions": ["InvoiceWrite", "InvoiceRead"], "description": "Sygnavo test e2e"}))
     st = poll(lambda: check(http.get(f"/tokens/rev2/{gen['referenceNumber']}", headers={"Authorization": f"Bearer {at}"})),
-              lambda d: d["status"] not in ("Pending",))
-    if st["status"] != "Active":
+              lambda d: _tok_code(d) not in ("Pending", "NotYetActive"))
+    if _tok_code(st) != "Active":
         raise SystemExit(f"Token KSeF ma status {st['status']}")
     print("✓ token KSeF wygenerowany i aktywny")
     return gen["token"]

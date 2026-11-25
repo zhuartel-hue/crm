@@ -17,6 +17,8 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from . import api, auth, calc, config, mcp_server, migrate, numbering, password, pdf
 from . import products as prod
+from .bank import service as bank
+from .bank.mt940 import MT940Error
 from .ksef import ENVIRONMENTS as KSEF_ENVS
 from .ksef import qr as ksef_qr
 from .ksef import service as ksef
@@ -28,6 +30,7 @@ from .models import (
     SCOPES,
     ApiToken,
     AuditLog,
+    BankTransaction,
     INVOICE_KINDS,
     NEW_KINDS,
     PAYMENT_METHODS,
@@ -421,7 +424,10 @@ def invoice_view(invoice_id: int, request: Request, db: Session = Depends(get_db
         select(Invoice).where(Invoice.related_id == inv.id).order_by(Invoice.issue_date, Invoice.id)
     ).all()
     url = ksef.qr_url(inv)
+    bank_payments = db.scalars(select(BankTransaction).where(BankTransaction.invoice_id == inv.id)
+                               .order_by(BankTransaction.booking_date)).all()
     return render(request, db, "invoice_view.html", inv=inv, summary=calc.invoice_summary(inv), derived=corrections,
+                  bank_payments=bank_payments,
                   ksef_enabled=ksef.enabled(inv.company), ksef_can_send=ksef.can_send(inv),
                   ksef_label=ksef.status_label(inv), ksef_url=url, ksef_qr=ksef_qr.svg(url) if url else "")
 
@@ -979,3 +985,93 @@ def access_revoke(grant_id: str, request: Request, db: Session = Depends(get_db)
     db.commit()
     flash(request, "Dostęp cofnięty.")
     return redirect("/dostep")
+
+
+# ---------------------------------------------------------------- bank
+
+BANK_FILTERS = {
+    "do-sprawdzenia": ("suggested", "none"),
+    "wplywy": ("auto", "manual", "suggested", "none", "ignored"),
+    "zaksiegowane": ("auto", "manual"),
+    "wszystkie": None,
+}
+
+
+@app.get("/bank", response_class=HTMLResponse)
+def bank_list(request: Request, pokaz: str = "do-sprawdzenia", db: Session = Depends(get_db)):
+    company = current_company(request, db)
+    if pokaz not in BANK_FILTERS:
+        pokaz = "do-sprawdzenia"
+    stmt = select(BankTransaction).where(BankTransaction.company_id == company.id)
+    states = BANK_FILTERS[pokaz]
+    if states:
+        stmt = stmt.where(BankTransaction.state.in_(states))
+    rows = db.scalars(stmt.order_by(BankTransaction.booking_date.desc(), BankTransaction.id.desc()).limit(300)).all()
+    counts = dict(db.execute(select(BankTransaction.state, func.count()).where(BankTransaction.company_id == company.id)
+                             .group_by(BankTransaction.state)).all())
+    return render(request, db, "bank.html", rows=rows, pokaz=pokaz, counts=counts, states=bank.STATES,
+                  open_invoices=bank.open_invoices(db, company.id))
+
+
+@app.post("/bank/import")
+async def bank_import(request: Request, db: Session = Depends(get_db)):
+    company = current_company(request, db)
+    form = await request.form()
+    files = [f for f in form.getlist("files") if getattr(f, "filename", None)]
+    if not files:
+        flash(request, "Wybierz plik MT940 z iPKO.")
+        return redirect("/bank")
+    msgs = []
+    for f in files:
+        data = await f.read()
+        if len(data) > 10 * 1024 * 1024:
+            msgs.append(f"{f.filename}: plik za duży.")
+            continue
+        try:
+            res = bank.import_file(db, web_actor(request), data, f.filename or "plik", company)
+            db.commit()
+            msgs.append(res["summary"])
+        except MT940Error as e:
+            db.rollback()
+            msgs.append(f"{f.filename}: {e}")
+    flash(request, " ".join(msgs))
+    return redirect("/bank")
+
+
+def _bank_action(request: Request, db: Session, fn, *args) -> RedirectResponse:
+    company = current_company(request, db)
+    back = request.headers.get("referer") or ""
+    base = str(request.base_url)
+    back = "/" + back[len(base):] if back.startswith(base) else "/bank"
+    try:
+        fn(db, web_actor(request), company.id, *args)
+        db.commit()
+    except ValueError as e:
+        db.rollback()
+        flash(request, str(e))
+    return redirect(back)
+
+
+@app.post("/bank/{tx_id}/potwierdz")
+async def bank_confirm(tx_id: int, request: Request, db: Session = Depends(get_db)):
+    form = await request.form()
+    company = current_company(request, db)
+    invoice_id = None
+    chosen = (form.get("invoice") or "").strip()
+    if chosen:
+        inv = bank.find_invoice_by_number(db, company.id, chosen)
+        if inv is None:
+            flash(request, f"Nie znalazłem wystawionej faktury {chosen}.")
+            return redirect("/bank")
+        invoice_id = inv.id
+    return _bank_action(request, db, bank.confirm, tx_id, invoice_id)
+
+
+@app.post("/bank/{tx_id}/cofnij")
+def bank_undo(tx_id: int, request: Request, db: Session = Depends(get_db)):
+    return _bank_action(request, db, bank.undo, tx_id)
+
+
+@app.post("/bank/{tx_id}/pomin")
+def bank_ignore(tx_id: int, request: Request, db: Session = Depends(get_db)):
+    return _bank_action(request, db, bank.ignore, tx_id)

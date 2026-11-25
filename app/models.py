@@ -4,7 +4,7 @@ from __future__ import annotations
 import datetime as dt
 from decimal import Decimal
 
-from sqlalchemy import Date, DateTime, ForeignKey, Integer, LargeBinary, Numeric, String, Text, UniqueConstraint, func
+from sqlalchemy import Date, DateTime, ForeignKey, Index, Integer, LargeBinary, Numeric, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .db import Base
@@ -402,3 +402,38 @@ class AppSetting(Base):
 
     key: Mapped[str] = mapped_column(String(60), primary_key=True)
     value: Mapped[str] = mapped_column(Text, default="")
+
+
+BANK_STATES = ("auto", "manual", "suggested", "none", "ignored", "out")
+
+
+class BankTransaction(Base):
+    """Operacja z wyciagu bankowego (MT940). Wplyw moze byc zaksiegowany na fakture."""
+
+    __tablename__ = "bank_transactions"
+    __table_args__ = (
+        UniqueConstraint("company_id", "fingerprint", name="uq_bank_tx_fingerprint"),
+        Index("ix_bank_tx_company_date", "company_id", "booking_date"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"))
+    account: Mapped[str] = mapped_column(String(40), default="")
+    booking_date: Mapped[dt.date] = mapped_column(Date)
+    value_date: Mapped[dt.date] = mapped_column(Date)
+    amount: Mapped[Decimal] = mapped_column(Money)  # dodatnia = wplyw
+    currency: Mapped[str] = mapped_column(String(3), default="PLN")
+    title: Mapped[str] = mapped_column(Text, default="")
+    counterparty: Mapped[str] = mapped_column(String(300), default="")
+    counterparty_account: Mapped[str] = mapped_column(String(40), default="")
+    op_code: Mapped[str] = mapped_column(String(5), default="")
+    bank_ref: Mapped[str] = mapped_column(String(40), default="")
+    fingerprint: Mapped[str] = mapped_column(String(64))
+    source: Mapped[str] = mapped_column(String(200), default="")
+    state: Mapped[str] = mapped_column(String(10), default="none")  # BANK_STATES
+    invoice_id: Mapped[int | None] = mapped_column(ForeignKey("invoices.id", ondelete="SET NULL"), nullable=True)
+    applied_amount: Mapped[Decimal] = mapped_column(Money, default=Decimal("0"))
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
+
+    company: Mapped[Company] = relationship()
+    invoice: Mapped[Invoice | None] = relationship()
