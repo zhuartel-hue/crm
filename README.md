@@ -1,7 +1,7 @@
 # Sygnavo: faktury i CRM dla Margot i ARI ERDMANN WORLDS
 
 Sygnavo to własny program do fakturowania dla autokomisu, zamiast Firmao. Dwie firmy w jednym
-miejscu, faktury VAT i VAT marża na auta używane, PDF. Kolejne etapy: KSeF 2.0,
+miejscu, faktury VAT (także na sprzedaż aut), PDF. Kolejne etapy: KSeF 2.0,
 biała lista VAT, wysyłka mailem, przeniesienie danych z Firmao.
 
 ## Etap 1 (ten kod)
@@ -10,12 +10,10 @@ biała lista VAT, wysyłka mailem, przeniesienie danych z Firmao.
   i numerację. Kontrahenci są wspólni dla obu firm, auta i faktury są osobne.
 - **Faktura VAT**: stawki 23, 8, 5, 0, zw, np; ceny wpisywane brutto albo netto;
   zestawienie wg stawek, kwota słownie.
-- **Faktura VAT marża** (art. 120 ustawy o VAT): marża = cena sprzedaży brutto
-  minus cena nabycia, VAT = marża × 23/123, przy ujemnej marży VAT 0. Na fakturze
-  dla klienta jest tylko kwota brutto i adnotacja „procedura marży – towary
-  używane”; marża i VAT od marży są widoczne tylko w programie.
+- Faktury VAT marża nie ma (usunięta 2026-11-25, firmy z niej nie korzystają);
+  jej kolumny zostały w bazie, ale program ich nie używa.
 - **Auta na placu**: marka, model, VIN, rocznik, przebieg, nr rej., cena nabycia,
-  cena sprzedaży. „Sprzedaj” wypełnia fakturę marżową danymi auta, a po wystawieniu
+  cena sprzedaży. „Sprzedaj” wypełnia fakturę VAT danymi auta, a po wystawieniu
   auto dostaje status „Sprzedany”.
 - **Numeracja** bez dziur, osobno dla firmy i rodzaju faktury, od 1 co miesiąc
   albo co rok; wzór do ustawienia (domyślnie `FV/{nr}/{MM}/{RRRR}` i `FM/{nr}/{MM}/{RRRR}`).
@@ -32,7 +30,7 @@ w Claude **Ustawienia → Konektory → Dodaj własny konektor**, adres jak wyż
 zalogowanie do programu i zaznaczenie uprawnień. Instrukcja jest też w programie, zakładka **Claude**.
 
 - **Narzędzia**: firmy, szukanie kontrahentów i aut, nowy kontrahent i auto, lista i szczegóły
-  faktur, szkic faktury (VAT albo marża, z auta jednym parametrem `car_id`), wystawienie,
+  faktur, szkic faktury VAT (z auta jednym parametrem `car_id`), wystawienie,
   płatność, podsumowanie miesiąca.
 - **Uprawnienia** wybierane przy łączeniu: `read` (odczyt), `write` (szkice, auta, kontrahenci,
   płatności), `issue` (wystawianie). Domyślnie wystawianie jest wyłączone: Claude robi szkic,

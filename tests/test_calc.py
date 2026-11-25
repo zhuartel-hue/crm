@@ -18,20 +18,6 @@ def test_exempt_rate():
     assert line.vat == 0 and line.gross == D("500.00")
 
 
-def test_margin_vat_inside_margin():
-    # Kupione za 30 000, sprzedane za 36 150: marza 6 150, VAT = 6150*23/123 = 1150
-    line = calc.margin_line(D("1"), D("36150"), D("30000"))
-    assert line.margin == D("6150.00")
-    assert line.vat == D("1150.00")
-    assert line.gross == D("36150.00")
-
-
-def test_negative_margin_no_vat():
-    line = calc.margin_line(D("1"), D("20000"), D("25000"))
-    assert line.margin == D("-5000.00")
-    assert line.vat == 0
-
-
 def test_parse_polish_number():
     assert calc.parse_decimal("12 345,67") == D("12345.67")
     assert calc.parse_decimal("") is None

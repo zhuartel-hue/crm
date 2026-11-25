@@ -1,11 +1,10 @@
-"""Wyliczenia kwot na fakturach: VAT od pozycji i VAT od marzy (art. 120 ustawy o VAT)."""
+"""Wyliczenia kwot na fakturach VAT."""
 from __future__ import annotations
 
 from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 CENT = Decimal("0.01")
-MARGIN_VAT_RATE = Decimal("23")
 
 
 def money(value) -> Decimal:
@@ -35,7 +34,6 @@ class Line:
     net: Decimal
     vat: Decimal
     gross: Decimal
-    margin: Decimal | None = None
 
 
 def vat_line(quantity: Decimal, unit_price: Decimal, rate: str, prices_gross: bool) -> Line:
@@ -53,21 +51,6 @@ def vat_line(quantity: Decimal, unit_price: Decimal, rate: str, prices_gross: bo
     return Line(net=net, vat=vat, gross=gross)
 
 
-def margin_line(quantity: Decimal, unit_price_gross: Decimal, purchase_price: Decimal) -> Line:
-    """Pozycja faktury VAT marza.
-
-    Marza = kwota od nabywcy (brutto) - cena nabycia. VAT jest "w srodku" marzy:
-    VAT = marza * 23/123. Gdy marza jest ujemna, VAT wynosi 0.
-    """
-    gross = money(quantity * unit_price_gross)
-    margin = gross - money(purchase_price)
-    if margin <= 0:
-        vat = Decimal("0.00")
-    else:
-        vat = money(margin * MARGIN_VAT_RATE / (Decimal("100") + MARGIN_VAT_RATE))
-    return Line(net=gross - vat, vat=vat, gross=gross, margin=margin)
-
-
 def vat_summary(items) -> list[dict]:
     """Zestawienie wg stawek (do tabelki pod pozycjami)."""
     order = ["23", "8", "5", "0", "zw", "np"]
@@ -82,18 +65,12 @@ def vat_summary(items) -> list[dict]:
 
 def recalculate(invoice) -> None:
     """Przelicza pozycje i sumy faktury na miejscu."""
-    total_net = total_vat = total_gross = margin_total = Decimal("0")
+    total_net = total_vat = total_gross = Decimal("0")
     for pos, it in enumerate(invoice.items, start=1):
         it.position = pos
-        if invoice.kind == "margin":
-            it.vat_rate = "23"
-            line = margin_line(it.quantity, it.unit_price, it.purchase_price or Decimal("0"))
-            it.margin = line.margin
-            margin_total += line.margin
-        else:
-            line = vat_line(it.quantity, it.unit_price, it.vat_rate, invoice.prices_gross)
-            it.purchase_price = None
-            it.margin = None
+        line = vat_line(it.quantity, it.unit_price, it.vat_rate, invoice.prices_gross)
+        it.purchase_price = None
+        it.margin = None
         it.net, it.vat, it.gross = line.net, line.vat, line.gross
         total_net += line.net
         total_vat += line.vat
@@ -101,7 +78,7 @@ def recalculate(invoice) -> None:
     invoice.total_net = total_net
     invoice.total_vat = total_vat
     invoice.total_gross = total_gross
-    invoice.margin_total = margin_total
+    invoice.margin_total = Decimal("0")
 
 
 # --- Kwota slownie -------------------------------------------------------

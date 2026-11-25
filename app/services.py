@@ -194,17 +194,13 @@ def invoice_dict(inv: Invoice, base_url: str = "", with_items: bool = True) -> d
         car_id=inv.car_id, total_net=_money(inv.total_net), total_vat=_money(inv.total_vat),
         total_gross=_money(inv.total_gross), paid=_money(inv.paid), to_pay=_money(inv.to_pay), notes=inv.notes,
     )
-    if inv.kind == "margin":
-        d["margin_total"] = _money(inv.margin_total)
-        d["vat_from_margin"] = _money(inv.total_vat)
     if base_url:
         d["url"] = f"{base_url}/faktury/{inv.id}"
         d["pdf_url"] = f"{base_url}/faktury/{inv.id}/pdf"
     if with_items:
         d["items"] = [
             dict(name=i.name, quantity=str(i.quantity.normalize()), unit=i.unit, unit_price=_money(i.unit_price),
-                 vat_rate=i.vat_rate, net=_money(i.net), vat=_money(i.vat), gross=_money(i.gross),
-                 **({"purchase_price": _money(i.purchase_price), "margin": _money(i.margin)} if inv.kind == "margin" else {}))
+                 vat_rate=i.vat_rate, net=_money(i.net), vat=_money(i.vat), gross=_money(i.gross))
             for i in inv.items
         ]
     return d
@@ -224,7 +220,7 @@ def list_invoices(db: Session, company=None, kind: str = "", month: str = "", st
         stmt = stmt.where(Invoice.company_id == resolve_company(db, company).id)
     if kind:
         if kind not in INVOICE_KINDS:
-            raise ServiceError("Rodzaj faktury: vat albo margin.")
+            raise ServiceError("Rodzaj faktury: vat.")
         stmt = stmt.where(Invoice.kind == kind)
     if month:
         try:
@@ -249,7 +245,7 @@ def create_invoice_draft(db: Session, actor: str, data: dict) -> Invoice:
     company = resolve_company(db, data.get("company"))
     kind = data.get("kind") or "vat"
     if kind not in INVOICE_KINDS:
-        raise ServiceError("Rodzaj faktury: vat albo margin (VAT marża).")
+        raise ServiceError("Program wystawia tylko faktury VAT.")
     today = dt.date.today()
     issue_date = _date(data.get("issue_date"), "issue_date", today)
     payment = data.get("payment_method") or "transfer"
@@ -263,7 +259,7 @@ def create_invoice_draft(db: Session, actor: str, data: dict) -> Invoice:
         sale_date=_date(data.get("sale_date"), "sale_date", issue_date),
         issue_place=company.issue_place or company.city, payment_method=payment,
         due_date=issue_date + dt.timedelta(days=due_days),
-        prices_gross=True if kind == "margin" else bool(data.get("prices_gross", True)),
+        prices_gross=bool(data.get("prices_gross", True)),
         paid=Decimal("0"), notes=(data.get("notes") or "").strip(),
         buyer_name="", buyer_nip="", buyer_address="",
     )
@@ -292,7 +288,7 @@ def create_invoice_draft(db: Session, actor: str, data: dict) -> Invoice:
             db.flush()
             inv.contractor_id = c.id
 
-    # Auto: pozycja z danymi auta, cena nabycia z karty auta.
+    # Auto: pozycja z danymi auta, cena brutto z karty auta albo z price.
     car = None
     if data.get("car_id"):
         car = db.get(Car, int(data["car_id"]))
@@ -308,8 +304,8 @@ def create_invoice_draft(db: Session, actor: str, data: dict) -> Invoice:
         price = _dec(data.get("price"), "price", car.asking_price)
         if price is None:
             raise ServiceError("Auto nie ma ceny sprzedaży: podaj price (brutto).")
-        items = [dict(name=car_item_name(car), quantity=1, unit="szt.", unit_price=price, vat_rate="23",
-                      purchase_price=car.purchase_price)]
+        items = [dict(name=car_item_name(car), quantity=1, unit="szt.", unit_price=price, vat_rate="23")]
+        inv.prices_gross = True
     if not items:
         raise ServiceError("Podaj pozycje (items) albo car_id.")
     inv.items = []
@@ -323,15 +319,9 @@ def create_invoice_draft(db: Session, actor: str, data: dict) -> Invoice:
         price = _dec(it.get("unit_price"), f"items[{n}].unit_price")
         if price is None:
             raise ServiceError(f"Pozycja {n}: brak ceny.")
-        purchase = _dec(it.get("purchase_price"), f"items[{n}].purchase_price")
-        if kind == "margin" and purchase is None:
-            if car is not None and n == 1:
-                purchase = car.purchase_price
-            else:
-                raise ServiceError(f"Pozycja {n}: faktura marża wymaga ceny nabycia (purchase_price).")
         inv.items.append(InvoiceItem(
             name=name, quantity=_dec(it.get("quantity"), "quantity", Decimal("1")), unit=it.get("unit") or "szt.",
-            unit_price=price, vat_rate=rate, purchase_price=purchase,
+            unit_price=price, vat_rate=rate,
         ))
     calc.recalculate(inv)
     db.add(inv)
@@ -373,18 +363,19 @@ def mark_paid(db: Session, actor: str, invoice_id: int, amount=None) -> Invoice:
 
 def sales_summary(db: Session, company, month: str) -> dict:
     c = resolve_company(db, company)
-    invoices = [i for i in list_invoices(db, company=c.id, month=month, status="issued", limit=200)]
-    vat = [i for i in invoices if i.kind == "vat"]
-    margin = [i for i in invoices if i.kind == "margin"]
-    s = lambda rows, attr: _money(sum((getattr(i, attr) for i in rows), Decimal("0")))  # noqa: E731
+    invoices = list_invoices(db, company=c.id, month=month, status="issued", limit=200)
+    total = lambda attr: _money(sum((getattr(i, attr) for i in invoices), Decimal("0")))  # noqa: E731
+    # Zysk na sprzedanych autach: cena netto z faktury minus cena zakupu auta.
+    cars = []
+    for i in invoices:
+        if i.car is not None:
+            cars.append(dict(car=i.car.label, vin=i.car.vin, invoice=i.number, net=_money(i.total_net),
+                             purchase_price=_money(i.car.purchase_price),
+                             profit=_money(i.total_net - (i.car.purchase_price or Decimal("0")))))
     unpaid = db.scalar(
         select(func.count()).select_from(Invoice).where(
             Invoice.company_id == c.id, Invoice.status == "issued", Invoice.paid < Invoice.total_gross)
     )
-    return dict(
-        company=c.short_name, month=month, invoices=len(invoices),
-        vat_invoices=dict(count=len(vat), net=s(vat, "total_net"), vat=s(vat, "total_vat"), gross=s(vat, "total_gross")),
-        margin_invoices=dict(count=len(margin), gross=s(margin, "total_gross"), margin=s(margin, "margin_total"),
-                             vat_from_margin=s(margin, "total_vat")),
-        unpaid_invoices_all_time=unpaid,
-    )
+    return dict(company=c.short_name, month=month, invoices=len(invoices), net=total("total_net"),
+                vat=total("total_vat"), gross=total("total_gross"), cars_sold=cars,
+                unpaid_invoices_all_time=unpaid)

@@ -31,6 +31,7 @@ class Company(Base):
     issue_place: Mapped[str] = mapped_column(String(100), default="")
     # Wzorce numeracji: {nr} kolejny numer, {MM} miesiac, {RRRR} rok.
     pattern_vat: Mapped[str] = mapped_column(String(60), default="FV/{nr}/{MM}/{RRRR}")
+    # Nieuzywane (faktura marza usunieta 2026-11-25); kolumna zostaje w bazie.
     pattern_margin: Mapped[str] = mapped_column(String(60), default="FM/{nr}/{MM}/{RRRR}")
     # "month" - numeracja od 1 co miesiac, "year" - co rok.
     numbering_reset: Mapped[str] = mapped_column(String(10), default="month")
@@ -69,7 +70,7 @@ CAR_STATUSES = {"available": "Na placu", "reserved": "Zarezerwowany", "sold": "S
 
 
 class Car(Base):
-    """Auto na placu. Cena zakupu jest podstawa do liczenia marzy."""
+    """Auto na placu z cena zakupu (do liczenia zysku na aucie)."""
 
     __tablename__ = "cars"
 
@@ -102,7 +103,7 @@ class Car(Base):
         return CAR_STATUSES.get(self.status, self.status)
 
 
-INVOICE_KINDS = {"vat": "Faktura VAT", "margin": "Faktura VAT marża"}
+INVOICE_KINDS = {"vat": "Faktura VAT"}
 VAT_RATES = ["23", "8", "5", "0", "zw", "np"]
 PAYMENT_METHODS = {"transfer": "Przelew", "cash": "Gotówka", "card": "Karta", "compensation": "Kompensata"}
 
@@ -113,7 +114,7 @@ class Invoice(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"))
-    kind: Mapped[str] = mapped_column(String(10))  # vat / margin
+    kind: Mapped[str] = mapped_column(String(10))  # vat
     status: Mapped[str] = mapped_column(String(10), default="draft")  # draft / issued
     number: Mapped[str | None] = mapped_column(String(60), nullable=True)
     seq: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -137,7 +138,7 @@ class Invoice(Base):
     total_net: Mapped[Decimal] = mapped_column(Money, default=Decimal("0"))
     total_vat: Mapped[Decimal] = mapped_column(Money, default=Decimal("0"))
     total_gross: Mapped[Decimal] = mapped_column(Money, default=Decimal("0"))
-    # Tylko marza: suma marz i VAT od marzy (do ewidencji, nie drukowane na fakturze).
+    # Nieuzywane (dawna faktura marza); kolumna zostaje w bazie.
     margin_total: Mapped[Decimal] = mapped_column(Money, default=Decimal("0"))
 
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
@@ -176,11 +177,11 @@ class InvoiceItem(Base):
     quantity: Mapped[Decimal] = mapped_column(Numeric(12, 3), default=Decimal("1"))
     unit: Mapped[str] = mapped_column(String(10), default="szt.")
     unit_price: Mapped[Decimal] = mapped_column(Money)  # netto albo brutto, wg invoice.prices_gross
-    vat_rate: Mapped[str] = mapped_column(String(3), default="23")  # przy marzy zawsze 23 (od marzy)
+    vat_rate: Mapped[str] = mapped_column(String(3), default="23")
     net: Mapped[Decimal] = mapped_column(Money, default=Decimal("0"))
     vat: Mapped[Decimal] = mapped_column(Money, default=Decimal("0"))
     gross: Mapped[Decimal] = mapped_column(Money, default=Decimal("0"))
-    # Marza: cena nabycia pozycji (laczna), marza i VAT od marzy.
+    # Nieuzywane (dawna faktura marza); kolumny zostaja w bazie.
     purchase_price: Mapped[Decimal | None] = mapped_column(Money, nullable=True)
     margin: Mapped[Decimal | None] = mapped_column(Money, nullable=True)
 

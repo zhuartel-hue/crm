@@ -11,14 +11,14 @@
   <div><label>Przebieg (km)</label><input name="mileage_km" value="{{ car.mileage_km if car.mileage_km is not none else '' }}" inputmode="numeric"></div>
   <div><label>Nr rejestracyjny</label><input name="registration" value="{{ car.registration or '' }}" autocapitalize="characters"></div>
   <div><label>Data zakupu</label><input type="date" name="purchase_date" value="{{ car.purchase_date or '' }}"></div>
-  <div><label>Cena nabycia (podstawa marży)</label><input name="purchase_price" inputmode="decimal" value="{{ car.purchase_price|money if car.purchase_price is not none else '' }}"></div>
+  <div><label>Cena zakupu</label><input name="purchase_price" inputmode="decimal" value="{{ car.purchase_price|money if car.purchase_price is not none else '' }}"></div>
   <div><label>Dokument zakupu</label><input name="purchase_document" value="{{ car.purchase_document or '' }}" placeholder="np. umowa kupna-sprzedaży"></div>
   <div><label>Cena sprzedaży brutto</label><input name="asking_price" inputmode="decimal" value="{{ car.asking_price|money if car.asking_price is not none else '' }}"></div>
   <div><label>Status</label><select name="status">{% for k, v in CAR_STATUSES.items() %}<option value="{{ k }}" {{ 'selected' if car.status == k }}>{{ v }}</option>{% endfor %}</select></div>
   <div style="grid-column:1/-1"><label>Notatki</label><textarea name="notes">{{ car.notes or '' }}</textarea></div>
 </div>
 <div class="row"><button class="btn primary">Zapisz</button><a class="btn" href="/auta">Anuluj</a>
-{% if car.id and car.status != 'sold' %}<span class="spacer"></span><a class="btn" href="/faktury/nowa?rodzaj=margin&auto={{ car.id }}">Wystaw marżę</a>{% endif %}</div>
+{% if car.id and car.status != 'sold' %}<span class="spacer"></span><a class="btn" href="/faktury/nowa?auto={{ car.id }}">Wystaw fakturę</a>{% endif %}</div>
 </form>
 {% if invoices %}<h2>Faktury</h2>{% include "_invoice_rows.html" %}{% endif %}
 {% endblock %}

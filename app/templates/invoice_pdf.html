@@ -28,10 +28,10 @@ table.items td { padding: 2mm 1.5mm; border-bottom: 1px solid #ddd; vertical-ali
 .draft { color: #b42318; font-weight: bold; }
 </style></head>
 <body>
-{% set c = inv.company %}{% set margin = inv.kind == 'margin' %}
+{% set c = inv.company %}
 <div class="top">
   <div>
-    <h1>{{ 'Faktura VAT marża' if margin else 'Faktura VAT' }}</h1>
+    <h1>Faktura VAT</h1>
     <div style="font-size:11pt">nr <b>{{ inv.number or 'SZKIC' }}</b></div>
     {% if inv.status == 'draft' %}<div class="draft">SZKIC — nie jest fakturą</div>{% endif %}
   </div>
@@ -51,22 +51,18 @@ table.items td { padding: 2mm 1.5mm; border-bottom: 1px solid #ddd; vertical-ali
 
 <table class="items">
   <tr><th>Lp.</th><th>Nazwa towaru lub usługi</th><th class="n">Ilość</th><th>Jm.</th>
-  {% if margin %}<th class="n">Cena jedn.</th><th class="n">Wartość</th>
-  {% else %}<th class="n">Cena jedn. {{ 'brutto' if inv.prices_gross else 'netto' }}</th><th class="n">Stawka</th><th class="n">Netto</th><th class="n">VAT</th><th class="n">Brutto</th>{% endif %}</tr>
+  <th class="n">Cena jedn. {{ 'brutto' if inv.prices_gross else 'netto' }}</th><th class="n">Stawka</th><th class="n">Netto</th><th class="n">VAT</th><th class="n">Brutto</th></tr>
   {% for it in inv.items %}
   <tr><td>{{ loop.index }}</td><td>{{ it.name }}</td><td class="n">{{ it.quantity|qty }}</td><td>{{ it.unit }}</td>
-  {% if margin %}<td class="n">{{ it.unit_price|money }}</td><td class="n">{{ it.gross|money }}</td>
-  {% else %}<td class="n">{{ it.unit_price|money }}</td><td class="n">{{ it.vat_rate }}{{ '%' if it.vat_rate.isdigit() }}</td><td class="n">{{ it.net|money }}</td><td class="n">{{ it.vat|money }}</td><td class="n">{{ it.gross|money }}</td>{% endif %}</tr>
+  <td class="n">{{ it.unit_price|money }}</td><td class="n">{{ it.vat_rate }}{{ '%' if it.vat_rate.isdigit() }}</td><td class="n">{{ it.net|money }}</td><td class="n">{{ it.vat|money }}</td><td class="n">{{ it.gross|money }}</td></tr>
   {% endfor %}
 </table>
 
-{% if not margin %}
 <table class="summary">
   <tr><th>Stawka</th><th>Netto</th><th>VAT</th><th>Brutto</th></tr>
   {% for s in summary %}<tr><td class="n">{{ s.rate }}{{ '%' if s.rate.isdigit() }}</td><td class="n">{{ s.net|money }}</td><td class="n">{{ s.vat|money }}</td><td class="n">{{ s.gross|money }}</td></tr>{% endfor %}
   <tr class="total"><td class="n">Razem</td><td class="n">{{ inv.total_net|money }}</td><td class="n">{{ inv.total_vat|money }}</td><td class="n">{{ inv.total_gross|money }}</td></tr>
 </table>
-{% endif %}
 
 <div class="pay">
   <div>
@@ -80,7 +76,6 @@ table.items td { padding: 2mm 1.5mm; border-bottom: 1px solid #ddd; vertical-ali
   </div>
 </div>
 
-{% if margin %}<div class="note">procedura marży – towary używane</div>{% endif %}
 {% if inv.notes %}<div class="notes">{{ inv.notes }}</div>{% endif %}
 
 <div class="sign"><div>osoba upoważniona do odbioru</div><div>osoba upoważniona do wystawienia</div></div>

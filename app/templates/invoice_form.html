@@ -1,5 +1,4 @@
 {% extends "base.html" %}
-{% set margin = inv.kind == 'margin' %}
 {% block title %}{{ 'Edycja' if inv.id else 'Nowa faktura' }}{% endblock %}
 {% block content %}
 <h1>{{ inv.kind_label }}{% if inv.id %} · {{ inv.display_number }}{% else %} · nowa{% endif %}</h1>
@@ -30,7 +29,7 @@
 
 <div class="card">
   <div class="row"><h2 style="margin:0">Pozycje</h2><span class="spacer"></span>
-  {% if not margin %}<label style="margin:0"><input type="checkbox" name="prices_gross" value="1" id="prices_gross" {{ 'checked' if inv.prices_gross }}> ceny brutto</label>{% endif %}
+  <label style="margin:0"><input type="checkbox" name="prices_gross" value="1" id="prices_gross" {{ 'checked' if inv.prices_gross }}> ceny brutto</label>
   </div>
   <div class="grid" style="margin:10px 0">
     <div><label>Auto z placu (wypełnia pozycję)</label><select name="car_id" id="car">
@@ -44,14 +43,8 @@
       <div class="name"><label>Nazwa</label><input name="item_name" value="{{ it.name if it else '' }}"></div>
       <div><label>Ilość</label><input name="item_qty" inputmode="decimal" value="{{ it.quantity|qty if it else '1' }}"></div>
       <div><label>Jm.</label><input name="item_unit" value="{{ it.unit if it else 'szt.' }}"></div>
-      <div><label class="price-label">{{ 'Cena brutto' if margin or inv.prices_gross else 'Cena netto' }}</label><input name="item_price" inputmode="decimal" value="{{ it.unit_price|money if it else '' }}"></div>
-      {% if margin %}
-      <div><label>Cena nabycia (łącznie)</label><input name="item_purchase" inputmode="decimal" value="{{ it.purchase_price|money if it and it.purchase_price is not none else '' }}"></div>
-      <input type="hidden" name="item_rate" value="23">
-      {% else %}
+      <div><label class="price-label">{{ 'Cena brutto' if inv.prices_gross else 'Cena netto' }}</label><input name="item_price" inputmode="decimal" value="{{ it.unit_price|money if it else '' }}"></div>
       <div><label>VAT</label><select name="item_rate">{% for r in VAT_RATES %}<option value="{{ r }}" {{ 'selected' if (it.vat_rate if it else '23') == r }}>{{ r }}{{ '%' if r.isdigit() }}</option>{% endfor %}</select></div>
-      <input type="hidden" name="item_purchase" value="">
-      {% endif %}
       <div><label>&nbsp;</label><button type="button" class="btn small danger remove">Usuń</button></div>
       <div class="calc"></div>
     </div>
@@ -72,7 +65,6 @@
 {% endblock %}
 {% block scripts %}
 <script>
-const MARGIN = {{ 'true' if margin else 'false' }};
 const CONTRACTORS = {{ contractors_json|safe }};
 </script>
 <script src="/static/invoice.js"></script>

@@ -12,7 +12,7 @@
 <tr><td><a href="/auta/{{ c.id }}">{{ c.label }}</a>{% if c.registration %}<br><span class="muted">{{ c.registration }}</span>{% endif %}</td>
 <td class="hide-sm">{{ c.vin }}</td><td class="n hide-sm">{{ '{:,}'.format(c.mileage_km).replace(',', ' ') if c.mileage_km is not none }}</td>
 <td class="n">{{ c.purchase_price|money }}</td><td class="n">{{ c.asking_price|money }}</td><td>{{ c.status_label }}</td>
-<td>{% if c.status != 'sold' %}<a class="btn small" href="/faktury/nowa?rodzaj=margin&auto={{ c.id }}">Marża</a> <a class="btn small" href="/faktury/nowa?rodzaj=vat&auto={{ c.id }}">VAT</a>{% endif %}</td></tr>
+<td>{% if c.status != 'sold' %}<a class="btn small" href="/faktury/nowa?auto={{ c.id }}">Sprzedaj</a>{% endif %}</td></tr>
 {% else %}<tr><td colspan="7" class="muted">Brak aut.</td></tr>{% endfor %}
 </table></div>
 {% endblock %}
