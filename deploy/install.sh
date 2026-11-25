@@ -63,4 +63,4 @@ for _ in $(seq 1 60); do
 done
 docker compose ps
 log "Gotowe"
-cat /root/crm-dostep.txt
+echo "Adres, login i haslo: /root/crm-dostep.txt (haslo celowo nie jest wypisywane)."
