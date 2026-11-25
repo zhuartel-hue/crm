@@ -26,6 +26,27 @@ biała lista VAT, wysyłka mailem, przeniesienie danych z Firmao.
 Do uzupełnienia po pierwszym uruchomieniu (Ustawienia, osobno dla każdej firmy):
 pełna nazwa, NIP, adres, konto bankowe. Na start są tam wartości zastępcze.
 
+## Etap 2: konektor dla Claude
+
+Program ma serwer MCP pod `https://faktury.<adres-serwera>/mcp`. Podłączenie (raz):
+w Claude **Ustawienia → Konektory → Dodaj własny konektor**, adres jak wyżej, **Połącz**,
+zalogowanie do programu i zaznaczenie uprawnień. Instrukcja jest też w programie, zakładka **Claude**.
+
+- **Narzędzia**: firmy, szukanie kontrahentów i aut, nowy kontrahent i auto, lista i szczegóły
+  faktur, szkic faktury (VAT albo marża, z auta jednym parametrem `car_id`), wystawienie,
+  płatność, podsumowanie miesiąca.
+- **Uprawnienia** wybierane przy łączeniu: `read` (odczyt), `write` (szkice, auta, kontrahenci,
+  płatności), `issue` (wystawianie). Domyślnie wystawianie jest wyłączone: Claude robi szkic,
+  numer nadajesz w programie. Z `issue` Claude i tak pyta o potwierdzenie przed wystawieniem.
+- **Logowanie**: OAuth 2.1 z PKCE i dynamiczną rejestracją klienta; adresy powrotu tylko
+  `claude.ai`/`claude.com` (zmienna `OAUTH_REDIRECT_HOSTS`) i localhost. Token dostępu ważny
+  1 godzinę, odświeżania 60 dni, z rotacją: ponowne użycie starego tokenu odcina całe połączenie.
+  W bazie są tylko skróty SHA-256 tokenów.
+- **Cofnięcie dostępu**: zakładka **Claude → Aktywne połączenia → Cofnij**.
+- **Dziennik**: każda zmiana z programu, API i Claude (kto, co, kiedy), zakładka **Dziennik**.
+- **REST API** `/api/v1/...` (te same operacje, nagłówek `Authorization: Bearer <klucz>`);
+  klucz tworzy się w zakładce **Claude**.
+
 ## Uruchomienie u siebie
 
 ```bash
@@ -69,6 +90,7 @@ KSeF: podpisy XAdES, certyfikaty i XML (FA(3)) mają tu dojrzałe biblioteki.
 
 ## Dalsze etapy
 
+1. (Etap 2, gotowe) Konektor dla Claude: MCP + OAuth + REST API + dziennik.
 1. Korekty, proformy, zaliczki; migracje bazy (Alembic) przed pierwszymi prawdziwymi danymi.
 2. KSeF 2.0: logowanie certyfikatem KSeF (bez tokenu), wysyłka FA(3), numer KSeF
    i UPO przy fakturze, kod QR na PDF, tryb offline, pobieranie faktur zakupowych.
@@ -76,4 +98,4 @@ KSeF: podpisy XAdES, certyfikaty i XML (FA(3)) mają tu dojrzałe biblioteki.
 3. Biała lista VAT: dane kontrahenta po NIP.
 4. Poczta: wysyłka faktur z istniejącej skrzynki (SMTP), odbiór (IMAP).
 5. Import z Firmao przez API (faktury jako archiwum tylko do odczytu).
-6. API dla Claude („wystaw marżę dla Kowalskiego na Transita”).
+6. Moduły CRM: kontakty, notatki, zadania, szanse sprzedaży, oferty.

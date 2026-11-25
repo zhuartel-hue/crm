@@ -30,9 +30,13 @@ ENV
     echo "Program do faktur: https://$APP_DOMAIN"
     echo "Login: admin"
     echo "Haslo: $ADMIN_PASSWORD"
+    echo "Konektor Claude (MCP): https://$APP_DOMAIN/mcp"
   } > /root/crm-dostep.txt
   chmod 600 /root/crm-dostep.txt
 fi
+
+# Adres publiczny (potrzebny dla logowania konektora Claude przez OAuth).
+grep -q '^PUBLIC_URL=' .env || echo "PUBLIC_URL=https://$APP_DOMAIN" >> .env
 
 log "Buduje i uruchamiam program"
 docker compose build

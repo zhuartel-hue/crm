@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Dziennik{% endblock %}
+{% block content %}
+<h1>Dziennik zmian</h1>
+<p class="muted">Ostatnie 200 zmian w obu firmach: kto, co i kiedy (czas UTC).</p>
+<div class="card tbl"><table>
+<tr><th>Kiedy</th><th>Kto</th><th>Co</th></tr>
+{% for e in entries %}
+<tr><td style="white-space:nowrap">{{ e.at.strftime('%d.%m.%Y %H:%M') if e.at }}</td><td>{{ e.actor }}</td>
+<td>{% if e.entity == 'invoice' and e.entity_id %}<a href="/faktury/{{ e.entity_id }}">{{ e.summary }}</a>{% elif e.entity == 'car' and e.entity_id %}<a href="/auta/{{ e.entity_id }}">{{ e.summary }}</a>{% else %}{{ e.summary }}{% endif %}</td></tr>
+{% else %}<tr><td colspan="3" class="muted">Brak wpisów.</td></tr>{% endfor %}
+</table></div>
+{% endblock %}

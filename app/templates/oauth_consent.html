@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Zgoda na dostęp{% endblock %}
+{% block content %}
+<h1>Połączyć „{{ client.name }}” z programem?</h1>
+<form method="post" action="/oauth/authorize" class="card">
+  {% for k in ["client_id", "redirect_uri", "state", "code_challenge", "resource"] %}
+  <input type="hidden" name="{{ k }}" value="{{ params.get(k, '') }}">
+  {% endfor %}
+  <p>Aplikacja dostanie dostęp do obu firm. Zaznacz, co może robić:</p>
+  {% for key, label in scopes.items() %}
+  <p><label style="color:var(--text);font-size:15px"><input type="checkbox" name="scope" value="{{ key }}" {{ 'checked' if key in requested and key != 'issue' }}> {{ label }}</label></p>
+  {% endfor %}
+  <p class="muted">Wystawianie zostaw wyłączone, jeśli chcesz, żeby Claude tylko przygotowywał szkice, a numer nadawałeś sam w programie. Dostęp cofniesz w Ustawieniach → Dostęp dla Claude. Każda zmiana trafia do Dziennika.</p>
+  <div class="row"><button class="btn primary" name="decision" value="allow">Zezwól</button><button class="btn" name="decision" value="deny">Odmów</button></div>
+</form>
+{% endblock %}

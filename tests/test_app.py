@@ -46,8 +46,9 @@ def test_numbering_per_company_and_kind(client):
     c = _new_invoice(client, "vat")
     with SessionLocal() as db:
         assert db.get(Invoice, c).number == "FV/1/01/2027"
-    # Faktura pierwszej firmy nie jest widoczna z drugiej.
-    assert client.get(f"/faktury/{a}").status_code == 404
+    # Link do faktury pierwszej firmy przelacza na nia.
+    assert "FV/1/01/2027" in client.get(f"/faktury/{a}").text
+    assert 'class="on">Margot' in client.get("/").text
 
 
 def test_margin_invoice_with_car_and_pdf(client):
