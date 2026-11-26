@@ -140,6 +140,12 @@ zapisie wg wzoru z Ustawień (domyślnie `OF/{nr}/{MM}/{RRRR}`).
 - Na Start przypomnienie o otwartych ofertach, którym za 3 dni lub mniej kończy się ważność (albo już minęła).
 - Na karcie kontrahenta lista jego ofert i przycisk „+ Oferta”.
 
+## Import z Firmao
+
+Menu System → **Import z Firmao** (`/import/firmao`): wgraj `customers.json` i `products.json` z eksportu
+(`tools/firmao_export.py`, tylko odczyt z API Firmao). Rekordy pamiętają swoje id z Firmao (`source_ref`), więc
+ponowny import aktualizuje zamiast dublować; istniejącego kontrahenta dopasowuje po NIP, produkt po kodzie.
+
 ## Uruchomienie u siebie
 
 ```bash

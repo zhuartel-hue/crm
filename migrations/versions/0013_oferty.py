@@ -1,4 +1,4 @@
-"""Oferty: naglowek, pozycje, wzor numeru
+"""Oferty: naglowek, pozycje, wzor numeru; zrodlo kontrahenta (import z Firmao)
 
 Revision ID: 0013
 Revises: 0012
@@ -17,6 +17,9 @@ MONEY = sa.Numeric(14, 2)
 def upgrade() -> None:
     with op.batch_alter_table("companies") as b:
         b.add_column(sa.Column("pattern_offer", sa.String(60), nullable=False, server_default="OF/{nr}/{MM}/{RRRR}"))
+    with op.batch_alter_table("contractors") as b:
+        b.add_column(sa.Column("source_ref", sa.String(120), nullable=False, server_default=""))
+    op.create_index("ix_contractors_source_ref", "contractors", ["source_ref"])
     op.create_table(
         "offers",
         sa.Column("id", sa.Integer(), primary_key=True),
@@ -69,5 +72,8 @@ def upgrade() -> None:
 def downgrade() -> None:
     op.drop_table("offer_items")
     op.drop_table("offers")
+    op.drop_index("ix_contractors_source_ref", "contractors")
+    with op.batch_alter_table("contractors") as b:
+        b.drop_column("source_ref")
     with op.batch_alter_table("companies") as b:
         b.drop_column("pattern_offer")

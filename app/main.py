@@ -16,7 +16,7 @@ from sqlalchemy import func, or_, select, update
 from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import api, auth, calc, config, mail_templates, mcp_server, migrate, nip_lookup, numbering, offers, password, payments, pdf, recurring, secretbox, wz
+from . import api, auth, calc, config, firmao_import, mail_templates, mcp_server, migrate, nip_lookup, numbering, offers, password, payments, pdf, recurring, secretbox, wz
 from . import products as prod
 from .bank import service as bank
 from .bank import connect as bank_connect
@@ -2076,6 +2076,43 @@ def offer_delete(oid: int, request: Request, db: Session = Depends(get_db)):
     db.commit()
     flash(request, f"Usunięto ofertę {o.number}.")
     return redirect("/oferty")
+
+
+# ---------------------------------------------------------------- import z Firmao
+
+@app.get("/import/firmao", response_class=HTMLResponse)
+def firmao_import_page(request: Request, db: Session = Depends(get_db)):
+    counts = {"contractors": db.scalar(select(func.count(Contractor.id))),
+              "contractors_firmao": db.scalar(select(func.count(Contractor.id)).where(Contractor.source_ref.like("firmao:%"))),
+              "products": db.scalar(select(func.count(Product.id))),
+              "products_firmao": db.scalar(select(func.count(Product.id)).where(Product.source_ref.like("firmao:%")))}
+    return render(request, db, "firmao_import.html", counts=counts, result=request.session.pop("firmao_result", None))
+
+
+@app.post("/import/firmao")
+async def firmao_import_run(request: Request, db: Session = Depends(get_db)):
+    form = await request.form()
+    result = {}
+    try:
+        for field, label, fn in (("customers", "Klienci", firmao_import.import_customers),
+                                 ("products", "Produkty", firmao_import.import_products)):
+            f = form.get(field)
+            if not getattr(f, "filename", None):
+                continue
+            rows = firmao_import.load(await f.read())
+            result[label] = fn(db, rows)
+        if not result:
+            raise ValueError("Wybierz co najmniej jeden plik.")
+        audit(db, web_actor(request), "import.firmao",
+              "Import z Firmao: " + "; ".join(f"{k}: +{v['added']} nowych, {v['updated']} zaktualizowanych"
+                                              for k, v in result.items()))
+        db.commit()
+    except ValueError as e:
+        db.rollback()
+        flash(request, str(e))
+        return redirect("/import/firmao")
+    request.session["firmao_result"] = result
+    return redirect("/import/firmao")
 
 
 # ---------------------------------------------------------------- aplikacja na telefon (PWA)

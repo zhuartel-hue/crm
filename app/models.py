@@ -76,6 +76,8 @@ class Contractor(Base):
     email: Mapped[str] = mapped_column(String(200), default="")
     phone: Mapped[str] = mapped_column(String(40), default="")
     notes: Mapped[str] = mapped_column(Text, default="")
+    # Skad pochodzi (np. "firmao:123"), do ponownego importu bez dubli.
+    source_ref: Mapped[str] = mapped_column(String(120), default="", index=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
 
     @property
