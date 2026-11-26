@@ -43,6 +43,10 @@ class Company(Base):
     # "month" - numeracja od 1 co miesiac, "year" - co rok.
     numbering_reset: Mapped[str] = mapped_column(String(10), default="month")
     default_payment_days: Mapped[int] = mapped_column(Integer, default=7)
+    # Wyglad faktury PDF: logo (PNG/JPEG) i wzor (INVOICE_TEMPLATES).
+    logo: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    logo_type: Mapped[str] = mapped_column(String(20), default="")
+    invoice_template: Mapped[str] = mapped_column(String(20), default="klasyczny", server_default="klasyczny")
     # KSeF: "off" (wylaczony), "test", "demo", "prod"; token KSeF zaszyfrowany kluczem z SECRET_KEY (app/secretbox.py).
     ksef_env: Mapped[str] = mapped_column(String(10), default="off")
     ksef_token_enc: Mapped[str] = mapped_column(Text, default="")
@@ -58,6 +62,9 @@ class Company(Base):
     @property
     def address_lines(self) -> list[str]:
         return [x for x in (self.street, f"{self.postal_code} {self.city}".strip()) if x]
+
+
+INVOICE_TEMPLATES = {"klasyczny": "Klasyczny", "nowoczesny": "Nowoczesny (niebieski)", "elegancki": "Elegancki"}
 
 
 class Contractor(Base):

@@ -1,24 +1,41 @@
 {% extends "base.html" %}
-{% block title %}Pulpit{% endblock %}
+{% block title %}Start{% endblock %}
 {% block content %}
 <div class="row"><h1>{{ company.short_name }}</h1><span class="spacer"></span>
 <a class="btn primary only-sm" href="/faktury/nowa">+ Faktura</a><a class="btn only-sm" href="/wz/nowa">+ WZ</a></div>
-{% for o in offers_expiring %}<div class="flash warn"><a href="/oferty/{{ o.id }}">Oferta {{ o.display_number }} dla {{ o.recipient_name }}: {{ 'ważność minęła ' ~ (o.valid_until|date) if o.expired else ('ważna do ' ~ (o.valid_until|date)) }}. Zadzwoń albo zmień status.</a></div>{% endfor %}
 {% for w in bank_warnings %}<div class="flash warn"><a href="/bank/polaczenie">{{ w }}</a></div>{% endfor %}
 <div class="grid stats">
-  <div class="card stat"><div class="l">Faktur w tym miesiącu</div><div class="v">{{ stats.month_count }}</div></div>
-  <div class="card stat"><div class="l">Sprzedaż brutto w tym miesiącu</div><div class="v">{{ stats.month_gross|money }} zł</div></div>
-  <div class="card stat"><div class="l">Nieopłacone ({{ stats.unpaid_count }})</div><div class="v"><a href="/naleznosci">{{ stats.unpaid_sum|money }} zł</a></div></div>
+  <a class="card stat" href="/faktury?miesiac={{ today.strftime('%Y-%m') }}"><div class="l">Sprzedaż brutto w tym miesiącu ({{ stats.month_count }})</div><div class="v">{{ stats.month_gross|money }} zł</div></a>
+  <a class="card stat" href="/naleznosci"><div class="l">Nieopłacone ({{ stats.unpaid_count }})</div><div class="v">{{ stats.unpaid_sum|money }} zł</div></a>
+  <a class="card stat" href="/naleznosci"><div class="l">Po terminie</div><div class="v" {% if stats.overdue_count %}style="color:var(--danger)"{% endif %}>{{ stats.overdue_count }}</div></a>
+  {% if stats.ksef_todo is not none %}<a class="card stat" href="/faktury?ksef=do-wyslania"><div class="l">Do zatwierdzenia w KSeF</div><div class="v">{{ stats.ksef_todo }}</div></a>{% endif %}
 </div>
-<h2>Ostatnie faktury</h2>
-{% set invoices = recent %}{% include "_invoice_rows.html" %}
-<h2>Auta na placu</h2>
-<div class="card tbl"><table>
-<tr><th>Auto</th><th class="hide-sm">VIN</th><th class="n">Cena zakupu</th><th class="n">Cena sprzedaży</th><th></th></tr>
-{% for c in cars %}
-<tr><td><a href="/auta/{{ c.id }}">{{ c.label }}</a></td><td class="hide-sm">{{ c.vin }}</td>
-<td class="n">{{ c.purchase_price|money }}</td><td class="n">{{ c.asking_price|money }}</td>
-<td><a class="btn small" href="/faktury/nowa?auto={{ c.id }}">Sprzedaj</a></td></tr>
-{% else %}<tr><td colspan="5" class="muted">Brak aut. <a href="/auta/nowe">Dodaj auto</a></td></tr>{% endfor %}
-</table></div>
+<div class="tiles">
+  <div class="card tile"><div class="tile-h"><h2>Ostatnie faktury</h2><a href="/faktury">wszystkie</a></div>
+    {% for i in recent %}<a class="tile-row" href="/faktury/{{ i.id }}"><span><b>{{ i.display_number }}</b> · {{ i.buyer_name }}</span>
+      <span class="n">{{ i.total_gross|money }}{% if i.status == 'draft' %} <span class="badge warn">szkic</span>{% elif i.to_pay <= 0 %} <span class="badge ok">✓</span>{% endif %}</span></a>
+    {% else %}<p class="muted">Brak faktur.</p>{% endfor %}</div>
+
+  <div class="card tile"><div class="tile-h"><h2>Ostatnie maile</h2><a href="/poczta">poczta</a></div>
+    {% for m in mails %}<a class="tile-row" href="/poczta/{{ m.id }}"><span>{% if not m.seen %}<b>{% endif %}{{ m.from_name or m.from_addr }}{% if not m.seen %}</b>{% endif %}<br><span class="muted">{{ m.subject or '(bez tematu)' }}</span></span>
+      <span class="muted n">{{ m.date.strftime('%d.%m %H:%M') if m.date else '' }}</span></a>
+    {% else %}<p class="muted">Brak maili. <a href="/poczta">Podłącz skrzynkę</a></p>{% endfor %}</div>
+
+  <div class="card tile"><div class="tile-h"><h2>Ostatnie WZ</h2><a href="/wz">magazyn</a></div>
+    {% for d in deliveries %}<a class="tile-row" href="/wz/{{ d.id }}"><span><b>{{ d.number or 'szkic' }}</b> · {{ d.recipient_name }}</span>
+      <span class="n">{{ d.issue_date|date }}{% if d.kind == 'wz' %} {% if d.invoice_id %}<span class="badge ok">FV</span>{% else %}<span class="badge">bez FV</span>{% endif %}{% endif %}</span></a>
+    {% else %}<p class="muted">Brak dokumentów.</p>{% endfor %}</div>
+
+  <div class="card tile"><div class="tile-h"><h2>Po terminie</h2><a href="/naleznosci">należności</a></div>
+    {% for i in overdue %}<a class="tile-row" href="/faktury/{{ i.id }}"><span><b>{{ i.display_number }}</b> · {{ i.buyer_name }}<br><span class="muted">{{ i.days_overdue }} dni po terminie</span></span>
+      <span class="n" style="color:var(--danger)">{{ i.to_pay|money }}</span></a>
+    {% else %}<p class="muted">Nic po terminie.</p>{% endfor %}</div>
+
+  {% if offers_expiring %}<div class="card tile"><div class="tile-h"><h2>Oferty do przypomnienia</h2><a href="/oferty?status=otwarte">oferty</a></div>
+    {% for o in offers_expiring %}<a class="tile-row" href="/oferty/{{ o.id }}"><span><b>{{ o.display_number }}</b> · {{ o.recipient_name }}</span>
+      <span class="n {{ 'muted' if not o.expired }}" {% if o.expired %}style="color:var(--danger)"{% endif %}>{{ 'minęła ' if o.expired else 'do ' }}{{ o.valid_until|date }}</span></a>{% endfor %}</div>{% endif %}
+
+  {% if cars %}<div class="card tile"><div class="tile-h"><h2>Auta na placu</h2><a href="/auta">auta</a></div>
+    {% for c in cars %}<a class="tile-row" href="/auta/{{ c.id }}"><span>{{ c.label }}</span><span class="n">{{ c.asking_price|money }}</span></a>{% endfor %}</div>{% endif %}
+</div>
 {% endblock %}

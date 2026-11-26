@@ -28,23 +28,61 @@ table.items td { padding: 2mm 1.5mm; border-bottom: 1px solid #ddd; vertical-ali
 .sign { margin-top: 18mm; display: flex; justify-content: space-between; color: #555; font-size: 7.5pt; }
 .sign div { width: 40%; border-top: 1px solid #999; text-align: center; padding-top: 1mm; }
 .draft { color: #b42318; font-weight: bold; }
+.logo img { max-height: 15mm; max-width: 62mm; display: block; }
+.logo { margin-bottom: 3mm; }
+/* Nowoczesny: akcent w kolorze logo */
+.t-nowoczesny .top { border-bottom: 1.2mm solid #0a8fdc; padding-bottom: 3mm; align-items: center; }
+.t-nowoczesny .logo { margin: 0; }
+.t-nowoczesny h1 { color: #0a8fdc; text-transform: uppercase; letter-spacing: .04em; font-size: 14pt; text-align: right; }
+.t-nowoczesny .title { text-align: right; }
+.t-nowoczesny .dates td { padding-left: 4mm; }
+.t-nowoczesny .party { border-top: 0; background: #f2f8fd; padding: 3mm; border-left: 1mm solid #0a8fdc; }
+.t-nowoczesny .party .h { color: #0a8fdc; font-weight: bold; }
+.t-nowoczesny table.items th { background: #0a8fdc; color: #fff; border-bottom: 0; }
+.t-nowoczesny table.items tr:nth-child(odd) td { background: #f7fafd; }
+.t-nowoczesny .summary tr.total td { background: #0a8fdc; color: #fff; border-top: 0; }
+.t-nowoczesny .topay { background: #0a8fdc; color: #fff; padding: 2.5mm 4mm; border-radius: 1.5mm; display: inline-block; }
+/* Elegancki: logo na srodku, cienkie linie */
+.t-elegancki .top { display: block; text-align: center; border-bottom: .3mm solid #999; padding-bottom: 3mm; }
+.t-elegancki .logo img { margin: 0 auto; }
+.t-elegancki h1 { font-size: 12pt; font-weight: normal; text-transform: uppercase; letter-spacing: .25em; margin-top: 2mm; }
+.t-elegancki .dates { margin: 2mm auto 0; }
+.t-elegancki .dates td { padding: 0 4mm; text-align: center; font-size: 8pt; }
+.t-elegancki .dates td b { color: #111; font-size: 9pt; }
+.t-elegancki .party { border-top: 0; }
+.t-elegancki .party .h { letter-spacing: .15em; border-bottom: .3mm solid #ccc; padding-bottom: 1mm; }
+.t-elegancki table.items th { background: none; text-transform: uppercase; font-weight: normal; color: #555; letter-spacing: .05em; border-bottom: .5mm solid #111; }
+.t-elegancki table.items td { border-bottom: .2mm solid #ddd; }
+.t-elegancki .summary tr.total td { border-top: .5mm solid #111; border-bottom: .8mm double #111; }
 </style></head>
-<body>
+<body class="t-{{ tpl or 'klasyczny' }}">
 {% set c = inv.company %}
-<div class="top">
-  <div>
+{% set head %}
     <h1>{{ inv.kind_label }}</h1>
     <div style="font-size:11pt">nr <b>{{ inv.number or 'SZKIC' }}</b></div>
     {% if inv.status == 'draft' %}<div class="draft">SZKIC — nie jest fakturą</div>{% endif %}
     {% if inv.kind == 'proforma' %}<div>Dokument nie jest fakturą VAT i nie stanowi podstawy do odliczenia podatku.</div>{% endif %}
     {% if inv.related and inv.kind == 'correction' %}<div>do faktury nr <b>{{ inv.related.display_number }}</b> z dnia {{ inv.related.issue_date|date }}</div>{% endif %}
-  </div>
+{% endset %}
+{% set dates %}
   <table class="dates">
     <tr><td class="l">Data wystawienia:</td><td>{{ inv.issue_date|date }}</td></tr>
     <tr><td class="l">Data sprzedaży:</td><td>{{ inv.sale_date|date }}</td></tr>
     {% if inv.issue_place %}<tr><td class="l">Miejsce wystawienia:</td><td>{{ inv.issue_place }}</td></tr>{% endif %}
   </table>
+{% endset %}
+{% set logo %}{% if logo_uri %}<div class="logo"><img src="{{ logo_uri }}" alt="logo"></div>{% endif %}{% endset %}
+{% if tpl == 'nowoczesny' %}
+<div class="top">{{ logo }}<div class="title">{{ head }}{{ dates }}</div></div>
+{% elif tpl == 'elegancki' %}
+<div class="top">{{ logo }}{{ head }}
+  <table class="dates"><tr><td class="l">Data wystawienia<br><b>{{ inv.issue_date|date }}</b></td><td class="l">Data sprzedaży<br><b>{{ inv.sale_date|date }}</b></td>{% if inv.issue_place %}<td class="l">Miejsce<br><b>{{ inv.issue_place }}</b></td>{% endif %}</tr></table></div>
+{% else %}
+<div class="top">
+  <div>{{ logo }}{{ head }}</div>
+  {{ dates }}
 </div>
+{% endif %}
 <div class="parties">
   <div class="party"><div class="h">Sprzedawca</div><b>{{ c.name }}</b><br>
     {% for l in c.address_lines %}{{ l }}<br>{% endfor %}NIP: {{ c.nip }}
@@ -92,7 +130,7 @@ table.items td { padding: 2mm 1.5mm; border-bottom: 1px solid #ddd; vertical-ali
   <div style="text-align:right">
     {% if inv.kind == 'advance' and inv.to_pay <= 0 %}Zaliczka zapłacona: <span class="big">{{ inv.total_gross|money }} PLN</span><br>
     {% elif inv.to_pay < 0 %}Do zwrotu: <span class="big">{{ (-inv.to_pay)|money }} PLN</span><br>
-    {% else %}Do zapłaty: <span class="big">{{ inv.to_pay|money }} PLN</span><br>{% endif %}
+    {% else %}<span class="topay">Do zapłaty: <span class="big">{{ inv.to_pay|money }} PLN</span></span><br>{% endif %}
     Słownie: {{ inv.to_pay|plnwords }}
   </div>
 </div>

@@ -46,6 +46,7 @@ from .models import (
     OFFER_STATUSES,
     Offer,
     INVOICE_KINDS,
+    INVOICE_TEMPLATES,
     NEW_KINDS,
     PAYMENT_METHODS,
     VAT_RATES,
@@ -83,6 +84,7 @@ templates.env.globals.update(
 
 templates.env.globals["ksef_cert_info"] = ksef.cert_info
 templates.env.globals["ksef_can_send"] = ksef.can_send
+templates.env.globals["INVOICE_TEMPLATES"] = INVOICE_TEMPLATES
 templates.env.globals["ksef_status_label"] = ksef.status_label
 
 
@@ -332,29 +334,32 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
     company = current_company(request, db)
     today = dt.date.today()
     month_start = today.replace(day=1)
-    month_invoices = db.scalars(
-        select(Invoice).where(
-            Invoice.company_id == company.id, Invoice.status == "issued", Invoice.issue_date >= month_start
-        )
-    ).all()
-    recent = db.scalars(
-        select(Invoice).where(Invoice.company_id == company.id).order_by(Invoice.id.desc()).limit(8)
-    ).all()
-    unpaid = db.scalars(
-        select(Invoice).where(Invoice.company_id == company.id, Invoice.status == "issued", Invoice.paid < Invoice.total_gross)
-    ).all()
+    issued = [Invoice.company_id == company.id, Invoice.status == "issued", Invoice.kind != "proforma"]
+    month_count, month_gross = db.execute(select(func.count(), func.coalesce(func.sum(Invoice.total_gross), 0))
+                                          .where(*issued, Invoice.issue_date >= month_start)).one()
+    open_cond = [*issued, Invoice.paid < Invoice.total_gross]
+    unpaid_count, unpaid_sum = db.execute(select(func.count(), func.coalesce(func.sum(Invoice.total_gross - Invoice.paid), 0))
+                                          .where(*open_cond)).one()
+    overdue = db.scalars(select(Invoice).where(*open_cond, Invoice.due_date < today)
+                         .order_by(Invoice.due_date.desc()).limit(8)).all()
+    overdue_count = db.scalar(select(func.count()).select_from(Invoice).where(*open_cond, Invoice.due_date < today))
+    recent = db.scalars(select(Invoice).where(Invoice.company_id == company.id)
+                        .order_by(Invoice.issue_date.desc(), Invoice.id.desc()).limit(8)).all()
+    deliveries = db.scalars(select(Delivery).where(Delivery.company_id == company.id)
+                            .order_by(Delivery.issue_date.desc(), Delivery.id.desc()).limit(8)).all()
+    mails = db.scalars(select(MailMessage).join(MailAccount, MailMessage.account_id == MailAccount.id)
+                       .where(MailAccount.company_id == company.id, MailMessage.direction == "in")
+                       .order_by(MailMessage.date.desc()).limit(8)).all()
     cars_on_lot = db.scalars(
         select(Car).where(Car.company_id == company.id, Car.status != "sold").order_by(Car.id.desc())
     ).all()
-    stats = dict(
-        month_count=len(month_invoices),
-        month_gross=sum((i.total_gross for i in month_invoices), Decimal("0")),
-        unpaid_count=len(unpaid),
-        unpaid_sum=sum((i.to_pay for i in unpaid), Decimal("0")),
-    )
+    ksef_todo = db.scalar(select(func.count()).select_from(Invoice).where(
+        *issued, Invoice.ksef_status.in_(("", "rejected", "error")))) if ksef.enabled(company) else None
+    stats = dict(month_count=month_count, month_gross=month_gross, unpaid_count=unpaid_count, unpaid_sum=unpaid_sum,
+                 overdue_count=overdue_count, ksef_todo=ksef_todo)
     return render(request, db, "dashboard.html", company=company, recent=recent, stats=stats, cars=cars_on_lot,
-                  bank_warnings=bank_connect.warnings(db, company.id),
-                  offers_expiring=offers.expiring(db, company.id))
+                  bank_warnings=bank_connect.warnings(db, company.id), overdue=overdue, deliveries=deliveries,
+                  mails=mails, offers_expiring=offers.expiring(db, company.id), today=today)
 
 
 # --- faktury --------------------------------------------------------------
@@ -1246,6 +1251,62 @@ async def settings_ksef(request: Request, db: Session = Depends(get_db)):
         return render(request, db, "settings.html", KSEF_ENVS=KSEF_ENVS, error=str(e))
     flash(request, "Zapisano ustawienia KSeF.")
     return redirect("/ustawienia")
+
+
+@app.post("/ustawienia/wyglad")
+async def settings_look(request: Request, db: Session = Depends(get_db)):
+    company = current_company(request, db)
+    form = await request.form()
+    tpl = form.get("invoice_template") or ""
+    if tpl in INVOICE_TEMPLATES:
+        company.invoice_template = tpl
+    f = form.get("logo")
+    if getattr(f, "filename", None):
+        data = await f.read()
+        if len(data) > 5_000_000:
+            flash(request, "Logo jest za duże (maks. 5 MB).")
+            return redirect("/ustawienia#wyglad")
+        try:
+            company.logo, company.logo_type = pdf.prepare_logo(data)
+        except ValueError as e:
+            flash(request, str(e))
+            return redirect("/ustawienia#wyglad")
+    elif form.get("logo_remove") == "1":
+        company.logo, company.logo_type = None, ""
+    db.commit()
+    flash(request, "Zapisano wygląd faktury.")
+    return redirect("/ustawienia#wyglad")
+
+
+@app.get("/ustawienia/logo")
+def settings_logo(request: Request, db: Session = Depends(get_db)):
+    company = current_company(request, db)
+    if not company.logo:
+        raise HTTPException(404)
+    return Response(company.logo, media_type=company.logo_type or "image/png")
+
+
+@app.get("/ustawienia/wzor/{tpl}")
+def settings_template_preview(tpl: str, request: Request, db: Session = Depends(get_db)):
+    """Podglad wzoru na ostatniej fakturze firmy (albo na przykladzie, gdy jeszcze nie ma faktur)."""
+    if tpl not in INVOICE_TEMPLATES:
+        raise HTTPException(404)
+    company = current_company(request, db)
+    inv = db.scalar(select(Invoice).where(Invoice.company_id == company.id, Invoice.kind == "vat")
+                    .order_by(Invoice.issue_date.desc(), Invoice.id.desc()).limit(1))
+    if inv is None:
+        today = dt.date.today()
+        inv = Invoice(company=company, kind="vat", status="draft", issue_date=today, sale_date=today,
+                      issue_place=company.issue_place or company.city, payment_method="transfer",
+                      due_date=today + dt.timedelta(days=company.default_payment_days or 7), prices_gross=False,
+                      buyer_name="Przykładowy Klient Sp. z o.o.", buyer_nip="1234563218",
+                      buyer_address="ul. Przykładowa 1\n00-001 Warszawa", paid=Decimal("0"))
+        inv.items = [InvoiceItem(position=1, name="Przykładowa usługa", quantity=Decimal("1"), unit="szt.",
+                                 unit_price=Decimal("100.00"), vat_rate="23")]
+        calc.recalculate(inv)
+    data = pdf.render_invoice(inv, tpl)
+    return Response(data, media_type="application/pdf",
+                    headers={"Content-Disposition": f'inline; filename="wzor-{tpl}.pdf"'})
 
 
 @app.post("/ustawienia")

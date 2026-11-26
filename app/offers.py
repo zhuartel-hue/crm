@@ -124,12 +124,17 @@ def duplicate(o: Offer, actor: str = "") -> Offer:
     return c
 
 
-def expiring(db: Session, company_id: int, days: int = EXPIRY_WARN_DAYS) -> list[Offer]:
-    """Otwarte oferty, ktorym konczy sie waznosc (albo juz minela) – do przypomnienia na Start."""
-    limit = dt.date.today() + dt.timedelta(days=days)
-    return list(db.scalars(select(Offer).where(Offer.company_id == company_id, Offer.status.in_(OFFER_OPEN),
-                                               Offer.valid_until.is_not(None), Offer.valid_until <= limit)
-                           .order_by(Offer.valid_until)))
+EXPIRED_SHOW_DAYS = 7
+
+
+def expiring(db: Session, company_id: int, days: int = EXPIRY_WARN_DAYS, limit: int = 8) -> list[Offer]:
+    """Otwarte oferty, ktorym konczy sie waznosc albo minela w ostatnim tygodniu – do przypomnienia na Start
+    (starsze, np. z archiwum Firmao, nie zasmiecaja pulpitu)."""
+    today = dt.date.today()
+    return list(db.scalars(select(Offer).where(
+        Offer.company_id == company_id, Offer.status.in_(OFFER_OPEN), Offer.valid_until.is_not(None),
+        Offer.valid_until <= today + dt.timedelta(days=days),
+        Offer.valid_until >= today - dt.timedelta(days=EXPIRED_SHOW_DAYS)).order_by(Offer.valid_until).limit(limit)))
 
 
 def render_pdf(o: Offer) -> bytes:
