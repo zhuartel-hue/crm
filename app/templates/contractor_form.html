@@ -17,6 +17,8 @@
   <div><label>E-mail</label><input name="email" type="email" value="{{ c.email or '' }}"></div>
   <div><label>Telefon</label><input name="phone" type="tel" value="{{ c.phone or '' }}"></div>
   <div style="grid-column:1/-1"><label>Strona www</label><input name="website" value="{{ c.website or '' }}" inputmode="url"></div>
+  <div style="grid-column:1/-1"><label><input type="checkbox" name="ksef_auto" value="1" {{ 'checked' if c.ksef_auto }}> wysyłaj faktury do KSeF automatycznie zaraz po wystawieniu (także cykliczne)</label>
+    <div class="muted">Bez tego faktura czeka, aż zaznaczysz ją na liście faktur i klikniesz „Wyślij zaznaczone do KSeF”.</div></div>
   <div style="grid-column:1/-1"><label>Notatki</label><textarea name="notes">{{ c.notes or '' }}</textarea></div>
 </div>
 <div class="row"><button class="btn primary">Zapisz</button><a class="btn" href="/kontrahenci">Anuluj</a></div>

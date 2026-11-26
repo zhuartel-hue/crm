@@ -1,15 +1,17 @@
 <div class="card tbl"><table>
-<tr><th>Numer</th><th>Data</th><th>Nabywca</th><th class="hide-sm">Termin</th><th class="n">Brutto</th><th>Status</th></tr>
+<tr>{% if ksef_select %}<th style="width:28px"><input type="checkbox" title="zaznacz wszystkie do KSeF" onclick="document.querySelectorAll('input[name=ids]').forEach(x => x.checked = this.checked)"></th>{% endif %}<th>Numer</th><th>Data</th><th>Nabywca</th><th class="hide-sm">Termin</th><th class="n">Brutto</th><th>Status</th>{% if ksef_select %}<th class="hide-sm">KSeF</th>{% endif %}</tr>
 {% for i in invoices %}
 <tr>
+  {% if ksef_select %}<td>{% if ksef_can_send(i) %}<input type="checkbox" name="ids" value="{{ i.id }}" form="ksef-form" aria-label="wyślij {{ i.number }} do KSeF">{% endif %}</td>{% endif %}
   <td><a href="/faktury/{{ i.id }}">{{ i.display_number }}</a></td>
   <td>{{ i.issue_date|date }}</td>
   <td>{{ i.buyer_name }}</td>
   <td class="hide-sm">{{ i.due_date|date }}</td>
   <td class="n">{{ i.total_gross|money }}</td>
   <td>{% if i.status == 'draft' %}<span class="badge warn">szkic</span>{% elif i.to_pay <= 0 %}<span class="badge ok">zapłacona</span>{% else %}<span class="badge">do zapłaty</span>{% endif %}</td>
+  {% if ksef_select %}<td class="hide-sm">{% if i.status == 'issued' and i.kind != 'proforma' %}{% if i.ksef_status == 'accepted' %}<span class="badge ok">przyjęta</span>{% elif i.ksef_status in ('', 'rejected', 'error') %}<span class="badge warn">{{ 'do wysłania' if not i.ksef_status else ksef_status_label(i) }}</span>{% else %}<span class="muted">{{ ksef_status_label(i) }}</span>{% endif %}{% endif %}</td>{% endif %}
 </tr>
 {% else %}
-<tr><td colspan="6" class="muted">Brak faktur.</td></tr>
+<tr><td colspan="{{ 8 if ksef_select else 6 }}" class="muted">Brak faktur.</td></tr>
 {% endfor %}
 </table></div>

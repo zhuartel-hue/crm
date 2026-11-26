@@ -310,3 +310,54 @@ def test_certificate_settings_and_xades_login(client, db):
         assert b"SignedProperties" in seen["xml"]
         from signxml import XMLVerifier
         XMLVerifier().verify(seen["xml"], x509_cert=kc.cert_pem, expect_references=3)
+
+
+def test_bulk_send_and_auto_send(client, db, monkeypatch):
+    from app.ksef import service
+    from app.models import Contractor
+
+    monkeypatch.setattr(service, "client_factory", FakeClient)
+    FakeClient.sent = []
+    # bez KSeF: brak ptaszkow na liscie
+    plain = _issue(db, items=[{"name": "Opony", "unit_price": "400.00"}])
+    assert 'name="ids"' not in client.get("/faktury").text
+    client.post("/ustawienia/ksef", data={"ksef_env": "test", "ksef_token": "tajny-token"})
+    db.expire_all()
+
+    # kontrahent bez automatu: faktura czeka na ptaszek
+    other = _issue(db, items=[{"name": "Felgi", "unit_price": "100.00"}])
+    assert other.ksef_status == "" and not FakeClient.sent
+    page = client.get("/faktury?ksef=do-wyslania").text
+    assert f'name="ids" value="{plain.id}"' in page and f'name="ids" value="{other.id}"' in page
+    assert "Wyślij zaznaczone do KSeF" in page
+    r = client.post("/faktury/ksef", data={"ids": [str(plain.id), str(other.id)], "back": "/faktury?ksef=do-wyslania"},
+                    follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == "/faktury?ksef=do-wyslania"
+    db.expire_all()
+    assert plain.ksef_status == other.ksef_status == "accepted" and len(FakeClient.sent) == 2
+    assert f'name="ids" value="{plain.id}"' not in client.get("/faktury").text
+    # obca strona powrotu jest ignorowana
+    r = client.post("/faktury/ksef", data={"back": "https://zly.pl"}, follow_redirects=False)
+    assert r.headers["location"] == "/faktury"
+
+    # kontrahent z automatem: idzie od razu po wystawieniu
+    c = Contractor(name="Auto Klient", nip="8672239415", ksef_auto=True)
+    db.add(c)
+    db.commit()
+    auto = _issue(db, buyer={"contractor_id": c.id}, items=[{"name": "Serwis", "unit_price": "50.00"}])
+    assert auto.ksef_status == "accepted" and len(FakeClient.sent) == 3
+    # i przez formularz kontrahenta da sie to wylaczyc
+    client.post(f"/kontrahenci/{c.id}", data={"name": "Auto Klient", "nip": "8672239415", "is_company": "1"})
+    db.expire_all()
+    assert c.ksef_auto is False
+
+
+def test_invoice_list_is_limited(client, db, monkeypatch):
+    from app import main
+
+    for n in range(3):
+        _issue(db, items=[{"name": f"P{n}", "unit_price": "10.00"}])
+    monkeypatch.setattr(main, "LIST_LIMIT", 2)
+    page = client.get("/faktury").text
+    assert "Pokazano 2 najnowszych z 3" in page and "30,00 zł" in page
+    assert "Pokazano" not in client.get("/faktury?wszystkie=1").text

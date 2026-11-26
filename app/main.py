@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 from decimal import Decimal
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, Form, HTTPException, Request
+from fastapi import Depends, FastAPI, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -81,6 +81,8 @@ templates.env.globals.update(
 )
 
 templates.env.globals["ksef_cert_info"] = ksef.cert_info
+templates.env.globals["ksef_can_send"] = ksef.can_send
+templates.env.globals["ksef_status_label"] = ksef.status_label
 
 
 @asynccontextmanager
@@ -357,26 +359,62 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
 # --- faktury --------------------------------------------------------------
 
 
+LIST_LIMIT = 200
+
+
 @app.get("/faktury", response_class=HTMLResponse)
-def invoice_list(request: Request, rodzaj: str = "", miesiac: str = "", q: str = "", db: Session = Depends(get_db)):
+def invoice_list(request: Request, rodzaj: str = "", miesiac: str = "", q: str = "", ksef_f: str = Query("", alias="ksef"),
+                 wszystkie: int = 0, db: Session = Depends(get_db)):
     company = current_company(request, db)
-    stmt = select(Invoice).where(Invoice.company_id == company.id)
+    cond = [Invoice.company_id == company.id]
     if rodzaj in INVOICE_KINDS:
-        stmt = stmt.where(Invoice.kind == rodzaj)
+        cond.append(Invoice.kind == rodzaj)
     if miesiac:
         try:
             y, m = (int(x) for x in miesiac.split("-"))
             start = dt.date(y, m, 1)
             end = dt.date(y + (m == 12), m % 12 + 1, 1)
-            stmt = stmt.where(Invoice.issue_date >= start, Invoice.issue_date < end)
+            cond += [Invoice.issue_date >= start, Invoice.issue_date < end]
         except ValueError:
             pass
     if q:
         like = f"%{q}%"
-        stmt = stmt.where(or_(Invoice.number.ilike(like), Invoice.buyer_name.ilike(like), Invoice.buyer_nip.ilike(like)))
-    invoices = db.scalars(stmt.order_by(Invoice.issue_date.desc(), Invoice.id.desc())).all()
-    total = sum((i.total_gross for i in invoices if i.status == "issued" and i.is_accounting), Decimal("0"))
-    return render(request, db, "invoices.html", invoices=invoices, rodzaj=rodzaj, miesiac=miesiac, q=q, total=total)
+        cond.append(or_(Invoice.number.ilike(like), Invoice.buyer_name.ilike(like), Invoice.buyer_nip.ilike(like)))
+    if ksef_f == "do-wyslania":
+        cond += [Invoice.status == "issued", Invoice.kind != "proforma",
+                 Invoice.ksef_status.in_(("", "rejected", "error"))]
+    count = db.scalar(select(func.count()).select_from(Invoice).where(*cond)) or 0
+    total = db.scalar(select(func.coalesce(func.sum(Invoice.total_gross), 0)).where(
+        *cond, Invoice.status == "issued", Invoice.kind != "proforma")) or Decimal("0")
+    stmt = select(Invoice).where(*cond).order_by(Invoice.issue_date.desc(), Invoice.id.desc())
+    if not wszystkie:
+        stmt = stmt.limit(LIST_LIMIT)
+    invoices = db.scalars(stmt).all()
+    return render(request, db, "invoices.html", invoices=invoices, rodzaj=rodzaj, miesiac=miesiac, q=q, total=total,
+                  ksef_f=ksef_f, count=count, limited=len(invoices) < count, ksef_select=ksef.enabled(company))
+
+
+@app.post("/faktury/ksef")
+async def invoice_ksef_send_many(request: Request, db: Session = Depends(get_db)):
+    company = current_company(request, db)
+    form = await request.form()
+    ids = [int(x) for x in form.getlist("ids") if str(x).isdigit()]
+    back = form.get("back") or "/faktury"
+    if not back.startswith("/faktury"):
+        back = "/faktury"
+    if not ids:
+        flash(request, "Zaznacz faktury do wysłania.")
+        return redirect(back)
+    res = ksef.send_many(db, web_actor(request), ids, company.id)
+    parts = []
+    if res["accepted"]:
+        parts.append(f"KSeF przyjął {len(res['accepted'])}: {', '.join(res['accepted'])}")
+    if res["pending"]:
+        parts.append(f"w trakcie {len(res['pending'])}: {', '.join(res['pending'])} (sprawdź status za chwilę)")
+    if res["failed"]:
+        parts.append(f"nie poszło {len(res['failed'])}: {'; '.join(res['failed'])}")
+    flash(request, ". ".join(parts) or "Nic nie wysłano.")
+    return redirect(back)
 
 
 def _form_context(db: Session, company: Company) -> dict:
@@ -538,6 +576,10 @@ async def _save(request: Request, db: Session, inv: Invoice, is_new: bool):
         ctx = _form_context(db, company)
         return render(request, db, "invoice_form.html", inv=inv, error=str(e), **ctx)
     flash(request, f"Wystawiono fakturę {inv.number}." if inv.status == "issued" else "Zapisano szkic.")
+    if inv.status == "issued":
+        msg = ksef.auto_send(db, web_actor(request), inv)
+        if msg:
+            flash(request, msg)
     return redirect(f"/faktury/{inv.id}")
 
 
@@ -608,6 +650,10 @@ def invoice_issue(invoice_id: int, request: Request, db: Session = Depends(get_d
     except ValueError as e:
         db.rollback()
         flash(request, str(e))
+        return redirect(f"/faktury/{inv.id}")
+    msg = ksef.auto_send(db, web_actor(request), inv)
+    if msg:
+        flash(request, msg)
     return redirect(f"/faktury/{inv.id}")
 
 
@@ -865,6 +911,7 @@ async def _save_contractor(request: Request, db: Session, c: Contractor):
     c.nip = c.nip.replace("-", "").replace(" ", "")
     c.country = (c.country or "PL").upper()[:2]
     c.is_company = form.get("is_company") == "1"
+    c.ksef_auto = form.get("ksef_auto") == "1"
     if not c.name:
         return render(request, db, "contractor_form.html", c=c, error="Podaj nazwę albo imię i nazwisko.")
     db.add(c)

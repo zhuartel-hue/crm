@@ -500,6 +500,8 @@ def issue_invoice(db: Session, actor: str, invoice_id: int) -> Invoice:
     audit(db, actor, "invoice.issue", f"Wystawiono {inv.number} dla {inv.buyer_name} na {calc.format_money(inv.total_gross)} zł",
           company_id=inv.company_id, entity="invoice", entity_id=inv.id)
     db.commit()
+    from .ksef import service as ksef_service
+    ksef_service.auto_send(db, actor, inv)
     return inv
 
 

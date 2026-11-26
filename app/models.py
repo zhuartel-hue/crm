@@ -4,6 +4,7 @@ from __future__ import annotations
 import datetime as dt
 from decimal import Decimal
 
+from sqlalchemy import false as sa_false
 from sqlalchemy import Date, DateTime, ForeignKey, Index, Integer, LargeBinary, Numeric, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -77,6 +78,8 @@ class Contractor(Base):
     phone: Mapped[str] = mapped_column(String(40), default="")
     notes: Mapped[str] = mapped_column(Text, default="")
     website: Mapped[str] = mapped_column(String(200), default="")
+    # Faktury dla tego kontrahenta ida do KSeF od razu po wystawieniu (takze cykliczne).
+    ksef_auto: Mapped[bool] = mapped_column(default=False, server_default=sa_false())
     # Skad pochodzi (np. "firmao:123"), do ponownego importu bez dubli.
     source_ref: Mapped[str] = mapped_column(String(120), default="", index=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())

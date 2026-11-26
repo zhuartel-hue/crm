@@ -101,6 +101,36 @@ def send(db: Session, actor: str, invoice_id: int) -> Invoice:
     return inv
 
 
+def auto_send(db: Session, actor: str, inv: Invoice) -> str:
+    """Po wystawieniu: wysyla do KSeF, gdy kontrahent ma wlaczona automatyczna wysylke, a firma ma KSeF.
+    Zwraca komunikat dla uzytkownika ("" gdy nie dotyczy). Blad wysylki nie cofa wystawienia."""
+    c = inv.contractor
+    if c is None or not c.ksef_auto or not can_send(inv) or not enabled(inv.company):
+        return ""
+    try:
+        inv = send(db, actor, inv.id)
+    except ServiceError as e:
+        return f"Automatyczna wysyłka do KSeF nie udała się: {e}"
+    return f"Wysłano do KSeF automatycznie: {status_label(inv)} {inv.ksef_number}".strip()
+
+
+def send_many(db: Session, actor: str, invoice_ids: list[int], company_id: int) -> dict:
+    """Wysylka zaznaczonych faktur jedna po drugiej (korekty po fakturach, ktore koryguja)."""
+    invs = [i for i in (db.get(Invoice, x) for x in invoice_ids) if i is not None and i.company_id == company_id]
+    invs.sort(key=lambda i: (i.kind == "correction", i.issue_date, i.seq or 0, i.id))
+    out = {"accepted": [], "pending": [], "failed": []}
+    for inv in invs:
+        try:
+            inv = send(db, actor, inv.id)
+        except ServiceError as e:
+            out["failed"].append(f"{inv.number}: {e}")
+            continue
+        (out["accepted"] if inv.ksef_status == "accepted" else
+         out["pending"] if inv.ksef_status == "sent" else out["failed"]).append(
+            inv.number if inv.ksef_status in ("accepted", "sent") else f"{inv.number}: {inv.ksef_message}")
+    return out
+
+
 def refresh(db: Session, actor: str, invoice_id: int) -> Invoice:
     """Ponowne sprawdzenie statusu (gdy KSeF przetwarzal fakture dluzej) i pobranie UPO."""
     inv = get_invoice(db, invoice_id)
