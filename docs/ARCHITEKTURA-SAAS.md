@@ -233,7 +233,7 @@ tylko w zakresie organizacji zalogowanego użytkownika.
 
 | Etap | Zakres | Termin |
 | --- | --- | --- |
-| A. Serwer | osobny CX33 + Volume + Storage Box, kopie, test odtwarzania, monitoring | grudzień 2026 (po zgodzie) |
+| A. Serwer | osobny CX33 + Volume + Storage Box, kopie, test odtwarzania, monitoring | przeprowadzka 1.12.2026 |
 | B. Podstawa SaaS | organizacje, `organisation_id` + RLS, użytkownicy i role, zaproszenia, 2FA, worker, koniec danych Margot w kodzie, szyfrowanie per organizacja | do 31.12.2026 |
 | C. Start własny | Margot i ARI pracują produkcyjnie na nowym serwerze | 1.01.2027 |
 | D. Wdrożenia z GitHuba | CI/CD, automatyczny powrót, serwer testowy | styczeń 2027 |
