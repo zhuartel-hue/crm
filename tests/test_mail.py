@@ -188,3 +188,26 @@ def test_mail_requires_own_company(client, fake_mail):
     _account(client)
     client.post("/firma/2")
     assert "Nie ma jeszcze skrzynki" in client.get("/poczta").text
+
+
+def test_mail_has_company_logo(client, fake_mail):
+    import io
+
+    from PIL import Image
+
+    from app.db import SessionLocal
+    from app.models import Company
+    buf = io.BytesIO()
+    Image.new("RGB", (120, 40), (10, 143, 220)).save(buf, "PNG")
+    with SessionLocal() as db:
+        c = db.get(Company, 1)
+        c.logo, c.logo_type = buf.getvalue(), "image/png"
+        db.commit()
+    acc_id = _account(client)
+    client.post("/poczta/nowa", data={"account_id": str(acc_id), "to": "klient@test.pl", "cc": "", "subject": "Oferta",
+                                      "body": "Dzień dobry,\nw załączniku <oferta>.", "in_reply_to": "", "invoice_id": ""})
+    msg = FakeSmtp.sent[-1]
+    html_part = msg.get_body(("html",))
+    assert "&lt;oferta&gt;" in html_part.get_content() and "cid:" in html_part.get_content()
+    assert any(p.get_content_type() == "image/png" for p in msg.walk())
+    assert "w załączniku <oferta>" in msg.get_body(("plain",)).get_content()

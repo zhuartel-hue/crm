@@ -91,6 +91,21 @@
     {% if schedule %}<div class="muted" style="font-size:13px">Najbliższe terminy</div>
     <ul style="margin:6px 0 0;padding-left:18px">{% for d in schedule %}<li>{{ d|date }}</li>{% endfor %}</ul>{% endif %}
   </div>
+  {% if r.id %}<div class="card" id="pliki">
+    <div class="row"><h2 style="margin:0">Dokumenty umowy</h2><span class="spacer"></span><span class="muted" style="font-size:12px">{{ files|length }}</span></div>
+    {% for f in files %}<div class="row" style="gap:6px;padding:5px 0;border-bottom:1px solid var(--line)">
+      <div style="flex:1;min-width:0"><a href="/umowy/{{ r.id }}/pliki/{{ f.id }}" target="_blank" rel="noopener">{{ f.title }}</a>
+      <br><span class="muted" style="font-size:12px">{{ f.kind_label }}{% if f.doc_date %} z {{ f.doc_date|date }}{% endif %} · {{ (f.size / 1024)|round|int }} KB{% if f.added_by %} · dodał {{ f.added_by }}{% endif %} · {{ f.created_at|date }}</span></div>
+      <a class="btn small" href="/umowy/{{ r.id }}/pliki/{{ f.id }}?pobierz=1">Pobierz</a>
+      <form method="post" action="/umowy/{{ r.id }}/pliki/{{ f.id }}/usun" style="margin:0" onsubmit="return confirm('Usunąć plik {{ f.title|e }}?')"><button class="btn small danger" aria-label="Usuń plik">×</button></form>
+    </div>{% else %}<p class="muted" style="font-size:13px">Brak plików. Dodaj skan podpisanej umowy, aneksy, wypowiedzenie.</p>{% endfor %}
+    <form method="post" action="/umowy/{{ r.id }}/pliki" enctype="multipart/form-data" style="margin-top:8px">
+      <div class="row" style="gap:6px"><select name="kind" style="width:auto">{% for k, v in FILE_KINDS.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select>
+      <input type="date" name="doc_date" style="width:auto" title="data dokumentu (np. podpisania aneksu)"></div>
+      <input name="title" placeholder="opis, np. Aneks nr 1: zmiana ceny" style="margin-top:6px">
+      <input type="file" name="files" multiple accept=".pdf,image/*,.doc,.docx,.odt" style="margin-top:6px" required>
+      <button class="btn primary small" style="margin-top:6px">Dodaj plik</button>
+    </form></div>{% endif %}
   {% if history %}<div class="card"><div class="muted" style="font-size:13px;margin-bottom:6px">Wystawione z tej umowy</div>
   {% for i in history %}<div><a href="/faktury/{{ i.id }}">{{ i.display_number }}</a> · {{ i.issue_date|date }} · {{ i.total_gross|money }} zł</div>{% endfor %}</div>{% endif %}
   {% if r.id %}<form method="post" action="/umowy/{{ r.id }}/usun" onsubmit="return confirm('Usunąć umowę? Wystawione faktury zostaną.')"><button class="btn danger small">Usuń</button></form>{% endif %}

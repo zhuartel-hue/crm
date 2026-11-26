@@ -3,7 +3,9 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import os
 import re
+from urllib.parse import quote
 from contextlib import asynccontextmanager
 from decimal import Decimal
 from pathlib import Path
@@ -13,7 +15,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, or_, select, update
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, defer
 from starlette.middleware.sessions import SessionMiddleware
 
 from . import dashboard as dash
@@ -36,6 +38,8 @@ from . import services
 from .services import ServiceError, audit, car_item_name
 from .db import SessionLocal, get_db
 from .models import (
+    CONTRACT_FILE_KINDS,
+    ContractFile,
     CAR_STATUSES,
     DELIVERY_KINDS,
     SCOPES,
@@ -2971,8 +2975,8 @@ async def offer_set_look(oid: int, request: Request, db: Session = Depends(get_d
 @app.post("/oferty/{oid}/usun")
 def offer_delete(oid: int, request: Request, db: Session = Depends(get_db)):
     o = _get_offer(db, request, oid)
-    if o.invoice_id or o.delivery_id or o.status not in ("new", "cancelled", "rejected"):
-        flash(request, "Usunąć można tylko nową, odrzuconą albo anulowaną ofertę bez faktury i WZ.")
+    if o.invoice_id or o.delivery_id:
+        flash(request, "Z tej oferty jest już faktura albo WZ. Zmień jej status (np. odrzucona), zamiast ją usuwać.")
         return redirect(f"/oferty/{o.id}")
     audit(db, web_actor(request), "offer.delete", f"Usunięto ofertę {o.number}", company_id=o.company_id,
           entity="offer", entity_id=o.id)
@@ -3275,7 +3279,9 @@ def _recurring_form(request: Request, db: Session, r: RecurringInvoice, error: s
                          .limit(24)).all() if r.id else []
     accounts = _company_accounts(db, company.id)
     has_mail = accounts != []
-    return render(request, db, "recurring_form.html", r=r, accounts=accounts,
+    files = db.scalars(select(ContractFile).options(defer(ContractFile.data)).where(ContractFile.recurring_id == r.id)
+                       .order_by(ContractFile.doc_date.desc().nulls_last(), ContractFile.id.desc())).all() if r.id else []
+    return render(request, db, "recurring_form.html", r=r, accounts=accounts, files=files, FILE_KINDS=CONTRACT_FILE_KINDS,
                   default_tpl_id=default_tpl.id if default_tpl else None, rows=recurring.items(r) or [None], products=products,
                   products_json=script_json(prod.picker_json(products)), contractors=contractors, tpls=tpls,
                   INTERVALS=RECURRING_INTERVALS, MODES=RECURRING_MODES, schedule=recurring.schedule(r) if r.next_date else [],
@@ -3419,6 +3425,80 @@ def recurring_end(rid: int, request: Request, db: Session = Depends(get_db)):
     db.commit()
     flash(request, f"Umowa zakończona z dniem {r.end_date:%d.%m.%Y}. Kolejnych faktur nie będzie.")
     return redirect(f"/umowy/{rid}")
+
+
+CONTRACT_FILE_MAX = 25 * 1024 * 1024
+_INLINE_TYPES = {"application/pdf", "image/jpeg", "image/png", "image/webp", "image/gif"}
+
+
+@app.post("/umowy/{rid}/pliki")
+async def contract_file_add(rid: int, request: Request, db: Session = Depends(get_db)):
+    """Skany umowy, aneksow itd. dodawane recznie; kilka plikow naraz."""
+    r = _get_recurring(db, request, rid)
+    form = await request.form()
+    kind = form.get("kind") if form.get("kind") in CONTRACT_FILE_KINDS else "other"
+    title = (form.get("title") or "").strip()[:200]
+    try:
+        doc_date = dt.date.fromisoformat(form["doc_date"]) if form.get("doc_date") else None
+    except ValueError:
+        doc_date = None
+    added, skipped = 0, []
+    for f in form.getlist("files"):
+        if not getattr(f, "filename", None):
+            continue
+        raw = await f.read()
+        name = os.path.basename(f.filename.replace("\\", "/"))[:200]
+        if not raw or len(raw) > CONTRACT_FILE_MAX:
+            skipped.append(name)
+            continue
+        ctype = (f.content_type or "").split(";")[0].strip().lower()[:100] or "application/octet-stream"
+        if raw[:4] == b"%PDF":
+            ctype = "application/pdf"
+        db.add(ContractFile(company_id=r.company_id, recurring_id=r.id, kind=kind, title=title or name, doc_date=doc_date,
+                            filename=name, content_type=ctype, size=len(raw), data=raw,
+                            added_by=str(request.session.get("user", ""))[:60]))
+        added += 1
+    if added:
+        audit(db, web_actor(request), "recurring.file_add",
+              f"Umowa „{r.name}”: dodano {added} plik(i) ({CONTRACT_FILE_KINDS[kind]})",
+              company_id=r.company_id, entity="recurring", entity_id=r.id)
+        db.commit()
+    msg = f"Dodano plików: {added}." if added else "Nie wybrano pliku."
+    if skipped:
+        msg += " Pominięte (puste albo ponad 25 MB): " + ", ".join(skipped)
+    flash(request, msg)
+    return redirect(f"/umowy/{rid}#pliki")
+
+
+def _contract_file(db: Session, request: Request, rid: int, fid: int) -> ContractFile:
+    r = _get_recurring(db, request, rid)
+    f = db.get(ContractFile, fid)
+    if f is None or f.recurring_id != r.id or f.company_id != r.company_id:
+        raise HTTPException(404)
+    return f
+
+
+@app.get("/umowy/{rid}/pliki/{fid}")
+def contract_file_get(rid: int, fid: int, request: Request, pobierz: int = 0, db: Session = Depends(get_db)):
+    f = _contract_file(db, request, rid, fid)
+    inline = f.content_type in _INLINE_TYPES and not pobierz
+    ctype = f.content_type if f.content_type in _INLINE_TYPES else "application/octet-stream"
+    safe = "".join(ch if ch.isascii() and ch.isprintable() and ch not in '"\\' else "_" for ch in f.filename) or "plik"
+    disp = f"{'inline' if inline else 'attachment'}; filename=\"{safe}\"; filename*=UTF-8''{quote(f.filename)}"
+    return Response(f.data, media_type=ctype, headers={"Content-Disposition": disp, "X-Content-Type-Options": "nosniff",
+                                                       "Content-Security-Policy": "sandbox"})
+
+
+@app.post("/umowy/{rid}/pliki/{fid}/usun")
+def contract_file_delete(rid: int, fid: int, request: Request, db: Session = Depends(get_db)):
+    f = _contract_file(db, request, rid, fid)
+    r = f.recurring_id
+    audit(db, web_actor(request), "recurring.file_delete", f"Usunięto plik umowy „{f.title}” ({f.filename})",
+          company_id=f.company_id, entity="recurring", entity_id=r)
+    db.delete(f)
+    db.commit()
+    flash(request, "Plik usunięty.")
+    return redirect(f"/umowy/{rid}#pliki")
 
 
 @app.post("/umowy/{rid}/status")

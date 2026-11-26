@@ -126,3 +126,31 @@ def test_contract_number_end_and_template(client):
         assert db.query(Invoice).filter_by(recurring_id=rid2).count() == 0
     # stary adres przekierowuje
     assert client.get("/cykliczne", follow_redirects=False).headers["location"] == "/umowy"
+
+
+def test_contract_files(client):
+    from app.db import SessionLocal
+    from app.models import ContractFile
+    r = client.post("/umowy/nowa", data=_form(number="9/2026"), follow_redirects=False)
+    rid = int(r.headers["location"].rsplit("/", 1)[1])
+    pdf = b"%PDF-1.4 skan umowy"
+    r = client.post(f"/umowy/{rid}/pliki", data={"kind": "annex", "title": "Aneks nr 1", "doc_date": "2026-10-05"},
+                    files=[("files", ("aneks łódź.pdf", pdf, "application/octet-stream")),
+                           ("files", ("strona2.jpg", b"\xff\xd8\xffjpeg", "image/jpeg"))], follow_redirects=False)
+    assert r.status_code == 303
+    with SessionLocal() as db:
+        fs = db.query(ContractFile).filter_by(recurring_id=rid).order_by(ContractFile.id).all()
+        assert [f.content_type for f in fs] == ["application/pdf", "image/jpeg"] and fs[0].kind_label == "aneks"
+        fid = fs[0].id
+    page = client.get(f"/umowy/{rid}").text
+    assert "Dokumenty umowy" in page and "Aneks nr 1" in page and "05.10.2026" in page
+    got = client.get(f"/umowy/{rid}/pliki/{fid}")
+    assert got.content == pdf and got.headers["content-disposition"].startswith("inline")
+    assert client.get(f"/umowy/{rid}/pliki/{fid}?pobierz=1").headers["content-disposition"].startswith("attachment")
+    # cudza firma nie widzi pliku
+    client.post("/firma/2")
+    assert client.get(f"/umowy/{rid}/pliki/{fid}").status_code == 404
+    client.post("/firma/1")
+    client.post(f"/umowy/{rid}/pliki/{fid}/usun")
+    with SessionLocal() as db:
+        assert db.query(ContractFile).filter_by(recurring_id=rid).count() == 1

@@ -509,6 +509,33 @@ class ProductPhoto(Base):
     product: Mapped[Product] = relationship(back_populates="photos")
 
 
+CONTRACT_FILE_KINDS = {"contract": "umowa", "annex": "aneks", "termination": "wypowiedzenie", "protocol": "protokół",
+                       "other": "inny dokument"}
+
+
+class ContractFile(Base):
+    """Skan umowy, aneksu itd. dodany recznie do umowy. Plik w bazie, wiec jest w nocnej kopii razem z danymi."""
+
+    __tablename__ = "contract_files"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    recurring_id: Mapped[int] = mapped_column(ForeignKey("recurring_invoices.id", ondelete="CASCADE"), index=True)
+    kind: Mapped[str] = mapped_column(String(12), default="contract")  # CONTRACT_FILE_KINDS
+    title: Mapped[str] = mapped_column(String(200), default="")
+    doc_date: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
+    filename: Mapped[str] = mapped_column(String(200), default="")
+    content_type: Mapped[str] = mapped_column(String(100), default="application/octet-stream")
+    size: Mapped[int] = mapped_column(Integer, default=0)
+    data: Mapped[bytes] = mapped_column(LargeBinary)
+    added_by: Mapped[str] = mapped_column(String(60), default="")
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
+
+    @property
+    def kind_label(self) -> str:
+        return CONTRACT_FILE_KINDS.get(self.kind, self.kind)
+
+
 class AppSetting(Base):
     """Ustawienia programu zmieniane w aplikacji (np. skrot hasla administratora)."""
 

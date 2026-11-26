@@ -16,8 +16,9 @@
   {% if not o.delivery_id %}<form method="post" action="/oferty/{{ o.id }}/wz"><button class="btn">WZ z oferty</button></form>{% endif %}
   <a class="btn" href="/oferty/nowa?kopia={{ o.id }}">Kopiuj jako nową</a>
   <form method="post" action="/oferty/{{ o.id }}/wzor" onsubmit="var n=prompt('Nazwa wzoru (np. Monitoring 4 kamery):', this.name.value); if(!n) return false; this.name.value=n;"><input type="hidden" name="name" value="{{ o.title }}"><button class="btn">Zapisz jako wzór</button></form>
-  {% if not o.invoice_id and not o.delivery_id and o.status in ('new', 'rejected', 'cancelled') %}
-  <form method="post" action="/oferty/{{ o.id }}/usun" onsubmit="return confirm('Usunąć ofertę {{ o.display_number }}?')"><button class="btn danger">Usuń</button></form>{% endif %}
+  {% if not o.invoice_id and not o.delivery_id %}
+  <form method="post" action="/oferty/{{ o.id }}/usun" onsubmit="return confirm('Usunąć ofertę {{ o.display_number }}? Tego nie da się cofnąć.')"><button class="btn danger">Usuń</button></form>
+  {% else %}<button class="btn" disabled title="Z oferty jest faktura albo WZ, więc zostaje w historii. Możesz zmienić jej status.">Usuń</button>{% endif %}
 </div>
 <div class="grid">
   <div class="card"><div class="muted">Klient</div><b>{{ o.recipient_name }}</b><br><span style="white-space:pre-line">{{ o.recipient_address }}</span>

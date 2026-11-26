@@ -28,7 +28,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .. import secretbox
-from ..models import Contact, Contractor, Invoice, MailAccount, MailAttachment, MailMessage
+from ..models import Company, Contact, Contractor, Invoice, MailAccount, MailAttachment, MailMessage
 
 from zoneinfo import ZoneInfo
 
@@ -418,6 +418,17 @@ def send(db: Session, acc: MailAccount, to: str, subject: str, body: str, cc: st
     if acc.signature and acc.signature.strip() not in text:
         text = text.rstrip() + "\n\n-- \n" + acc.signature.strip()
     msg.set_content(text)
+    company = db.get(Company, acc.company_id) if acc.company_id else None
+    if company is not None and company.logo:
+        # Wersja HTML z logo firmy pod trescia (tekst ten sam; programy bez HTML pokazuja wersje tekstowa).
+        cid = email.utils.make_msgid(domain=acc.email.split("@")[-1])
+        body_html = html.escape(text).replace("\n", "<br>\n")
+        msg.add_alternative(
+            '<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.5;color:#111">'
+            f'{body_html}<br><br><img src="cid:{cid[1:-1]}" alt="{html.escape(company.name)}" '
+            'style="max-height:56px;max-width:220px;border:0"></div>', subtype="html")
+        main, _, sub = (company.logo_type or "image/png").partition("/")
+        msg.get_payload()[1].add_related(company.logo, maintype=main, subtype=sub or "png", cid=cid)
     for name, ctype, data in attachments or []:
         main, _, sub = (ctype or "application/octet-stream").partition("/")
         msg.add_attachment(data, maintype=main, subtype=sub or "octet-stream", filename=name)
