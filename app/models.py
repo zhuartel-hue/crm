@@ -751,9 +751,14 @@ class DeliveryItem(Base):
     product: Mapped["Product | None"] = relationship()
 
 
-OFFER_STATUSES = {"new": "nowa", "sent": "wysłana", "accepted": "przyjęta", "in_progress": "w realizacji",
-                  "done": "zrealizowana", "rejected": "odrzucona", "cancelled": "anulowana"}
-OFFER_OPEN = ("new", "sent")  # czekaja na decyzje klienta
+# Statusy 1:1 jak w Firmao (slownik offer_status), w tej samej kolejnosci.
+OFFER_STATUSES = {"incomplete": "niekompletna", "new": "nowa", "prepared": "przygotowana",
+                  "calculating": "w trakcie kalkulacji", "negotiating": "w trakcie negocjacji", "sent": "wysłana",
+                  "waiting_pay": "oczekiwanie na wpłatę", "accepted": "zaakceptowana", "ordered": "zamówiona",
+                  "in_progress": "w trakcie realizacji", "done": "zrealizowana", "rejected": "odrzucona"}
+OFFER_LEGACY = {"cancelled": "anulowana"}  # dawny status Sygnavo, tylko do wyswietlania
+OFFER_OPEN = ("incomplete", "new", "prepared", "calculating", "negotiating", "sent")  # czekaja na decyzje klienta
+OFFER_WON = ("waiting_pay", "accepted", "ordered", "in_progress", "done")
 
 
 class Offer(Base):
@@ -804,7 +809,11 @@ class Offer(Base):
 
     @property
     def status_label(self) -> str:
-        return OFFER_STATUSES.get(self.status, self.status)
+        return OFFER_STATUSES.get(self.status) or OFFER_LEGACY.get(self.status, self.status)
+
+    @property
+    def status_class(self) -> str:
+        return "ok" if self.status in OFFER_WON else ("due" if self.status == "rejected" else ("warn" if self.status == "cancelled" else ""))
 
     @property
     def is_open(self) -> bool:

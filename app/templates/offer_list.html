@@ -17,13 +17,15 @@
   <input name="q" value="{{ q }}" placeholder="Numer, klient albo tytuł" style="max-width:320px"><button class="btn">Szukaj</button>
 </form>
 <div class="card tbl"><table>
-<tr><th>Numer</th><th>Data</th><th>Klient</th><th class="hide-sm">Ważna do</th><th class="n">Brutto</th><th>Status</th></tr>
+<tr><th>Numer</th><th>Tytuł</th><th>Data</th><th>Klient</th><th class="hide-sm">Ważna do</th><th class="n">Netto</th><th class="n">VAT</th><th class="n">Brutto</th><th>Status</th></tr>
 {% for o in rows %}
-<tr><td><a href="/oferty/{{ o.id }}">{{ o.display_number }}</a>{% if o.title %}<br><span class="muted">{{ o.title }}</span>{% endif %}</td>
+<tr><td style="white-space:nowrap"><a href="/oferty/{{ o.id }}">{{ o.display_number }}</a></td>
+<td style="min-width:180px"><form method="post" action="/oferty/{{ o.id }}/tytul" style="margin:0"><input type="hidden" name="back" value="{{ request.url.path }}{{ '?' ~ request.url.query if request.url.query }}"><input name="title" value="{{ o.title }}" maxlength="300" placeholder="dodaj tytuł…" aria-label="Tytuł oferty {{ o.display_number }}" onchange="this.form.submit()" style="padding:5px 8px;font-size:14px"></form></td>
 <td>{{ o.issue_date|date }}</td><td>{{ o.recipient_name }}</td>
 <td class="hide-sm">{{ o.valid_until|date }}{% if o.expired %} <span class="badge warn">minęła</span>{% endif %}</td>
-<td class="n">{{ o.total_gross|money }}</td>
-<td><span class="badge {{ 'ok' if o.status in ('accepted', 'in_progress', 'done') else 'warn' if o.status in ('rejected', 'cancelled') }}">{{ o.status_label }}</span></td></tr>
-{% else %}<tr><td colspan="6" class="muted">Brak ofert. <a href="/oferty/nowa">Dodaj pierwszą</a></td></tr>{% endfor %}
+<td class="n">{{ o.total_net|money }}</td><td class="n">{{ o.total_vat|money }}</td><td class="n">{{ o.total_gross|money }}</td>
+<td><form method="post" action="/oferty/{{ o.id }}/status" style="margin:0"><input type="hidden" name="back" value="{{ request.url.path }}{{ '?' ~ request.url.query if request.url.query }}"><select name="status" class="status-pick {{ o.status_class }}" aria-label="Status oferty {{ o.display_number }}" onchange="this.form.submit()">
+{% for k, v in STATUSES.items() %}<option value="{{ k }}" {{ 'selected' if o.status == k }}>{{ v }}</option>{% endfor %}{% if o.status not in STATUSES %}<option selected>{{ o.status_label }}</option>{% endif %}</select></form></td></tr>
+{% else %}<tr><td colspan="9" class="muted">Brak ofert. <a href="/oferty/nowa">Dodaj pierwszą</a></td></tr>{% endfor %}
 </table></div>
 {% endblock %}

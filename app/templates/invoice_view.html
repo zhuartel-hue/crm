@@ -10,7 +10,6 @@
 </div>
 <div class="row" style="margin-bottom:16px">
   <a class="btn" href="/faktury/{{ inv.id }}/pdf" target="_blank">PDF</a>
-  <a class="btn" href="/faktury/{{ inv.id }}/pdf?pobierz=1">Pobierz PDF</a>
   {% if inv.status == 'issued' and inv.kind != 'correction' %}<a class="btn" href="/wz/nowa?faktura={{ inv.id }}">Wystaw WZ</a>{% endif %}
   {% if inv.status == 'issued' and has_mail %}<a class="btn" href="/poczta/nowa?faktura={{ inv.id }}">Wyślij e-mailem</a>{% endif %}
   {% if inv.status == 'issued' and has_mail and inv.to_pay > 0 and inv.kind in ('vat', 'final', 'advance') %}<a class="btn" href="/poczta/nowa?faktura={{ inv.id }}&amp;przypomnienie=1">Przypomnij o płatności</a>{% endif %}

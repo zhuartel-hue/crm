@@ -33,10 +33,10 @@ table.items th.n { text-align: right; }
 </div>
 <table class="items">
 {% set priced = d.items|selectattr('unit_price', 'ne', none)|list %}
-<tr><th>Lp.</th><th>Kod</th><th>Nazwa</th><th class="n">Ilość</th><th>J.m.</th>{% if priced %}<th class="n">Cena {{ 'brutto' if d.prices_gross else 'netto' }}</th><th class="n">VAT</th><th class="n">Netto</th><th class="n">Brutto</th>{% endif %}</tr>
-{% for it in d.items %}<tr><td>{{ it.position }}</td><td>{{ it.code }}</td><td>{{ it.name }}</td><td class="n">{{ it.quantity|qty }}</td><td>{{ it.unit }}</td>
+<tr><th>Lp.</th><th>Nazwa</th><th class="n">Ilość</th><th>J.m.</th>{% if priced %}<th class="n">Cena {{ 'brutto' if d.prices_gross else 'netto' }}</th><th class="n">VAT</th><th class="n">Netto</th><th class="n">Brutto</th>{% endif %}</tr>
+{% for it in d.items %}<tr><td>{{ it.position }}</td><td>{{ it.name }}</td><td class="n">{{ it.quantity|qty }}</td><td>{{ it.unit }}</td>
 {% if priced %}<td class="n">{{ it.unit_price|money if it.unit_price is not none }}</td><td class="n">{{ it.vat_rate }}{{ '%' if it.vat_rate.isdigit() }}</td><td class="n">{{ it.net|money if it.unit_price is not none }}</td><td class="n">{{ it.gross|money if it.unit_price is not none }}</td>{% endif %}</tr>{% endfor %}
-{% if priced %}<tr><td colspan="7" class="n"><b>Razem</b></td><td class="n"><b>{{ d.total_net|money }}</b></td><td class="n"><b>{{ d.total_gross|money }}</b></td></tr>{% endif %}
+{% if priced %}<tr><td colspan="6" class="n"><b>Razem</b></td><td class="n"><b>{{ d.total_net|money }}</b></td><td class="n"><b>{{ d.total_gross|money }}</b></td></tr>{% endif %}
 </table>
 {% if d.notes %}<div class="notes">{{ d.notes }}</div>{% endif %}
 <div class="sign">

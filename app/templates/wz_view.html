@@ -4,15 +4,14 @@
 <div class="row"><h1>{{ d.kind_short }} {{ d.display_number }}</h1>
 {% if d.status == 'draft' %}<span class="badge warn">szkic</span>{% elif d.signature_png %}<span class="badge ok">podpisana</span>{% endif %}</div>
 <div class="row" style="margin-bottom:16px">
-  <a class="btn" href="/wz/{{ d.id }}/pdf" target="_blank">PDF</a>
-  <a class="btn" href="/wz/{{ d.id }}/pdf?pobierz=1">Pobierz PDF</a>
+  <a class="btn small" href="/wz/{{ d.id }}/pdf" target="_blank" title="Otwórz PDF (stamtąd można go też zapisać)">PDF</a>
   {% if d.status == 'issued' and d.kind == 'wz' and not d.invoice_id %}
-  <form method="post" action="/wz/{{ d.id }}/faktura"><button class="btn primary">Wystaw fakturę z WZ</button></form>
+  <form method="post" action="/wz/{{ d.id }}/faktura"><button class="btn small primary">Wystaw fakturę z WZ</button></form>
   {% endif %}
   {% if d.status == 'draft' %}
-  <a class="btn" href="/wz/{{ d.id }}/edytuj">Edytuj</a>
-  <form method="post" action="/wz/{{ d.id }}/wystaw"><button class="btn primary">Wystaw</button></form>
-  <form method="post" action="/wz/{{ d.id }}/usun" onsubmit="return confirm('Usunąć szkic?')"><button class="btn danger">Usuń szkic</button></form>
+  <a class="btn small" href="/wz/{{ d.id }}/edytuj">Edytuj</a>
+  <form method="post" action="/wz/{{ d.id }}/wystaw"><button class="btn small primary">Wystaw</button></form>
+  <form method="post" action="/wz/{{ d.id }}/usun" onsubmit="return confirm('Usunąć szkic?')"><button class="btn small danger">Usuń szkic</button></form>
   {% endif %}
 </div>
 <div class="grid">
@@ -23,11 +22,11 @@
 </div>
 <div class="card tbl"><table>
 {% set priced = d.items|selectattr('unit_price', 'ne', none)|list %}
-<tr><th>Lp.</th><th>Pozycja</th><th class="n">Ilość</th><th>Jedn.</th>{% if priced %}<th class="n">Cena {{ 'brutto' if d.prices_gross else 'netto' }}</th><th class="n hide-sm">VAT</th><th class="n">Brutto</th>{% endif %}</tr>
-{% for it in d.items %}<tr><td>{{ it.position }}</td><td>{{ it.name }}{% if it.code %}<br><span class="muted">{{ it.code }}</span>{% endif %}</td>
+<tr><th>Lp.</th><th>Kod</th><th>Nazwa</th><th class="n">Ilość</th><th>Jedn.</th>{% if priced %}<th class="n">Cena {{ 'brutto' if d.prices_gross else 'netto' }}</th><th class="n hide-sm">VAT</th><th class="n">Brutto</th>{% endif %}</tr>
+{% for it in d.items %}<tr><td>{{ it.position }}</td><td class="muted" style="white-space:nowrap">{{ it.code }}</td><td>{{ it.name }}</td>
 <td class="n">{{ it.quantity|qty }}</td><td>{{ it.unit }}</td>
 {% if priced %}<td class="n">{{ it.unit_price|money if it.unit_price is not none }}</td><td class="n hide-sm">{{ it.vat_rate }}{{ '%' if it.vat_rate.isdigit() }}</td><td class="n">{{ it.gross|money if it.unit_price is not none }}</td>{% endif %}</tr>{% endfor %}
-{% if priced %}<tr><td colspan="4"></td><td class="n" colspan="2">Netto {{ d.total_net|money }} · VAT {{ d.total_vat|money }}</td><td class="n"><b>{{ d.total_gross|money }} zł</b></td></tr>{% endif %}
+{% if priced %}<tr><td colspan="5"></td><td class="n" colspan="2">Netto {{ d.total_net|money }} · VAT {{ d.total_vat|money }}</td><td class="n"><b>{{ d.total_gross|money }} zł</b></td></tr>{% endif %}
 </table></div>
 {% if d.status == 'issued' and d.kind == 'wz' %}
 <div class="card">

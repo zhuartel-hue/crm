@@ -1127,7 +1127,22 @@ def car_delete(car_id: int, request: Request, db: Session = Depends(get_db)):
 @app.get("/produkty", response_class=HTMLResponse)
 def product_list(request: Request, q: str = "", pokaz: str = "", db: Session = Depends(get_db)):
     rows = prod.search(db, q, active_only=pokaz != "wszystkie")
-    return render(request, db, "products.html", products=rows, q=q, pokaz=pokaz)
+    return render(request, db, "products.html", products=rows, q=q, pokaz=pokaz,
+                  suppliers=_last_suppliers(db, [r.id for r in rows]))
+
+
+def _last_suppliers(db: Session, product_ids: list[int]) -> dict[int, str]:
+    """Dostawca produktu = odbiorca/dostawca z ostatniego wystawionego PZ z tym produktem."""
+    if not product_ids:
+        return {}
+    q = (select(DeliveryItem.product_id, Delivery.recipient_name)
+         .join(Delivery, Delivery.id == DeliveryItem.delivery_id)
+         .where(Delivery.kind == "pz", Delivery.status == "issued", DeliveryItem.product_id.in_(product_ids))
+         .order_by(Delivery.issue_date.desc(), Delivery.id.desc()))
+    out: dict[int, str] = {}
+    for pid, name in db.execute(q):
+        out.setdefault(pid, name)
+    return out
 
 
 @app.get("/produkty/nowy", response_class=HTMLResponse)
@@ -2712,8 +2727,26 @@ async def offer_status(oid: int, request: Request, db: Session = Depends(get_db)
     audit(db, web_actor(request), "offer.status", f"{o.number}: status {o.status_label}",
           company_id=o.company_id, entity="offer", entity_id=o.id)
     db.commit()
+    back = form.get("back") or ""
+    if back.startswith("/oferty"):
+        return redirect(back)  # zmiana prosto z listy
     flash(request, f"Status oferty: {o.status_label}.")
     return redirect(f"/oferty/{o.id}")
+
+
+@app.post("/oferty/{oid}/tytul")
+async def offer_title(oid: int, request: Request, db: Session = Depends(get_db)):
+    """Tytul oferty edytowany prosto z listy (informacja dla zespolu)."""
+    o = _get_offer(db, request, oid)
+    form = await request.form()
+    title = (form.get("title") or "").strip()[:300]
+    if title != o.title:
+        o.title = title
+        audit(db, web_actor(request), "offer.title", f"{o.number}: tytuł „{title}”",
+              company_id=o.company_id, entity="offer", entity_id=o.id)
+        db.commit()
+    back = form.get("back") or "/oferty"
+    return redirect(back if back.startswith("/oferty") else "/oferty")
 
 
 @app.post("/oferty/{oid}/faktura")

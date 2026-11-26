@@ -32,11 +32,10 @@ PAYMENT_TYPES = {"TRANSFER": "transfer", "CASH": "cash", "CARD": "card", "PAYMEN
 UNITS = {"szt": "szt.", "szt.": "szt.", "sztuka": "szt.", "sztuk": "szt.", "sztuki": "szt.", "godz": "godz.",
          "godz.": "godz.", "h": "godz.", "kpl": "kpl.", "kpl.": "kpl.", "l": "l", "km": "km", "m": "m", "kg": "kg",
          "usł": "usł.", "usł.": "usł.", "usługa": "usł."}
-OFFER_STATUS = {"NEW": "new", "DRAFT": "new", "SENT": "sent", "ACCEPTED": "accepted", "REJECTED": "rejected",
-                "IN_PROGRESS": "in_progress", "IN_REALIZATION": "in_progress", "REALIZATION": "in_progress",
-                "REALIZED": "done", "EXECUTED": "done", "COMPLETED": "done", "DONE": "done", "FINISHED": "done",
-                "CANCELED": "cancelled", "CANCELLED": "cancelled", "WAITING_FOR_PAYMENT": "accepted",
-                "DURING_CALCULATIONS": "in_progress"}
+OFFER_STATUS = {"INCOMPLETE": "incomplete", "NEW": "new", "DRAFT": "new", "PREPARED": "prepared",
+                "DURING_CALCULATIONS": "calculating", "DURING_NEGOTIATIONS": "negotiating", "SENT": "sent",
+                "WAITING_FOR_PAYMENT": "waiting_pay", "ACCEPTED": "accepted", "ORDERED": "ordered",
+                "IN_PROGRESS": "in_progress", "EXECUTED": "done", "REJECTED": "rejected"}
 STORAGE_TYPES = {"OUTSIDE_RELEASE": "wz", "OUTSIDE_INCOME": "pz", "OUTSIDE_RECEIPT": "pz", "OUTSIDE_ADMISSION": "pz"}
 ZERO = Decimal("0")
 WARSAW = ZoneInfo("Europe/Warsaw")

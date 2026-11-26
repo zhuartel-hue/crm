@@ -71,7 +71,7 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
 .card.tbl{padding:4px 8px;overflow-x:auto}
 /* znaczniki i komunikaty */
 .badge{display:inline-block;font-size:12px;font-weight:550;padding:2px 9px;border-radius:999px;background:var(--line2);color:var(--muted);white-space:nowrap}
-.badge.ok{background:var(--ok-weak);color:var(--ok)}.badge.warn{background:var(--warn-weak);color:var(--warn)}.badge.m{background:var(--accent-weak);color:var(--accent)}
+.badge.ok{background:var(--ok-weak);color:var(--ok)}.badge.warn{background:var(--warn-weak);color:var(--warn)}.badge.m{background:var(--accent-weak);color:var(--accent)}.badge.due{background:var(--danger-weak);color:var(--danger)}
 .flash{background:var(--accent-weak);color:var(--accent);padding:11px 14px;border-radius:10px;margin-bottom:16px;font-weight:500}
 .flash.warn{background:var(--warn-weak);color:var(--warn)}.flash.warn a{color:inherit}
 .copy{display:flex;gap:6px;align-items:center}.copy code{flex:1;padding:8px 10px;overflow-x:auto;white-space:nowrap}
@@ -147,3 +147,5 @@ a.card.stat{display:block;color:var(--text);text-decoration:none}a.card.stat:hov
 .cal-line{display:flex;align-items:baseline;gap:4px;padding:3px 0;min-width:0}.cal-line .cal-chip{display:inline-block;max-width:100%;white-space:normal}
 .ok-mark{color:var(--ok);font-weight:700}
 @media (max-width:700px){.cal-day{min-height:64px;padding:3px}.cal-chip{font-size:10px;padding:1px 3px}.cal-h{padding:6px 3px;font-size:10px}}
+.status-pick{width:auto;padding:3px 8px;font-size:12px;font-weight:550;border-radius:999px;border:1px solid var(--line);background:var(--line2);color:var(--muted);cursor:pointer}
+.status-pick.ok{background:var(--ok-weak);color:var(--ok)}.status-pick.warn{background:var(--warn-weak);color:var(--warn)}.status-pick.due{background:var(--danger-weak);color:var(--danger)}

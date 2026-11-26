@@ -9,15 +9,15 @@
   <a class="btn small {{ 'primary' if pokaz == 'wszystkie' }}" href="/produkty?pokaz=wszystkie&q={{ q|urlencode }}">wszystkie</a>
 </form>
 <div class="card tbl"><table>
-<tr><th></th><th>Produkt</th><th class="n">Netto</th><th class="n hide-sm">VAT</th><th class="n">Brutto</th><th class="n">Stan</th></tr>
+<tr><th>Produkt</th><th class="n">Netto</th><th class="n">VAT</th><th class="n hide-sm">Brutto</th><th class="hide-sm">Dostawca</th><th class="n">Stan</th></tr>
 {% for pr in products %}
 <tr>
-<td style="width:64px">{% if pr.photos %}<a href="/produkty/{{ pr.id }}"><img class="thumb" src="/zdjecia/{{ pr.photos[0].id }}?mini=1" alt="" loading="lazy"></a>{% endif %}</td>
 <td><a href="/produkty/{{ pr.id }}">{{ pr.name }}</a>{% if not pr.active %} <span class="badge">nieaktywny</span>{% endif %}
-  <br><span class="muted">{{ pr.code }}{% if pr.ean %} · EAN {{ pr.ean }}{% endif %}{% if pr.photos|length > 1 %} · {{ pr.photos|length }} zdjęć{% endif %}</span></td>
+  <br><span class="muted">{{ pr.code }}{% if pr.ean %} · EAN {{ pr.ean }}{% endif %}</span></td>
 <td class="n">{{ pr.price_net|money if pr.price_net is not none }}</td>
-<td class="n hide-sm">{{ pr.vat_rate }}{{ '%' if pr.vat_rate.isdigit() }}</td>
-<td class="n">{{ pr.price_gross|money if pr.price_gross is not none }}</td>
+<td class="n">{{ pr.vat_rate }}{{ '%' if pr.vat_rate.isdigit() }}</td>
+<td class="n hide-sm">{{ pr.price_gross|money if pr.price_gross is not none }}</td>
+<td class="hide-sm">{{ suppliers.get(pr.id, '') }}</td>
 <td class="n">{% if pr.is_service %}<span class="muted">usługa</span>{% else %}<span{% if pr.stock < 0 %} style="color:#b42318"{% endif %}>{{ pr.stock|qty }}</span>{% endif %}</td>
 </tr>
 {% else %}<tr><td colspan="6" class="muted">Brak produktów.</td></tr>{% endfor %}

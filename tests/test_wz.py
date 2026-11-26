@@ -108,9 +108,11 @@ def test_stock_pz_wz_prices_and_invoice_from_wz(client):
     assert "516,60" in view
     products = client.get("/produkty").text
     assert "75" in products  # 5 + 100 - 30
+    assert "Hurtownia Y" in products and 'class="thumb"' not in products  # dostawca z PZ, bez zdjec
     page = client.get(f"/produkty/{pid}").text
     assert "PZ/1/02/2027" in page and "WZ/1/02/2027" in page and "-30" in page
-    assert "516,60" in client.get("/wz").text
+    wz_list = client.get("/wz").text
+    assert "516,60" in wz_list and "420,00" in wz_list and "96,60" in wz_list
     pdf = client.get(f"/wz/{wid}/pdf")
     assert pdf.status_code == 200 and pdf.content[:4] == b"%PDF"
     # faktura z WZ

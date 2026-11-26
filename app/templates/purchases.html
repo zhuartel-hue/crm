@@ -27,16 +27,17 @@
   <input name="q" value="{{ q }}" placeholder="Numer, sprzedawca albo NIP" style="max-width:260px"><button class="btn">Szukaj</button>
 </form>
 <div class="card tbl"><table>
-<tr><th>Faktura</th><th>Sprzedawca</th><th class="hide-sm">Termin</th><th class="n">Brutto</th><th>Status</th></tr>
+<tr><th>Faktura</th><th>Sprzedawca</th><th class="hide-sm">Termin</th><th class="n">Netto</th><th class="n">VAT</th><th class="n">Brutto</th><th>Status</th></tr>
 {% for pi in rows %}
 <tr>
 <td><a href="/koszty/{{ pi.id }}">{{ pi.invoice_number or pi.ksef_number }}</a><br><span class="muted">{{ pi.issue_date|date if pi.issue_date }}{% if pi.invoice_type and pi.invoice_type != 'Vat' %} · {{ pi.invoice_type }}{% endif %}</span></td>
 <td>{{ pi.seller_name }}<br><span class="muted">NIP {{ pi.seller_nip }}</span></td>
 <td class="hide-sm">{% if pi.due_date %}{{ pi.due_date|date }}{% if not pi.paid_at and pi.due_date < today and pi.status != 'rejected' %} <span class="badge" style="color:#b42318">po terminie</span>{% endif %}{% else %}—{% endif %}</td>
+<td class="n">{{ pi.net|money }}</td><td class="n">{{ pi.vat|money }}</td>
 <td class="n" style="white-space:nowrap">{{ pi.gross|money }} {{ 'zł' if pi.currency == 'PLN' else pi.currency }}</td>
 <td><span class="badge {{ 'warn' if pi.status == 'new' else ('ok' if pi.status == 'accepted' else '') }}">{{ pi.status_label }}</span>
 {% if pi.paid_at %}<br><span class="badge ok">zapłacona</span>{% endif %}</td>
 </tr>
-{% else %}<tr><td colspan="5" class="muted">Brak faktur kosztowych{{ ' w tym widoku' if status or q }}.</td></tr>{% endfor %}
+{% else %}<tr><td colspan="7" class="muted">Brak faktur kosztowych{{ ' w tym widoku' if status or q }}.</td></tr>{% endfor %}
 </table></div>
 {% endblock %}
