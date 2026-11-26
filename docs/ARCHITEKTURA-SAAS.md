@@ -84,7 +84,9 @@ Do zrobienia w etapie B (kolejność):
 4. ~~Zadania w tle w osobnym procesie~~ zrobione: `app/jobs.py` + `app/worker.py`, blokada w bazie
    (`pg_try_advisory_lock`); domyślnie nadal w procesie aplikacji, przełączenie według README serwera.
    Później: kolejka zadań na żądanie (np. wysyłka do KSeF) w tabeli bazy.
-5. 2FA (TOTP) dla właściciela i księgowości, zaproszenia mailem zamiast hasła startowego.
+5. ~~2FA (TOTP)~~ zrobione (`app/totp.py`, włączane przez użytkownika w Koncie, właściciel może
+   wyłączyć przy zgubionym telefonie). Dalej: wymuszenie 2FA dla właściciela i księgowości, zaproszenia
+   mailem zamiast hasła startowego.
 6. Koniec danych Margot/ARI w `app/seed.py`: nowa organizacja startuje pusta (rejestracja po NIP).
 7. Szyfrowanie sekretów kluczem organizacji (envelope encryption, sekcja 3).
 

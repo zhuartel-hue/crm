@@ -29,6 +29,14 @@ organizacji nie widzi jej danych.
 - **Czy mogę zmienić sobie rolę?** Organizacja musi mieć zawsze co najmniej jednego aktywnego
   właściciela. Najpierw nadaj rolę właściciela innej osobie.
 
+## Weryfikacja dwuetapowa (kod z telefonu)
+1. Wejdź w **Konto** → „Włącz weryfikację dwuetapową”.
+2. W telefonie otwórz aplikację do kodów (Google Authenticator, Microsoft Authenticator, 1Password)
+   i zeskanuj kod QR.
+3. Wpisz 6 cyfr z aplikacji i kliknij „Włącz”.
+Od teraz przy logowaniu podajesz hasło i aktualny kod z telefonu. Zgubiony telefon: właściciel w
+**Użytkownicy** klika „Wyłącz (zgubiony telefon)”, a Ty włączasz weryfikację ponownie na nowym telefonie.
+
 ## Co zrobić, gdy coś nie działa
 - Komunikat „Ta część programu nie jest dostępna dla Twojej roli”: poproś właściciela o inną rolę.
 - Połączenie z Claude (konektor) może zatwierdzić tylko właściciel.
