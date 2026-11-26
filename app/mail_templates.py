@@ -21,6 +21,8 @@ PLACEHOLDERS = {
     "do_zaplaty": "pozostało do zapłaty",
     "termin": "termin płatności (w ofercie: ważna do)",
     "dni_po_terminie": "ile dni po terminie",
+    "okres": "okres faktury cyklicznej, np. 11/2026",
+    "miesiac": "miesiąc faktury cyklicznej, np. listopad 2026",
 }
 
 DEFAULTS = [

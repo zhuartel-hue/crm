@@ -155,6 +155,7 @@ def _send(db: Session, actor: str, r: RecurringInvoice, inv: Invoice) -> None:
     tpl = db.get(EmailTemplate, r.template_id) if r.template_id else None
     tpl = tpl or mail_templates.default_for(db, r.company, "recurring") or mail_templates.default_for(db, r.company, "invoice")
     ctx = mail_templates.context(r.company, inv)
+    ctx.update(period_ctx(inv.issue_date or dt.date.today()))
     name = (inv.number or f"faktura-{inv.id}").replace("/", "-") + ".pdf"
     mail.send(db, acc, r.email_to, mail_templates.render(tpl.subject, ctx), mail_templates.render(tpl.body, ctx),
               attachments=[(name, "application/pdf", pdf.render_invoice(inv))], invoice_id=inv.id)
