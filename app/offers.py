@@ -13,7 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from . import numbering, wz
-from .models import OFFER_OPEN, OFFER_STATUSES, Delivery, DeliveryItem, Invoice, Offer, OfferItem, OfferTemplate
+from .models import OFFER_OPEN, OFFER_PDF_TEMPLATES, OFFER_STATUSES, Delivery, DeliveryItem, Invoice, Offer, OfferItem, OfferTemplate
 
 DEFAULT_VALID_DAYS = 14
 EXPIRY_WARN_DAYS = 3
@@ -139,13 +139,35 @@ def expiring(db: Session, company_id: int, days: int = EXPIRY_WARN_DAYS, limit: 
         Offer.valid_until >= today - dt.timedelta(days=EXPIRED_SHOW_DAYS)).order_by(Offer.valid_until).limit(limit)))
 
 
-def render_pdf(o: Offer) -> bytes:
+def _extras(o: Offer) -> dict:
+    """Opis i zdjecie produktu do pozycji (z karty produktu)."""
+    import base64
+
+    out = {}
+    for n, it in enumerate(o.items):
+        p = it.product
+        if p is None:
+            continue
+        photo = p.photos[0] if p.photos else None
+        out[it.id or n] = {"description": (p.description or "").strip(),
+                           "photo": f"data:image/jpeg;base64,{base64.b64encode(photo.thumb).decode()}" if photo else ""}
+    return out
+
+
+def render_html(o: Offer, template: str | None = None) -> str:
+    from .pdf import _env, logo_uri
+
+    tpl = template if template in OFFER_PDF_TEMPLATES else (o.pdf_template if o.pdf_template in OFFER_PDF_TEMPLATES
+                                                            else "zdjecia")
+    return _env.get_template("offer_pdf.html").render(o=o, tpl=tpl, extras=_extras(o), logo_uri=logo_uri(o.company))
+
+
+def render_pdf(o: Offer, template: str | None = None) -> bytes:
     from weasyprint import HTML
 
-    from .pdf import HERE, _env
+    from .pdf import HERE
 
-    html = _env.get_template("offer_pdf.html").render(o=o)
-    return HTML(string=html, base_url=str(HERE)).write_pdf()
+    return HTML(string=render_html(o, template), base_url=str(HERE)).write_pdf()
 
 
 ITEM_FIELDS = ("position", "product_id", "code", "name", "quantity", "unit", "unit_price", "vat_rate")

@@ -48,6 +48,7 @@ from .models import (
     OfferTemplate,
     INVOICE_KINDS,
     INVOICE_TEMPLATES,
+    OFFER_PDF_TEMPLATES,
     NEW_KINDS,
     PAYMENT_METHODS,
     VAT_RATES,
@@ -86,6 +87,7 @@ templates.env.globals.update(
 templates.env.globals["ksef_cert_info"] = ksef.cert_info
 templates.env.globals["ksef_can_send"] = ksef.can_send
 templates.env.globals["INVOICE_TEMPLATES"] = INVOICE_TEMPLATES
+templates.env.globals["OFFER_PDF_TEMPLATES"] = OFFER_PDF_TEMPLATES
 templates.env.globals["ksef_status_label"] = ksef.status_label
 
 
@@ -2339,12 +2341,22 @@ def offer_to_wz(oid: int, request: Request, db: Session = Depends(get_db)):
 
 
 @app.get("/oferty/{oid}/pdf")
-def offer_pdf(oid: int, request: Request, db: Session = Depends(get_db), pobierz: int = 0):
+def offer_pdf(oid: int, request: Request, db: Session = Depends(get_db), pobierz: int = 0, wyglad: str = ""):
     o = _get_offer(db, request, oid)
     filename = (o.number or f"oferta-{o.id}").replace("/", "-") + ".pdf"
     disposition = "attachment" if pobierz else "inline"
-    return Response(offers.render_pdf(o), media_type="application/pdf",
+    return Response(offers.render_pdf(o, wyglad or None), media_type="application/pdf",
                     headers={"Content-Disposition": f'{disposition}; filename="{filename}"'})
+
+
+@app.post("/oferty/{oid}/wyglad")
+async def offer_set_look(oid: int, request: Request, db: Session = Depends(get_db)):
+    o = _get_offer(db, request, oid)
+    tpl = (await request.form()).get("pdf_template") or ""
+    if tpl in OFFER_PDF_TEMPLATES:
+        o.pdf_template = tpl
+        db.commit()
+    return redirect(f"/oferty/{oid}")
 
 
 @app.post("/oferty/{oid}/usun")

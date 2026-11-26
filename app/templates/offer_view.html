@@ -4,6 +4,10 @@
 <div class="row"><h1>Oferta {{ o.display_number }}</h1>
 <span class="badge {{ 'ok' if o.status in ('accepted', 'in_progress', 'done') else 'warn' if o.status in ('rejected', 'cancelled') }}">{{ o.status_label }}</span>
 {% if o.expired %}<span class="badge warn">ważność minęła</span>{% endif %}</div>
+<form method="post" action="/oferty/{{ o.id }}/wyglad" class="row" style="margin-bottom:8px">
+  <label style="margin:0">Wygląd PDF</label>
+  <select name="pdf_template" style="max-width:300px" onchange="this.form.submit()">{% for k, v in OFFER_PDF_TEMPLATES.items() %}<option value="{{ k }}" {{ 'selected' if o.pdf_template == k }}>{{ v }}</option>{% endfor %}</select>
+</form>
 <div class="row" style="margin-bottom:16px">
   <a class="btn" href="/oferty/{{ o.id }}/pdf" target="_blank">PDF</a>
   <a class="btn" href="/oferty/{{ o.id }}/pdf?pobierz=1">Pobierz PDF</a>

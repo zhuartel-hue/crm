@@ -156,3 +156,35 @@ def test_offer_templates(client):
         assert db.query(OfferTemplate).count() == 1
     client.post(f"/oferty/wzory/{tid}/usun")
     assert "Brak wzorów" in client.get("/oferty/wzory").text
+
+
+def test_offer_pdf_looks(client):
+    import io
+
+    from PIL import Image
+
+    from app import offers
+    from app.db import SessionLocal
+    from app.models import Offer, OfferItem, Product
+
+    oid = _offer(client)
+    with SessionLocal() as db:
+        buf = io.BytesIO()
+        Image.new("RGB", (60, 40), (200, 10, 10)).save(buf, "JPEG")
+        from app import products
+        p = Product(name="Kamera", description="- 8 Mpx\n- IR 30 m")
+        products.add_photos(p, [("k.jpg", buf.getvalue())])
+        db.add(p)
+        o = db.get(Offer, oid)
+        o.items.append(OfferItem(position=3, product=p, name="Kamera", quantity=1, unit="szt.", unit_price=100,
+                                 vat_rate="23"))
+        db.commit()
+        html = offers.render_html(o, "zdjecia")
+        assert "IR 30 m" in html and "data:image/jpeg;base64," in html and "t-zdjecia" in html
+        assert "data:image/jpeg" not in offers.render_html(o, "opisy") and "IR 30 m" in offers.render_html(o, "opisy")
+        assert "IR 30 m" not in offers.render_html(o, "grafika") and 'class="cover"' in offers.render_html(o, "grafika")
+    client.post(f"/oferty/{oid}/wyglad", data={"pdf_template": "classic"})
+    with SessionLocal() as db:
+        assert db.get(Offer, oid).pdf_template == "classic"
+    assert client.get(f"/oferty/{oid}/pdf?wyglad=grafika").content[:4] == b"%PDF"
+    assert "Wygląd PDF" in client.get(f"/oferty/{oid}").text

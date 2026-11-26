@@ -1,4 +1,4 @@
-"""Wzory ofert (gotowa tresc i pozycje).
+"""Wzory ofert (gotowa tresc i pozycje) i wybrany wyglad PDF oferty.
 
 Revision ID: 0018
 Revises: 0017
@@ -28,8 +28,10 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index("ix_offer_templates_company_id", "offer_templates", ["company_id"])
+    op.add_column("offers", sa.Column("pdf_template", sa.String(length=20), server_default="zdjecia", nullable=False))
 
 
 def downgrade() -> None:
+    op.drop_column("offers", "pdf_template")
     op.drop_index("ix_offer_templates_company_id", table_name="offer_templates")
     op.drop_table("offer_templates")
