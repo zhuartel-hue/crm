@@ -19,6 +19,8 @@ from starlette.middleware.sessions import SessionMiddleware
 from . import api, auth, calc, config, mail_templates, mcp_server, migrate, nip_lookup, numbering, password, payments, pdf, recurring, secretbox, wz
 from . import products as prod
 from .bank import service as bank
+from .bank import connect as bank_connect
+from .bank import enablebanking
 from .mail import service as mail
 from .mail.service import MailError
 from .bank.mt940 import MT940Error
@@ -36,6 +38,7 @@ from .models import (
     SCOPES,
     ApiToken,
     AuditLog,
+    BankConnection,
     BankTransaction,
     MailAccount,
     MailAttachment,
@@ -82,7 +85,7 @@ async def lifespan(_app: FastAPI):
     migrate.upgrade()
     with SessionLocal() as db:
         seed(db)
-    stops = [_start_mail_sync(), _start_purchase_sync(), _start_recurring()]
+    stops = [_start_mail_sync(), _start_purchase_sync(), _start_recurring(), _start_bank_sync()]
     yield
     for stop in stops:
         if stop is not None:
@@ -157,15 +160,44 @@ def _start_purchase_sync():
     return stop
 
 
+def _start_bank_sync():
+    """Operacje z podlaczonych bankow (Enable Banking) co BANK_SYNC_HOURS godzin, od razu po starcie tez."""
+    import logging
+    import threading
+
+    hours = config.BANK_SYNC_HOURS
+    if hours <= 0:
+        return None
+    stop = threading.Event()
+
+    def loop():
+        if stop.wait(120):  # krotko po starcie, zeby nie spowalniac uruchamiania
+            return
+        while True:
+            try:
+                with SessionLocal() as db:
+                    bank_connect.sync_all(db)
+            except Exception:  # noqa: BLE001
+                logging.getLogger("sygnavo.bank").exception("Pobieranie operacji z banku nie powiodło się")
+            if stop.wait(hours * 3600):
+                return
+
+    threading.Thread(target=loop, name="bank-sync", daemon=True).start()
+    return stop
+
+
 app = FastAPI(title="Sygnavo", docs_url=None, redoc_url=None, lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
 
-PUBLIC_PATHS = ("/login", "/static", "/health", "/sw.js", "/api/", "/mcp", "/oauth/", "/.well-known/")
+PUBLIC_PATHS = ("/polityka-prywatnosci", "/regulamin", "/login", "/static", "/health", "/sw.js", "/api/", "/mcp", "/oauth/", "/.well-known/")
 
 
 @app.middleware("http")
 async def require_login(request: Request, call_next):
     if not request.url.path.startswith(PUBLIC_PATHS) and not request.session.get("user"):
+        if request.method == "GET" and request.url.path == "/bank/powrot":
+            # Powrot z banku moze otworzyc sie w innej karcie: po zalogowaniu wracamy tutaj.
+            request.session["next"] = request.url.path + ("?" + request.url.query if request.url.query else "")
         return RedirectResponse("/login", status_code=303)
     response = await call_next(request)
     # Strona zgody OAuth i formularze nie moga byc osadzone w cudzej ramce (clickjacking).
@@ -314,7 +346,8 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
         unpaid_count=len(unpaid),
         unpaid_sum=sum((i.to_pay for i in unpaid), Decimal("0")),
     )
-    return render(request, db, "dashboard.html", company=company, recent=recent, stats=stats, cars=cars_on_lot)
+    return render(request, db, "dashboard.html", company=company, recent=recent, stats=stats, cars=cars_on_lot,
+                  bank_warnings=bank_connect.warnings(db, company.id))
 
 
 # --- faktury --------------------------------------------------------------
@@ -1200,7 +1233,8 @@ def bank_list(request: Request, pokaz: str = "do-sprawdzenia", db: Session = Dep
     counts = dict(db.execute(select(BankTransaction.state, func.count()).where(BankTransaction.company_id == company.id)
                              .group_by(BankTransaction.state)).all())
     return render(request, db, "bank.html", rows=rows, pokaz=pokaz, counts=counts, states=bank.STATES,
-                  open_invoices=bank.open_invoices(db, company.id))
+                  open_invoices=bank.open_invoices(db, company.id), conns=bank_connect.connections(db, company.id),
+                  bank_warnings=bank_connect.warnings(db, company.id))
 
 
 @app.post("/bank/import")
@@ -1265,6 +1299,144 @@ def bank_undo(tx_id: int, request: Request, db: Session = Depends(get_db)):
 @app.post("/bank/{tx_id}/pomin")
 def bank_ignore(tx_id: int, request: Request, db: Session = Depends(get_db)):
     return _bank_action(request, db, bank.ignore, tx_id)
+
+
+@app.get("/polityka-prywatnosci", response_class=HTMLResponse)
+@app.get("/regulamin", response_class=HTMLResponse)
+def legal_page(request: Request, db: Session = Depends(get_db)):
+    """Publiczne strony wymagane przy rejestracji aplikacji u posrednika bankowego."""
+    operator = db.scalars(select(Company).order_by(Company.id)).first()
+    kind = "regulamin" if request.url.path == "/regulamin" else "prywatnosc"
+    return templates.TemplateResponse(request, "legal.html", {"kind": kind, "operator": operator})
+
+
+# --- polaczenie z bankiem (Enable Banking, PSD2)
+
+def _psu_ip(request: Request) -> str:
+    fwd = (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
+    return fwd or (request.client.host if request.client else "")
+
+
+def _bank_conn(db: Session, request: Request, cid: int) -> BankConnection:
+    company = current_company(request, db)
+    conn = db.get(BankConnection, cid)
+    if conn is None or conn.company_id != company.id:
+        raise HTTPException(404)
+    return conn
+
+
+@app.get("/bank/polaczenie", response_class=HTMLResponse)
+def bank_connection_page(request: Request, psu: str = "business", db: Session = Depends(get_db)):
+    company = current_company(request, db)
+    configured = enablebanking.is_configured(db)
+    app_id, _ = enablebanking.get_config(db) if configured else ("", "")
+    banks, banks_error = [], ""
+    psu = psu if psu in ("business", "personal") else "business"
+    if configured:
+        try:
+            banks = bank_connect.banks(enablebanking.Client.from_db(db), "PL", psu)
+        except (enablebanking.BankApiError, ValueError) as e:
+            banks_error = str(e)
+    return render(request, db, "bank_connection.html", configured=configured, app_id=app_id, banks=banks,
+                  banks_error=banks_error, psu=psu, conns=bank_connect.connections(db, company.id),
+                  redirect_url=auth.base_url(request) + "/bank/powrot", warnings=bank_connect.warnings(db, company.id))
+
+
+@app.post("/bank/polaczenie/konfiguracja")
+async def bank_connection_config(request: Request, db: Session = Depends(get_db)):
+    form = await request.form()
+    pem = ""
+    f = form.get("key_file")
+    if getattr(f, "filename", None):
+        raw = await f.read()
+        pem = raw[:20000].decode("utf-8", "replace")
+    pem = pem or (form.get("key_text") or "")
+    try:
+        enablebanking.save_config(db, form.get("app_id") or "", pem or None)
+        audit(db, web_actor(request), "bank.config", "Zapisano dane aplikacji Enable Banking (klucz zaszyfrowany)")
+        db.commit()
+        flash(request, "Zapisano. Teraz wybierz bank i kliknij „Podłącz”.")
+    except enablebanking.BankApiError as e:
+        db.rollback()
+        flash(request, str(e))
+    return redirect("/bank/polaczenie")
+
+
+@app.post("/bank/polaczenie/nowe")
+async def bank_connection_start(request: Request, db: Session = Depends(get_db)):
+    company = current_company(request, db)
+    form = await request.form()
+    try:
+        url = bank_connect.start(db, web_actor(request), enablebanking.Client.from_db(db), company,
+                                 form.get("aspsp") or "", form.get("psu_type") or "business",
+                                 auth.base_url(request) + "/bank/powrot", _psu_ip(request))
+        db.commit()
+    except (enablebanking.BankApiError, ValueError) as e:
+        db.rollback()
+        flash(request, str(e))
+        return redirect("/bank/polaczenie")
+    return RedirectResponse(url, status_code=303)
+
+
+@app.get("/bank/powrot")
+def bank_connection_return(request: Request, state: str = "", code: str = "", error: str = "",
+                           error_description: str = "", db: Session = Depends(get_db)):
+    actor = web_actor(request)
+    try:
+        client = enablebanking.Client.from_db(db)
+        conn = bank_connect.finish(db, actor, client, state, code, error, error_description, _psu_ip(request))
+        db.commit()
+    except (enablebanking.BankApiError, ValueError) as e:
+        db.rollback()
+        flash(request, str(e))
+        return redirect("/bank/polaczenie")
+    if conn.state != "active":
+        flash(request, conn.last_error or "Nie udało się podłączyć banku.")
+        return redirect("/bank/polaczenie")
+    request.session["company_id"] = conn.company_id
+    for old in bank_connect.connections(db, conn.company_id):
+        if old.id != conn.id and old.aspsp_name == conn.aspsp_name and old.state in ("active", "expired", "error"):
+            bank_connect.disconnect(db, actor, None, old)
+    msg = f"Podłączono {conn.aspsp_name} ({len(conn.accounts)} rach.). Zgoda ważna do {conn.valid_until:%d.%m.%Y}."
+    try:
+        res = bank_connect.sync(db, actor, client, conn)
+        msg += f" Pobrano {res['added']} operacji, {res['auto']} wpłat zaksięgowanych automatycznie."
+    except (enablebanking.BankApiError, ValueError) as e:
+        conn.last_error = str(e)[:1000]
+        msg += f" Pierwsze pobranie nie udało się: {e}"
+    db.commit()
+    flash(request, msg)
+    return redirect("/bank")
+
+
+@app.post("/bank/polaczenie/{cid}/pobierz")
+def bank_connection_sync(cid: int, request: Request, db: Session = Depends(get_db)):
+    conn = _bank_conn(db, request, cid)
+    try:
+        res = bank_connect.sync(db, web_actor(request), enablebanking.Client.from_db(db), conn)
+        db.commit()
+        flash(request, f"{conn.aspsp_name}: {res['added']} nowych operacji, {res['auto']} wpłat zaksięgowanych, "
+                       f"{res['suggested']} propozycji." if conn.state == "active" else conn.last_error)
+    except (enablebanking.BankApiError, ValueError) as e:
+        db.rollback()
+        conn = db.get(BankConnection, cid)
+        conn.last_error = str(e)[:1000]
+        db.commit()
+        flash(request, str(e))
+    return redirect("/bank")
+
+
+@app.post("/bank/polaczenie/{cid}/odlacz")
+def bank_connection_delete(cid: int, request: Request, db: Session = Depends(get_db)):
+    conn = _bank_conn(db, request, cid)
+    try:
+        client = enablebanking.Client.from_db(db)
+    except enablebanking.BankApiError:
+        client = None
+    bank_connect.disconnect(db, web_actor(request), client, conn)
+    db.commit()
+    flash(request, f"Odłączono {conn.aspsp_name}. Pobrane operacje zostają w Banku.")
+    return redirect("/bank/polaczenie")
 
 
 # ---------------------------------------------------------------- poczta

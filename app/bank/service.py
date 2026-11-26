@@ -131,46 +131,60 @@ def _apply(db: Session, actor: str, tx: BankTransaction, inv: Invoice, state: st
           company_id=inv.company_id, entity="invoice", entity_id=inv.id)
 
 
+def store(db: Session, actor: str, target: Company, rows: list[dict], source: str) -> dict:
+    """Zapisuje operacje (slowniki z polami BankTransaction, w tym fingerprint), pomija powtorzone i od razu
+    dopasowuje wplaty do faktur. Uzywane przez import MT940 i przez polaczenie z bankiem (PSD2)."""
+    added = skipped = auto = suggested = 0
+    invoices = open_invoices(db, target.id)
+    for row in rows:
+        if db.scalar(select(BankTransaction.id).where(BankTransaction.company_id == target.id,
+                                                     BankTransaction.fingerprint == row["fingerprint"])):
+            skipped += 1
+            continue
+        tx = BankTransaction(
+            company_id=target.id, account=row.get("account", "")[:40], booking_date=row["booking_date"],
+            value_date=row.get("value_date") or row["booking_date"], amount=row["amount"],
+            currency=(row.get("currency") or "PLN")[:3], title=(row.get("title") or "")[:1000],
+            counterparty=(row.get("counterparty") or "")[:300],
+            counterparty_account=(row.get("counterparty_account") or "")[:40], op_code=(row.get("op_code") or "")[:5],
+            bank_ref=(row.get("bank_ref") or "")[:40], fingerprint=row["fingerprint"], source=source[:200],
+            state="none", applied_amount=Decimal("0"),
+        )
+        db.add(tx)
+        added += 1
+        inv, state = find_match(tx, invoices)
+        if inv is not None and state == "auto":
+            _apply(db, actor, tx, inv, "auto")
+            auto += 1
+            invoices = [i for i in invoices if i.to_pay > 0]
+        elif inv is not None:
+            tx.invoice_id = inv.id
+            tx.state = "suggested"
+            suggested += 1
+        else:
+            tx.state = state
+    db.flush()
+    return {"added": added, "skipped": skipped, "auto": auto, "suggested": suggested}
+
+
 def import_file(db: Session, actor: str, data: bytes, filename: str, company: Company) -> dict:
     """Wczytuje plik MT940. Rachunek z pliku wskazuje firme; gdy nie pasuje do zadnej, uzywa `company`."""
     statements = mt940.parse(data)
-    added = skipped = auto = suggested = 0
+    total = {"added": 0, "skipped": 0, "auto": 0, "suggested": 0}
     companies_seen: set[str] = set()
     for st in statements:
         target = company_for_account(db, st.account) or company
         companies_seen.add(target.short_name)
-        invoices = open_invoices(db, target.id)
-        for t in st.transactions:
-            fp = t.fingerprint
-            if db.scalar(select(BankTransaction.id).where(BankTransaction.company_id == target.id,
-                                                         BankTransaction.fingerprint == fp)):
-                skipped += 1
-                continue
-            tx = BankTransaction(
-                company_id=target.id, account=st.account, booking_date=t.booking_date, value_date=t.value_date,
-                amount=t.amount, currency=st.currency, title=t.title[:1000], counterparty=t.counterparty[:300],
-                counterparty_account=t.counterparty_account[:40], op_code=t.op_code, bank_ref=t.bank_ref[:40],
-                fingerprint=fp, source=filename[:200], state="none", applied_amount=Decimal("0"),
-            )
-            db.add(tx)
-            added += 1
-            inv, state = find_match(tx, invoices)
-            if inv is not None and state == "auto":
-                _apply(db, actor, tx, inv, "auto")
-                auto += 1
-                invoices = [i for i in invoices if i.to_pay > 0]
-            elif inv is not None:
-                tx.invoice_id = inv.id
-                tx.state = "suggested"
-                suggested += 1
-            else:
-                tx.state = state
-    db.flush()
-    summary = (f"Wczytano {filename}: {added} nowych operacji, {skipped} już było, "
-               f"{auto} wpłat zaksięgowanych automatycznie, {suggested} propozycji do potwierdzenia.")
+        rows = [dict(account=st.account, booking_date=t.booking_date, value_date=t.value_date, amount=t.amount,
+                     currency=st.currency, title=t.title, counterparty=t.counterparty,
+                     counterparty_account=t.counterparty_account, op_code=t.op_code, bank_ref=t.bank_ref,
+                     fingerprint=t.fingerprint) for t in st.transactions]
+        for k, v in store(db, actor, target, rows, filename).items():
+            total[k] += v
+    summary = (f"Wczytano {filename}: {total['added']} nowych operacji, {total['skipped']} już było, "
+               f"{total['auto']} wpłat zaksięgowanych automatycznie, {total['suggested']} propozycji do potwierdzenia.")
     audit(db, actor, "bank.import", summary, company_id=company.id, entity="bank")
-    return {"added": added, "skipped": skipped, "auto": auto, "suggested": suggested,
-            "companies": sorted(companies_seen), "summary": summary}
+    return {**total, "companies": sorted(companies_seen), "summary": summary}
 
 
 def _get(db: Session, company_id: int, tx_id: int) -> BankTransaction:

@@ -468,6 +468,54 @@ class BankTransaction(Base):
     invoice: Mapped[Invoice | None] = relationship()
 
 
+BANK_CONNECTION_STATES = ("pending", "active", "expired", "error", "closed")
+
+
+class BankConnection(Base):
+    """Polaczenie firmy z bankiem przez posrednika PSD2 (Enable Banking). Wlasciciel zgody: firma.
+
+    session_id to identyfikator zgody u posrednika (nie jest haslem; klucz aplikacji jest w app_settings, zaszyfrowany).
+    """
+
+    __tablename__ = "bank_connections"
+    __table_args__ = (Index("ix_bank_connections_company", "company_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"))
+    provider: Mapped[str] = mapped_column(String(20), default="enablebanking")
+    aspsp_name: Mapped[str] = mapped_column(String(120), default="")
+    aspsp_country: Mapped[str] = mapped_column(String(2), default="PL")
+    psu_type: Mapped[str] = mapped_column(String(10), default="business")
+    auth_state: Mapped[str] = mapped_column(String(64), default="")
+    session_id: Mapped[str] = mapped_column(String(80), default="")
+    valid_until: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+    # [{"uid": "...", "iban": "PL..", "name": "...", "currency": "PLN"}]
+    accounts_json: Mapped[str] = mapped_column(Text, default="[]")
+    state: Mapped[str] = mapped_column(String(10), default="pending")  # BANK_CONNECTION_STATES
+    last_sync: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+    synced_until: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
+    last_error: Mapped[str] = mapped_column(Text, default="")
+    created_by: Mapped[str] = mapped_column(String(100), default="")
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
+
+    company: Mapped[Company] = relationship()
+
+    @property
+    def accounts(self) -> list[dict]:
+        import json
+
+        try:
+            return json.loads(self.accounts_json or "[]")
+        except ValueError:
+            return []
+
+    @property
+    def days_left(self) -> int | None:
+        if self.valid_until is None:
+            return None
+        return (self.valid_until - dt.datetime.now(dt.UTC).replace(tzinfo=None)).days
+
+
 class MailAccount(Base):
     """Skrzynka pocztowa firmy (IMAP do odbioru, SMTP do wysylki). Haslo zaszyfrowane (app/secretbox.py)."""
 

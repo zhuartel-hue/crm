@@ -21,3 +21,6 @@ MAIL_SYNC_MINUTES = int(os.environ.get("MAIL_SYNC_MINUTES", "5"))
 KSEF_PURCHASE_SYNC_HOURS = float(os.environ.get("KSEF_PURCHASE_SYNC_HOURS", "6"))
 # Sprawdzanie faktur cyklicznych do wystawienia co tyle minut (0 = wylaczone, tylko przycisk).
 RECURRING_CHECK_MINUTES = int(os.environ.get("RECURRING_CHECK_MINUTES", "60"))
+# Pobieranie operacji z podlaczonych bankow (Enable Banking) co tyle godzin (0 = tylko przyciskiem).
+# Banki zwykle pozwalaja na ok. 4 pobrania w tle dziennie.
+BANK_SYNC_HOURS = float(os.environ.get("BANK_SYNC_HOURS", "6"))

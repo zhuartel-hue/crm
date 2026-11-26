@@ -111,6 +111,22 @@ domyślnie 60). W nazwach pozycji działają `{okres}`, `{miesiac}`, `{rok}`. Cy
 **Szablony maili** (menu System): treści do wysyłki faktury, przypomnienia, WZ i faktury cyklicznej, ze znacznikami
 (`{numer}`, `{kwota}`, `{do_zaplaty}`, `{termin}`...) i podglądem na żywo. Przy wysyłce można wybrać inny szablon.
 
+## Bank automatycznie (Enable Banking)
+
+Bank → „Podłącz bank (automatycznie)”. Sygnavo łączy się z bankiem przez licencjonowanego pośrednika PSD2
+(Enable Banking, AISP nadzorowany przez FIN-FSA): tylko odczyt sald i operacji, bez przelewów.
+
+- Jedna aplikacja Enable Banking na cały program: identyfikator i klucz `.pem` wgrywane na stronie `/bank/polaczenie`,
+  klucz zapisany zaszyfrowany (`app_settings`). Każda firma podłącza swoje rachunki osobno (`bank_connections`).
+- Zgoda w banku ważna tyle, ile pozwala bank (zwykle ~180 dni). Na 14 dni przed końcem przypomnienie na Start i w Banku;
+  odnowienie to ponowne „Podłącz” tego samego banku (stare połączenie zamyka się samo).
+- Operacje zaksięgowane (BOOK) pobierane w tle co `BANK_SYNC_HOURS` (domyślnie 6; banki pozwalają na ok. 4 pobrania dziennie)
+  i od razu dopasowywane do faktur tymi samymi zasadami co MT940. Powtórki odrzuca odcisk operacji.
+- Bez umowy z Enable Banking aplikacja działa w trybie „restricted”: tylko rachunki podłączone w ich panelu
+  („Activate by linking accounts”). Do sprzedaży Sygnavo innym firmom potrzebna umowa.
+- Publiczne strony `/polityka-prywatnosci` i `/regulamin` (wymagane przy rejestracji aplikacji).
+- Wczytywanie MT940 zostaje jako zapas.
+
 ## Uruchomienie u siebie
 
 ```bash
