@@ -932,8 +932,9 @@ def contractor_edit(cid: int, request: Request, db: Session = Depends(get_db)):
         raise HTTPException(404)
     invoices = db.scalars(select(Invoice).where(Invoice.contractor_id == cid)
                           .order_by(Invoice.issue_date.desc()).limit(100)).all()
-    mails = db.scalars(select(MailMessage).where(MailMessage.contractor_id == cid)
-                       .order_by(MailMessage.date.desc()).limit(30)).all()
+    mail_stmt = _contractor_mail_stmt(db, c, current_company(request, db).id)
+    mails = db.scalars(mail_stmt.order_by(MailMessage.date.desc().nulls_last()).limit(10)).all() \
+        if mail_stmt is not None else []
     offer_rows = db.scalars(select(Offer).where(Offer.contractor_id == cid,
                                                 Offer.company_id == current_company(request, db).id)
                             .order_by(Offer.issue_date.desc()).limit(50)).all()
@@ -952,6 +953,43 @@ def contractor_edit(cid: int, request: Request, db: Session = Depends(get_db)):
                                                           Task.company_id == current_company(request, db).id)
                                        .order_by(Task.status.in_(("done", "cancelled")), Task.due_at.desc())
                                        .limit(30)).all(), now=dt.datetime.now())
+
+
+def _contractor_mail_stmt(db: Session, c: Contractor, company_id: int, contact: Contact | None = None):
+    """Maile z firma (adresy kontrahenta i jego osob) albo tylko z jedna osoba kontaktowa, w skrzynkach tej firmy."""
+    from .mail.service import _emails_of
+
+    accounts = select(MailAccount.id).where(MailAccount.company_id == company_id)
+    emails = _emails_of(contact.email) if contact else \
+        _emails_of(c.email) + [e for p in c.contacts for e in _emails_of(p.email)]
+    conds = [MailMessage.from_addr.ilike(e) for e in emails]
+    conds += [f.ilike(f"%{e}%") for e in emails for f in (MailMessage.to_addrs, MailMessage.cc_addrs)]
+    if contact is None:
+        conds.append(MailMessage.contractor_id == c.id)
+    if not conds:
+        return None
+    return select(MailMessage).where(MailMessage.account_id.in_(accounts), or_(*conds))
+
+
+@app.get("/kontrahenci/{cid}/maile", response_class=HTMLResponse)
+def contractor_mails(cid: int, request: Request, osoba: int = 0, kierunek: str = "", q: str = "",
+                     db: Session = Depends(get_db)):
+    c = _own(db, request, Contractor, cid)
+    if c is None:
+        raise HTTPException(404)
+    contact = next((p for p in c.contacts if p.id == osoba), None)
+    stmt = _contractor_mail_stmt(db, c, current_company(request, db).id, contact)
+    rows = []
+    if stmt is not None:
+        if kierunek in ("in", "out"):
+            stmt = stmt.where(MailMessage.direction == kierunek)
+        if q:
+            like = f"%{q}%"
+            stmt = stmt.where(or_(MailMessage.subject.ilike(like), MailMessage.body_text.ilike(like),
+                                  MailMessage.from_name.ilike(like), MailMessage.from_addr.ilike(like)))
+        rows = db.scalars(stmt.order_by(MailMessage.date.desc().nulls_last()).limit(500)).all()
+    return render(request, db, "contractor_mails.html", c=c, contact=contact, rows=rows, osoba=osoba,
+                  kierunek=kierunek, q=q)
 
 
 async def _save_contractor(request: Request, db: Session, c: Contractor):

@@ -2,7 +2,7 @@
 {% block title %}Kontrahenci{% endblock %}
 {% block content %}
 <div class="row"><h1>Kontrahenci</h1><span class="spacer"></span><a class="btn primary" href="/kontrahenci/nowy">+ Kontrahent</a></div>
-<p class="muted">Lista wspólna dla obu firm.</p>
+<p class="muted">Kontrahenci bieżącej firmy. Wyniki pojawiają się w trakcie pisania.</p>
 <form class="card row" method="get"><div style="flex:1"><input name="q" value="{{ q }}" placeholder="nazwa, NIP, miasto"></div><button class="btn">Szukaj</button></form>
 <div class="card tbl"><table>
 <tr><th title="KSeF: zielony ptaszek = faktury idą automatycznie, czerwona firma = czekają na zatwierdzenie" style="width:40px">KSeF</th><th>Nazwa</th><th>NIP</th><th class="hide-sm">Miasto</th><th class="hide-sm">Telefon</th></tr>

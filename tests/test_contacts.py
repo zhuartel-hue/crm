@@ -88,3 +88,33 @@ def test_contractor_notes(client):
         nid = db.query(ContractorNote).one().id
     client.post(f"/kontrahenci/{cid}/notatki/{nid}/usun")
     assert "Brak notatek." in client.get(f"/kontrahenci/{cid}").text
+
+
+def test_contractor_mail_history_per_contact(client):
+    import datetime as dt
+
+    from app.db import SessionLocal
+    from app.models import Contact, MailAccount, MailMessage
+
+    cid = _contractor(client)
+    with SessionLocal() as db:
+        acc = MailAccount(company_id=1, email="biuro@margot.pl")
+        db.add(acc)
+        a = Contact(company_id=1, contractor_id=cid, first_name="Anna", email="anna@hurt.pl")
+        b = Contact(company_id=1, contractor_id=cid, first_name="Bartek", email="bartek@hurt.pl")
+        db.add_all([a, b])
+        db.flush()
+        now = dt.datetime(2026, 11, 20, 10, 0)
+        db.add_all([
+            MailMessage(account_id=acc.id, direction="in", subject="Zamówienie od Anny", from_addr="anna@hurt.pl", date=now),
+            MailMessage(account_id=acc.id, direction="out", subject="Oferta dla Bartka", to_addrs="Bartek <bartek@hurt.pl>",
+                        date=now),
+            MailMessage(account_id=acc.id, direction="in", subject="Obcy mail", from_addr="ktos@inny.pl", date=now)])
+        db.commit()
+        aid = a.id
+    page = client.get(f"/kontrahenci/{cid}/maile").text
+    assert "Zamówienie od Anny" in page and "Oferta dla Bartka" in page and "Obcy mail" not in page
+    page = client.get(f"/kontrahenci/{cid}/maile?osoba={aid}").text
+    assert "Zamówienie od Anny" in page and "Oferta dla Bartka" not in page
+    card = client.get(f"/kontrahenci/{cid}").text
+    assert "Cała historia" in card and "Oferta dla Bartka" in card

@@ -39,7 +39,8 @@
 {% if c.id %}<div class="row"><h2>Osoby kontaktowe</h2><span class="spacer"></span><a class="btn small" href="/kontakty/nowy?kontrahent={{ c.id }}">+ Osoba</a></div>
 {% if c.contacts %}<div class="card tbl"><table>{% for p in c.contacts %}<tr><td><a href="/kontakty/{{ p.id }}">{{ p.name }}</a>{% if p.position %}<br><span class="muted">{{ p.position }}</span>{% endif %}</td>
 <td>{% if p.phone %}<a href="tel:{{ p.phone }}">{{ p.phone }}</a>{% endif %}</td>
-<td class="hide-sm">{% if p.email %}<a href="/poczta/nowa?kontakt={{ p.id }}">{{ p.email }}</a>{% endif %}</td></tr>{% endfor %}</table></div>
+<td class="hide-sm">{% if p.email %}<a href="/poczta/nowa?kontakt={{ p.id }}">{{ p.email }}</a>{% endif %}</td>
+<td style="white-space:nowrap">{% if p.email %}<a class="btn small" href="/kontrahenci/{{ c.id }}/maile?osoba={{ p.id }}">Maile</a>{% endif %}</td></tr>{% endfor %}</table></div>
 {% else %}<p class="muted">Brak osób kontaktowych.</p>{% endif %}{% endif %}
 {% if c.id %}<div class="row"><h2>Umowy</h2><span class="spacer"></span><a class="btn small" href="/umowy/nowa?kontrahent={{ c.id }}">+ Umowa</a></div>
 {% if contracts %}<div class="card tbl"><table>{% for r in contracts %}<tr><td><a href="/umowy/{{ r.id }}">{{ r.number or r.name }}</a></td>
@@ -58,10 +59,10 @@
 {% if offers %}<div class="card tbl"><table>{% for o in offers %}<tr><td><a href="/oferty/{{ o.id }}">{{ o.display_number }}</a></td><td>{{ o.issue_date|date }}</td>
 <td class="n">{{ o.total_gross|money }}</td><td>{{ o.status_label }}</td></tr>{% endfor %}</table></div>
 {% else %}<p class="muted">Brak ofert dla tego kontrahenta.</p>{% endif %}
-<h2>Korespondencja</h2>
-<p><a class="btn" href="/poczta/nowa?kontrahent={{ c.id }}">Napisz e-mail</a></p>
+<div class="row"><h2 id="maile">Maile</h2><span class="spacer"></span><a class="btn small" href="/kontrahenci/{{ c.id }}/maile">Cała historia</a><a class="btn small primary" href="/poczta/nowa?kontrahent={{ c.id }}">Napisz e-mail</a></div>
 {% if mails %}<div class="card tbl"><table>{% for mm in mails %}<tr><td style="white-space:nowrap">{{ mm.date.strftime('%d.%m.%Y') if mm.date }}</td>
-<td>{{ '→' if mm.direction == 'out' else '←' }} <a href="/poczta/{{ mm.id }}">{{ mm.subject or '(bez tematu)' }}</a></td></tr>{% endfor %}</table></div>
+<td>{{ '→' if mm.direction == 'out' else '←' }} <a href="/poczta/{{ mm.id }}">{{ mm.subject or '(bez tematu)' }}</a></td>
+<td class="hide-sm muted">{% if mm.direction == 'out' %}do {{ mm.to_addrs[:50] }}{% else %}{{ mm.from_name or mm.from_addr }}{% endif %}</td></tr>{% endfor %}</table></div>
 {% else %}<p class="muted">Brak wiadomości z adresów tego kontrahenta.</p>{% endif %}{% endif %}
 {% endblock %}
 {% block scripts %}<script src="/static/nip.js"></script>{% endblock %}
