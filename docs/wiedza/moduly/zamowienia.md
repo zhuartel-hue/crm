@@ -1,4 +1,5 @@
 # Zamówienia
+Aktualizacja: 2026-11-26 · wersja: 737b428
 
 Zamówienie to zobowiązanie: klient zamówił, my realizujemy. Sygnavo trzyma zamówienia od klientów i zamówienia do
 dostawców w jednym miejscu (menu **Sprzedaż → Zamówienia**).

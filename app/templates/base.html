@@ -42,6 +42,7 @@
               ('/import/firmao', 'Import z Firmao', 'repeat', p.startswith('/import')),
               ('/dostep', 'Claude', 'spark', p.startswith('/dostep')),
               ('/dziennik', 'Dziennik zmian', 'log', p.startswith('/dziennik')),
+              ('/ustawienia/uzytkownicy', 'Użytkownicy', 'user', p.startswith('/ustawienia/uzytkownicy')),
               ('/konto', 'Konto', 'user', p.startswith('/konto'))]),
 ] %}
 <div class="app">
@@ -55,7 +56,7 @@
   <nav>
   {% for title, links in groups %}
     {% if title %}<div class="nav-h">{{ title }}</div>{% endif %}
-    {% for href, label, ic, on in links %}{% if href %}<a href="{{ href }}" class="{{ 'on' if on }}">{{ icon(ic) }}<span>{{ label }}</span></a>
+    {% for href, label, ic, on in links %}{% if href and can_open is defined and not can_open(href) %}{% elif href %}<a href="{{ href }}" class="{{ 'on' if on }}">{{ icon(ic) }}<span>{{ label }}</span></a>
     {%- else %}<span class="soon" title="W budowie">{{ icon(ic) }}<span>{{ label }}</span><em>wkrótce</em></span>{% endif %}{% endfor %}
   {% endfor %}
   </nav>

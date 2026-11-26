@@ -1,4 +1,5 @@
 # Umowy: statusy, faktury cykliczne i dokumenty
+Aktualizacja: 2026-11-26 · wersja: 737b428
 
 Umowa w Sygnavo ma trzy niezależne części.
 

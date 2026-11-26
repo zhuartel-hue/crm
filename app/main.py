@@ -16,11 +16,14 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, or_, select, update
 from sqlalchemy.orm import Session, defer
+from starlette.concurrency import run_in_threadpool
 from starlette.middleware.sessions import SessionMiddleware
 
 from . import dashboard as dash
 from . import offer_statuses as ost
 from . import calls, orders
+from . import tenancy
+from . import users as users_mod
 from . import api, auth, calc, config, firmao_import, mail_templates, mcp_server, migrate, nip_lookup, numbering, offers, password, payments, pdf, recurring, secretbox, wz
 from . import products as prod
 from . import tasks as tasks_mod
@@ -116,6 +119,7 @@ async def lifespan(_app: FastAPI):
     migrate.upgrade()
     with SessionLocal() as db:
         seed(db)
+        users_mod.ensure_default_org(db)
     stops = [_start_mail_sync(), _start_purchase_sync(), _start_recurring(), _start_bank_sync()]
     yield
     for stop in stops:
@@ -230,6 +234,26 @@ async def require_login(request: Request, call_next):
             # Powrot z banku moze otworzyc sie w innej karcie: po zalogowaniu wracamy tutaj.
             request.session["next"] = request.url.path + ("?" + request.url.query if request.url.query else "")
         return RedirectResponse("/login", status_code=303)
+    if request.session.get("user") and not request.url.path.startswith(PUBLIC_PATHS):
+        ids = await run_in_threadpool(_check_session, request)
+        if ids is None:
+            request.session.clear()
+            return RedirectResponse("/login", status_code=303)
+        path = request.url.path
+        if request.session.get("must_change") and not path.startswith(("/konto", "/logout", "/static")):
+            return RedirectResponse("/konto", status_code=303)
+        if not users_mod.can_open(request.session.get("role"), path):
+            return HTMLResponse("<p>Ta część programu nie jest dostępna dla Twojej roli. "
+                                "<a href=\"/\">Wróć na Start</a></p>", status_code=403)
+        # Od tej chwili wszystkie zapytania tej strony widza tylko firmy organizacji (app/tenancy.py).
+        token = tenancy.set_scope(ids)
+        try:
+            response = await call_next(request)
+        finally:
+            tenancy.reset_scope(token)
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        return response
     response = await call_next(request)
     # Strona zgody OAuth i formularze nie moga byc osadzone w cudzej ramce (clickjacking).
     response.headers.setdefault("X-Frame-Options", "DENY")
@@ -237,7 +261,18 @@ async def require_login(request: Request, call_next):
     return response
 
 
+def _check_session(request: Request) -> list[int] | None:
+    """Sprawdza konto zalogowanej osoby; zwraca id firm jej organizacji albo None (wyloguj)."""
+    with SessionLocal() as db:
+        if not users_mod.refresh_session(db, request):
+            return None
+        user = db.get(users_mod.User, request.session["user_id"])
+        request.session["must_change"] = bool(user and user.must_change_password)
+        return [c.id for c in users_mod.org_companies(db, request.session.get("org_id"))]
+
+
 app.include_router(auth.router)
+app.include_router(users_mod.router)
 app.include_router(mcp_server.router)
 api.install(app)
 
@@ -276,7 +311,9 @@ def _contractors(db: Session, company_id: int) -> list[Contractor]:
 
 
 def current_company(request: Request, db: Session) -> Company:
-    companies = db.scalars(select(Company).order_by(Company.id)).all()
+    companies = users_mod.org_companies(db, request.session.get("org_id"))
+    if not companies:
+        raise HTTPException(409, "Ta organizacja nie ma jeszcze żadnej firmy.")
     cid = request.session.get("company_id")
     for c in companies:
         if c.id == cid:
@@ -287,7 +324,9 @@ def current_company(request: Request, db: Session) -> Company:
 
 def render(request: Request, db: Session, name: str, **ctx) -> HTMLResponse:
     ctx.setdefault("company", current_company(request, db))
-    ctx["companies"] = db.scalars(select(Company).order_by(Company.id)).all()
+    ctx["companies"] = users_mod.org_companies(db, request.session.get("org_id"))
+    ctx["role"] = request.session.get("role", "wlasciciel")
+    ctx["can_open"] = lambda path: users_mod.can_open(ctx["role"], path)
     ctx["flash"] = request.session.pop("flash", None)
     return templates.TemplateResponse(request, name, ctx)
 
@@ -315,10 +354,16 @@ def login_form(request: Request):
 
 @app.post("/login")
 def login(request: Request, login: str = Form(...), password: str = Form(...), db: Session = Depends(get_db)):
-    if not password_check(db, login, password):
+    user = users_mod.authenticate(db, login, password)
+    if user is None:
         return templates.TemplateResponse(request, "login.html", {"error": "Zły login lub hasło."}, status_code=401)
     nxt = request.session.pop("next", None)
-    request.session["user"] = login
+    request.session.clear()  # nowa sesja po zalogowaniu (ochrona przed przejeciem sesji)
+    users_mod.start_session(request, user)
+    if user.must_change_password:
+        request.session["must_change"] = True
+        flash(request, "Ustaw własne hasło, zanim zaczniesz pracę.")
+        return redirect("/konto")
     return redirect(nxt if nxt and nxt.startswith("/") and not nxt.startswith("//") else "/")
 
 
@@ -334,13 +379,16 @@ def account(request: Request, db: Session = Depends(get_db)):
 @app.post("/konto/haslo")
 def account_password(request: Request, old: str = Form(""), new: str = Form(""), repeat: str = Form(""),
                      db: Session = Depends(get_db)):
-    user = request.session.get("user", "")
+    user = db.get(users_mod.User, request.session.get("user_id") or 0)
+    if user is None:
+        return redirect("/login")
     try:
-        password.change(db, user, old, new, repeat)
+        users_mod.change_password(db, user, old, new, repeat)
     except ValueError as e:
         return render(request, db, "account.html", error=str(e))
     audit(db, web_actor(request), "account.password", "Zmieniono hasło logowania")
     db.commit()
+    request.session.pop("must_change", None)
     flash(request, "Hasło zmienione. Od teraz loguj się nowym hasłem.")
     return redirect("/konto")
 
@@ -353,7 +401,9 @@ def logout(request: Request):
 
 @app.post("/firma/{company_id}")
 def switch_company(company_id: int, request: Request, db: Session = Depends(get_db)):
-    if db.get(Company, company_id) is None:
+    c = db.get(Company, company_id)
+    org_id = request.session.get("org_id")
+    if c is None or (org_id is not None and c.organisation_id != org_id):
         raise HTTPException(404)
     request.session["company_id"] = company_id
     back = request.headers.get("referer") or "/"
@@ -1526,10 +1576,15 @@ def audit_log(request: Request, db: Session = Depends(get_db)):
     return render(request, db, "audit.html", entries=entries)
 
 
-def _grants(db: Session) -> list[dict]:
-    """Aktywne polaczenia: zgody OAuth (po tokenie odswiezania) i klucze API."""
+def _org_tokens(request: Request):
+    """Warunek: tokeny organizacji zalogowanej osoby."""
+    return ApiToken.organisation_id == request.session.get("org_id")
+
+
+def _grants(db: Session, request: Request) -> list[dict]:
+    """Aktywne polaczenia organizacji: zgody OAuth (po tokenie odswiezania) i klucze API."""
     rows = db.scalars(
-        select(ApiToken).where(ApiToken.revoked.is_(False), ApiToken.kind.in_(["refresh", "key"]))
+        select(ApiToken).where(ApiToken.revoked.is_(False), ApiToken.kind.in_(["refresh", "key"]), _org_tokens(request))
         .order_by(ApiToken.id.desc())
     ).all()
     out = []
@@ -1546,7 +1601,7 @@ def _grants(db: Session) -> list[dict]:
 @app.get("/dostep", response_class=HTMLResponse)
 def access_page(request: Request, db: Session = Depends(get_db)):
     new_key = request.session.pop("new_key", None)
-    return render(request, db, "access.html", grants=_grants(db), scopes=SCOPES, new_key=new_key,
+    return render(request, db, "access.html", grants=_grants(db, request), scopes=SCOPES, new_key=new_key,
                   mcp_url=auth.base_url(request) + "/mcp")
 
 
@@ -1555,7 +1610,7 @@ async def access_new_key(request: Request, db: Session = Depends(get_db)):
     form = await request.form()
     scopes = [s for s in form.getlist("scope") if s in SCOPES] or ["read"]
     name = (form.get("name") or "").strip() or "Klucz API"
-    request.session["new_key"] = auth.create_api_key(db, name, scopes)
+    request.session["new_key"] = auth.create_api_key(db, name, scopes, request.session.get("org_id"))
     audit(db, web_actor(request), "access.key", f"Nowy klucz API „{name}” ({', '.join(scopes)})")
     db.commit()
     return redirect("/dostep")
@@ -1563,6 +1618,8 @@ async def access_new_key(request: Request, db: Session = Depends(get_db)):
 
 @app.post("/dostep/{grant_id}/cofnij")
 def access_revoke(grant_id: str, request: Request, db: Session = Depends(get_db)):
+    if db.scalar(select(ApiToken.id).where(ApiToken.grant_id == grant_id, _org_tokens(request)).limit(1)) is None:
+        raise HTTPException(404)
     auth.revoke_grant(db, grant_id)
     audit(db, web_actor(request), "access.revoke", f"Cofnięto dostęp {grant_id}")
     db.commit()

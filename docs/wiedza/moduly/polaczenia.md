@@ -1,4 +1,5 @@
 # Połączenia telefoniczne
+Aktualizacja: 2026-11-26 · wersja: 737b428
 
 Historia rozmów przy kliencie: kto dzwonił, kiedy, jak długo i co ustaliliśmy (menu **Klienci → Połączenia**).
 

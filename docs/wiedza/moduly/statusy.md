@@ -1,4 +1,5 @@
 # Statusy do edycji (oferty, umowy, zamówienia)
+Aktualizacja: 2026-11-26 · wersja: 737b428
 
 Każda firma ustawia własne statusy: **Ustawienia → Statusy ofert / Statusy umów / Statusy zamówień**.
 

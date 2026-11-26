@@ -165,6 +165,12 @@ def test_migration_from_stage_two_schema(tmp_path, monkeypatch):
     monkeypatch.setattr(migrate, "engine", eng2)
     migrate.upgrade()
     with eng2.connect() as conn:
-        assert conn.execute(sa.text("SELECT version_num FROM alembic_version")).scalar() == "0027"
+        from alembic.config import Config
+        from alembic.script import ScriptDirectory
+
+        cfg = Config(str(migrate.ROOT / "alembic.ini"))
+        cfg.set_main_option("script_location", str(migrate.ROOT / "migrations"))
+        assert conn.execute(sa.text("SELECT version_num FROM alembic_version")).scalar() == \
+            ScriptDirectory.from_config(cfg).get_current_head()
         cols = [r[1] for r in conn.execute(sa.text("PRAGMA table_info(invoices)"))]
     assert "related_id" in cols and "advance_gross" in cols

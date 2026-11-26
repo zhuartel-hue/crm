@@ -20,6 +20,8 @@ class Company(Base):
     __tablename__ = "companies"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    # Organizacja (klient abonamentu), do ktorej nalezy firma. Etap B: NULL tylko w starej bazie do migracji 0100.
+    organisation_id: Mapped[int | None] = mapped_column(ForeignKey("organisations.id"), nullable=True, index=True)
     short_name: Mapped[str] = mapped_column(String(40))  # do przelacznika, np. "Margot"
     name: Mapped[str] = mapped_column(String(300))  # pelna nazwa na fakturze
     nip: Mapped[str] = mapped_column(String(20), default="")
@@ -413,6 +415,7 @@ class AuthCode(Base):
     resource: Mapped[str] = mapped_column(Text, default="")
     expires_at: Mapped[dt.datetime] = mapped_column(DateTime)
     used: Mapped[bool] = mapped_column(default=False)
+    organisation_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class ApiToken(Base):
@@ -426,6 +429,8 @@ class ApiToken(Base):
     name: Mapped[str] = mapped_column(String(200), default="")
     client_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     grant_id: Mapped[str] = mapped_column(String(32), default="")  # wspolny dla access i refresh z jednej zgody
+    # Organizacja, ktorej dane widzi token (etap B). NULL tylko w tokenach sprzed migracji 0100.
+    organisation_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     scopes: Mapped[str] = mapped_column(String(100))
     expires_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
     revoked: Mapped[bool] = mapped_column(default=False)
@@ -1406,3 +1411,35 @@ class PhoneCall(Base):
     def duration(self) -> str:
         m, s = divmod(int(self.seconds or 0), 60)
         return f"{m}:{s:02d}" if m < 60 else f"{m // 60}:{m % 60:02d}:{s:02d}"
+
+
+class Organisation(Base):
+    """Klient abonamentu (najemca). Ma swoje firmy i swoich uzytkownikow; nie widzi danych innych organizacji."""
+
+    __tablename__ = "organisations"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(200))
+    plan: Mapped[str] = mapped_column(String(30), default="wewnetrzny", server_default="wewnetrzny")
+    status: Mapped[str] = mapped_column(String(20), default="active", server_default="active")  # active / blocked
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class User(Base):
+    """Osoba logujaca sie do programu. Rola decyduje, ktore czesci programu widzi (app/users.py ROLES)."""
+
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    organisation_id: Mapped[int] = mapped_column(ForeignKey("organisations.id"), index=True)
+    login: Mapped[str] = mapped_column(String(80), unique=True)  # zawsze male litery
+    name: Mapped[str] = mapped_column(String(200), default="")
+    email: Mapped[str] = mapped_column(String(200), default="")
+    role: Mapped[str] = mapped_column(String(20), default="handlowiec")
+    password_hash: Mapped[str] = mapped_column(String(200))
+    active: Mapped[bool] = mapped_column(default=True, server_default=sa_true())
+    must_change_password: Mapped[bool] = mapped_column(default=False, server_default=sa_false())
+    failed_logins: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    locked_until: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+    last_login_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
