@@ -14,6 +14,7 @@
   <a class="btn" href="/oferty/{{ o.id }}/edytuj">Edytuj</a>
   {% if not o.invoice_id %}<form method="post" action="/oferty/{{ o.id }}/faktura"><button class="btn">Faktura z oferty</button></form>{% endif %}
   {% if not o.delivery_id %}<form method="post" action="/oferty/{{ o.id }}/wz"><button class="btn">WZ z oferty</button></form>{% endif %}
+  <a class="btn" href="/zamowienia/nowe?oferta={{ o.id }}">Zamówienie z oferty</a>
   <a class="btn" href="/oferty/nowa?kopia={{ o.id }}">Kopiuj jako nową</a>
   <form method="post" action="/oferty/{{ o.id }}/wzor" onsubmit="var n=prompt('Nazwa wzoru (np. Monitoring 4 kamery):', this.name.value); if(!n) return false; this.name.value=n;"><input type="hidden" name="name" value="{{ o.title }}"><button class="btn">Zapisz jako wzór</button></form>
   {% if not o.invoice_id and not o.delivery_id %}

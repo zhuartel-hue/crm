@@ -1066,7 +1066,7 @@ class RecurringInvoice(Base):
     @property
     def status_label(self) -> str:
         return {"ended": "zakończona", "future": "od " + (f"{self.start_date:%d.%m.%Y}" if self.start_date else ""),
-                "active": "aktywna", "no_invoices": "faktury wstrzymane"}[self.status]
+                "active": "wystawia faktury", "no_invoices": "nie wystawia faktur"}[self.status]
 
     @property
     def contract_status_cfg(self) -> dict | None:
@@ -1257,6 +1257,160 @@ class Task(Base):
         if self.timer_started_at:
             extra = int(((now or dt.datetime.now()) - self.timer_started_at).total_seconds() // 60)
         return (self.minutes_spent or 0) + max(0, extra)
+
+
+# ---------------------------------------------------------------- zamowienia
+
+ORDER_STATUSES = {"new": "nowe", "sent": "wysłane", "confirmed": "potwierdzone", "in_progress": "w realizacji", "waiting": "czeka na towar",
+                  "ready": "gotowe do wydania", "done": "zrealizowane", "cancelled": "anulowane"}
+ORDER_DIRECTIONS = {"sale": "od klienta", "purchase": "do dostawcy"}
+
+
+class Order(Base):
+    """Zamowienie od klienta (albo do dostawcy): pozycje, termin realizacji, status. Z niego faktura i WZ."""
+
+    __tablename__ = "orders"
+    __table_args__ = (UniqueConstraint("company_id", "number", name="uq_order_number"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    direction: Mapped[str] = mapped_column(String(10), default="sale")  # ORDER_DIRECTIONS
+    status: Mapped[str] = mapped_column(String(12), default="new")  # statusy w offer_statuses (kind "order")
+    number: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    seq: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    issue_date: Mapped[dt.date] = mapped_column(Date)
+    due_date: Mapped[dt.date | None] = mapped_column(Date, nullable=True)  # termin realizacji
+    title: Mapped[str] = mapped_column(String(300), default="")
+    contractor_id: Mapped[int | None] = mapped_column(ForeignKey("contractors.id", ondelete="SET NULL"), nullable=True)
+    recipient_name: Mapped[str] = mapped_column(String(300), default="")
+    recipient_address: Mapped[str] = mapped_column(Text, default="")
+    contact_person: Mapped[str] = mapped_column(String(200), default="")
+    email: Mapped[str] = mapped_column(String(200), default="")
+    phone: Mapped[str] = mapped_column(String(40), default="")
+    customer_ref: Mapped[str] = mapped_column(String(100), default="")  # numer zamowienia klienta
+    prices_gross: Mapped[bool] = mapped_column(default=False)
+    total_net: Mapped[Decimal] = mapped_column(Money, default=Decimal("0"))
+    total_vat: Mapped[Decimal] = mapped_column(Money, default=Decimal("0"))
+    total_gross: Mapped[Decimal] = mapped_column(Money, default=Decimal("0"))
+    notes: Mapped[str] = mapped_column(Text, default="")
+    internal_notes: Mapped[str] = mapped_column(Text, default="")
+    offer_id: Mapped[int | None] = mapped_column(ForeignKey("offers.id", ondelete="SET NULL"), nullable=True)
+    invoice_id: Mapped[int | None] = mapped_column(ForeignKey("invoices.id", ondelete="SET NULL"), nullable=True)
+    delivery_id: Mapped[int | None] = mapped_column(ForeignKey("deliveries.id", ondelete="SET NULL"), nullable=True)
+    created_by: Mapped[str] = mapped_column(String(100), default="")
+    source_ref: Mapped[str] = mapped_column(String(120), default="", index=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
+
+    company: Mapped[Company] = relationship()
+    contractor: Mapped[Contractor | None] = relationship()
+    offer: Mapped[Offer | None] = relationship()
+    invoice: Mapped[Invoice | None] = relationship()
+    delivery: Mapped[Delivery | None] = relationship()
+    items: Mapped[list[OrderItem]] = relationship(
+        back_populates="order", cascade="all, delete-orphan", order_by="OrderItem.position"
+    )
+
+    @property
+    def display_number(self) -> str:
+        return self.number or f"Zamówienie #{self.id}"
+
+    def _status_cfg(self) -> dict | None:
+        from sqlalchemy.orm import object_session
+
+        from . import offer_statuses
+        db = object_session(self)
+        return offer_statuses.find(db, self.company_id, self.status, "order") if db is not None else None
+
+    @property
+    def status_label(self) -> str:
+        st = self._status_cfg()
+        return st["label"] if st else ORDER_STATUSES.get(self.status, self.status)
+
+    @property
+    def status_class(self) -> str:
+        st = self._status_cfg()
+        return st["color"] if st else ""
+
+    @property
+    def is_open(self) -> bool:
+        st = self._status_cfg()
+        return (st["group"] == "open") if st else self.status not in ("done", "cancelled")
+
+    @property
+    def overdue(self) -> bool:
+        return self.is_open and self.due_date is not None and self.due_date < dt.date.today()
+
+    @property
+    def direction_label(self) -> str:
+        return ORDER_DIRECTIONS.get(self.direction, self.direction)
+
+
+class OrderItem(Base):
+    __tablename__ = "order_items"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    order_id: Mapped[int] = mapped_column(ForeignKey("orders.id", ondelete="CASCADE"), index=True)
+    position: Mapped[int] = mapped_column(Integer, default=1)
+    product_id: Mapped[int | None] = mapped_column(ForeignKey("products.id", ondelete="SET NULL"), nullable=True)
+    code: Mapped[str] = mapped_column(String(60), default="")
+    name: Mapped[str] = mapped_column(String(500))
+    quantity: Mapped[Decimal] = mapped_column(Numeric(12, 3), default=Decimal("1"))
+    unit: Mapped[str] = mapped_column(String(10), default="szt.")
+    unit_price: Mapped[Decimal | None] = mapped_column(Money, nullable=True)
+    vat_rate: Mapped[str] = mapped_column(String(3), default="23")
+    net: Mapped[Decimal] = mapped_column(Money, default=Decimal("0"))
+    vat: Mapped[Decimal] = mapped_column(Money, default=Decimal("0"))
+    gross: Mapped[Decimal] = mapped_column(Money, default=Decimal("0"))
+
+    order: Mapped[Order] = relationship(back_populates="items")
+    product: Mapped["Product | None"] = relationship()
+
+
+# ---------------------------------------------------------------- polaczenia telefoniczne
+
+CALL_DIRECTIONS = {"in": "przychodzące", "out": "wychodzące", "internal": "wewnętrzne"}
+CALL_STATUSES = {"answered": "odebrane", "missed": "nieodebrane", "busy": "zajęte", "failed": "nieudane",
+                 "cancelled": "przerwane", "other": "inne"}
+
+
+class PhoneCall(Base):
+    """Polaczenie telefoniczne (historia z Firmao, potem z centrali). Laczone z klientem po numerze telefonu."""
+
+    __tablename__ = "phone_calls"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    direction: Mapped[str] = mapped_column(String(10), default="in")  # CALL_DIRECTIONS
+    status: Mapped[str] = mapped_column(String(10), default="answered")  # CALL_STATUSES
+    started_at: Mapped[dt.datetime] = mapped_column(DateTime, index=True)
+    seconds: Mapped[int] = mapped_column(Integer, default=0)
+    phone: Mapped[str] = mapped_column(String(40), default="", index=True)  # numer rozmowcy (same cyfry)
+    user_label: Mapped[str] = mapped_column(String(100), default="")  # kto prowadzil rozmowe
+    contractor_id: Mapped[int | None] = mapped_column(ForeignKey("contractors.id", ondelete="SET NULL"), nullable=True,
+                                                      index=True)
+    contact_id: Mapped[int | None] = mapped_column(ForeignKey("contacts.id", ondelete="SET NULL"), nullable=True)
+    task_id: Mapped[int | None] = mapped_column(ForeignKey("tasks.id", ondelete="SET NULL"), nullable=True)
+    note: Mapped[str] = mapped_column(Text, default="")
+    done: Mapped[bool] = mapped_column(default=False)
+    source_ref: Mapped[str] = mapped_column(String(120), default="", index=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
+
+    contractor: Mapped[Contractor | None] = relationship()
+    contact: Mapped[Contact | None] = relationship()
+    task: Mapped[Task | None] = relationship()
+
+    @property
+    def direction_label(self) -> str:
+        return CALL_DIRECTIONS.get(self.direction, self.direction)
+
+    @property
+    def status_label(self) -> str:
+        return CALL_STATUSES.get(self.status, self.status)
+
+    @property
+    def duration(self) -> str:
+        m, s = divmod(int(self.seconds or 0), 60)
+        return f"{m}:{s:02d}" if m < 60 else f"{m // 60}:{m % 60:02d}:{s:02d}"
 
 
 class Organisation(Base):

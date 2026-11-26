@@ -268,7 +268,7 @@ def test_agreements_equipment_tasks(client):
         old = db.query(RecurringInvoice).filter_by(source_ref="firmao:401").one()
         assert not old.active and not old.invoicing and old.interval_months == 3 and '"unit_price": "50.00"' in old.items_json
         new = db.query(RecurringInvoice).filter_by(source_ref="firmao:402").one()
-        assert new.active and new.invoicing and new.mode == "draft" and new.status_label == "aktywna"
+        assert new.active and new.invoicing and new.mode == "draft" and new.status_label == "wystawia faktury"
         still = db.query(RecurringInvoice).filter_by(source_ref="firmao:403").one()
         assert still.active and still.invoicing and still.end_date is None and "31.12.2025" in still.contract_notes
         assert (r.contract_status, old.contract_status, new.contract_status, still.contract_status) == \
@@ -308,3 +308,58 @@ def test_offer_statuses_only(client):
         assert res["statusy_ofert"]["changed"] == 1 and res["statusy_ofert"]["missing"] == 1
         assert db.scalar(__import__("sqlalchemy").select(Offer.status).where(Offer.number == "O/1")) == "negotiating"
     assert "w trakcie negocjacji" in client.get("/oferty").text
+
+
+ORDERS = [
+    {"id": 191, "type": "ORDER", "mode": "SALE", "number": "2020/09/001/Z/S", "offerDate": "2020-09-06",
+     "paymentDate": "2020-09-13", "offerStatus": {"key": "SENT"}, "customer": {"id": 10},
+     "customerName": "Klient Sp. z o.o.", "nettoPrice": 795, "vatPrice": 182.85, "bruttoPrice": 977.85},
+    {"id": 194, "type": "ORDER", "mode": "PURCHASE", "number": "2020/09/001/Z/Z", "offerDate": "2020-09-07",
+     "offerStatus": {"key": "NEW"}, "customerName": "HIKVISION", "connectedDocType": "OFFER",
+     "connectedDocNumber": "2026/10/002/O/S", "nettoPrice": 0},
+    {"id": 195, "type": "ORDER", "mode": "SALE", "number": "2021/01/001/Z/S", "offerStatus": {"key": "EXECUTED"},
+     "customerName": "Usunięty", "deleted": True},
+]
+ORDER_ENTRIES = [
+    {"id": 2001, "offer": {"id": 191}, "entryOrder": 1, "name": "Rejestrator", "product": {"id": 30}, "quantity": 1,
+     "unit": "SZT", "unitNettoPrice": 795, "vatPercent": 23, "nettoPrice": 795, "vatPrice": 182.85, "bruttoPrice": 977.85},
+]
+CALLS = [
+    {"id": 983, "direction": "IN", "status": "ANSWERED", "callStartDate": "2026-11-26T08:08:18Z", "callLength": 15,
+     "task": {"id": 600, "name": "Przegląd kamer"}, "user": {"id": 1, "label": "Administrator"}, "type": "PUBLIC"},
+    {"id": 984, "direction": "OUT", "status": "CANCEL", "callStartDate": "2026-11-26T12:49:26Z", "callLength": 0,
+     "user": {"id": 1, "label": "Administrator"}, "type": "PUBLIC"},
+    {"id": 985, "direction": "IN", "status": "CANCEL", "callStartDate": "2026-11-26T13:00:00Z", "callLength": 0},
+]
+
+
+def test_orders_and_calls_import(client):
+    import datetime as dt
+
+    from app import firmao_archive
+    from app.db import SessionLocal
+    from app.models import Order, PhoneCall
+    data = dict(bundle(), offers=OFFERS + ORDERS, tasks=TASKS, transactionentries=ENTRIES + ORDER_ENTRIES,
+                phonecalls=CALLS)
+    with SessionLocal() as db:
+        firmao_archive.import_all(db, dict(data, phonecalls=[]), _margot(db), log=lambda *_: None)
+        db.commit()
+        firmao_archive.import_all(db, data, _margot(db), log=lambda *_: None, only={"zadania"})
+        db.commit()
+        s = firmao_archive.import_all(db, data, _margot(db), log=lambda *_: None, only={"zamowienia", "polaczenia"})
+        db.commit()
+        assert s["zamowienia"]["updated"] == 3 and s["zamowienia"]["purchase"] == 1  # ZAM/1 z bundle + 2 nowe
+        z = db.query(Order).filter_by(source_ref="firmao:191").one()
+        assert z.number == "2020/09/001/Z/S" and z.status == "sent" and z.due_date == dt.date(2020, 9, 13)
+        assert z.contractor_id is not None and str(z.total_gross) == "977.85" and z.items[0].name == "Rejestrator"
+        p = db.query(Order).filter_by(source_ref="firmao:194").one()
+        assert p.direction == "purchase" and p.offer_id is not None and p.status == "new"
+        assert db.query(Order).filter_by(source_ref="firmao:195").count() == 0
+        assert s["polaczenia"]["added"] == 3 and s["polaczenia"]["with_task"] == 1
+        c = db.query(PhoneCall).filter_by(source_ref="firmao:983").one()
+        assert c.direction == "in" and c.status == "answered" and c.seconds == 15 and c.started_at.hour == 9
+        assert c.task_id is not None and c.contractor_id is not None and c.user_label == "Administrator"
+        assert db.query(PhoneCall).filter_by(source_ref="firmao:984").one().status == "cancelled"
+        assert db.query(PhoneCall).filter_by(source_ref="firmao:985").one().status == "missed"
+        again = firmao_archive.import_all(db, data, _margot(db), log=lambda *_: None, only={"polaczenia"})
+        assert again["polaczenia"]["added"] == 0 and db.query(PhoneCall).count() == 3

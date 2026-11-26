@@ -2,7 +2,7 @@
 {% block title %}Ustawienia{% endblock %}
 {% block content %}
 <h1>Ustawienia · {{ company.short_name }}</h1>
-<p class="row" style="gap:8px"><a class="btn" href="/ustawienia/poczta">Skrzynki pocztowe →</a><a class="btn" href="/ustawienia/statusy-ofert">Statusy ofert →</a><a class="btn" href="/ustawienia/statusy-umow">Statusy umów →</a></p>
+<p class="row" style="gap:8px"><a class="btn" href="/ustawienia/poczta">Skrzynki pocztowe →</a><a class="btn" href="/ustawienia/statusy-ofert">Statusy ofert →</a><a class="btn" href="/ustawienia/statusy-umow">Statusy umów →</a><a class="btn" href="/ustawienia/statusy-zamowien">Statusy zamówień →</a></p>
 <form method="post" class="card">
 <h2 style="margin-top:0">Dane na fakturze</h2>
 <div class="grid">
@@ -28,6 +28,7 @@
   <div><label>WZ (wydanie towaru)</label><input name="pattern_wz" value="{{ company.pattern_wz }}"></div>
   <div><label>PZ (przyjęcie towaru)</label><input name="pattern_pz" value="{{ company.pattern_pz }}"></div>
   <div><label>Oferta</label><input name="pattern_offer" value="{{ company.pattern_offer }}"></div>
+  {% if pattern_order is defined %}<div><label>Zamówienie</label><input name="pattern_order" value="{{ pattern_order }}"></div>{% endif %}
   <div><label>Numeracja od 1</label><select name="numbering_reset">
     <option value="month" {{ 'selected' if company.numbering_reset == 'month' }}>co miesiąc</option>
     <option value="year" {{ 'selected' if company.numbering_reset == 'year' }}>co rok</option></select></div>

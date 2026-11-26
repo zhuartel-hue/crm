@@ -59,6 +59,14 @@
 {% if offers %}<div class="card tbl"><table>{% for o in offers %}<tr><td><a href="/oferty/{{ o.id }}">{{ o.display_number }}</a></td><td>{{ o.issue_date|date }}</td>
 <td class="n">{{ o.total_gross|money }}</td><td>{{ o.status_label }}</td></tr>{% endfor %}</table></div>
 {% else %}<p class="muted">Brak ofert dla tego kontrahenta.</p>{% endif %}
+<div class="row"><h2>Zamówienia</h2><span class="spacer"></span><a class="btn small" href="/zamowienia/nowe?kontrahent={{ c.id }}">+ Zamówienie</a></div>
+{% if orders %}<div class="card tbl"><table>{% for z in orders %}<tr><td><a href="/zamowienia/{{ z.id }}">{{ z.display_number }}</a>{% if z.title %} <span class="muted">{{ z.title }}</span>{% endif %}</td><td>{{ z.issue_date|date }}</td>
+<td>{{ z.due_date|date if z.due_date else '' }}{% if z.overdue %} <span class="badge due">po terminie</span>{% endif %}</td><td class="n">{{ z.total_gross|money }}</td><td><span class="badge {{ z.status_class }}">{{ z.status_label }}</span></td></tr>{% endfor %}</table></div>
+{% else %}<p class="muted">Brak zamówień.</p>{% endif %}
+<div class="row"><h2 id="rozmowy">Rozmowy telefoniczne</h2><span class="spacer"></span><a class="btn small" href="/polaczenia?q={{ c.name|urlencode }}">Wszystkie</a></div>
+{% set call_contractor = c %}{% include "_call_form.html" %}
+{% if calls %}<div class="card tbl"><table>{% for cl in calls %}<tr><td style="white-space:nowrap">{{ cl.started_at.strftime('%d.%m.%Y %H:%M') }}</td>
+<td style="white-space:nowrap">{{ '↙' if cl.direction == 'in' else '↗' }} {{ cl.status_label if cl.status != 'answered' else '' }}</td><td class="n">{{ cl.duration if cl.seconds else '' }}</td><td>{{ cl.note }}{% if cl.task %} <a class="muted" href="/zadania/{{ cl.task_id }}">{{ cl.task.title }}</a>{% endif %}</td></tr>{% endfor %}</table></div>{% endif %}
 <div class="row"><h2 id="maile">Maile</h2><span class="spacer"></span><a class="btn small" href="/kontrahenci/{{ c.id }}/maile">Cała historia</a><a class="btn small primary" href="/poczta/nowa?kontrahent={{ c.id }}">Napisz e-mail</a></div>
 {% if mails %}<div class="card tbl"><table>{% for mm in mails %}<tr><td style="white-space:nowrap">{{ mm.date.strftime('%d.%m.%Y') if mm.date }}</td>
 <td>{{ '→' if mm.direction == 'out' else '←' }} <a href="/poczta/{{ mm.id }}">{{ mm.subject or '(bez tematu)' }}</a></td>

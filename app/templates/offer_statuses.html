@@ -1,14 +1,14 @@
 {% extends "base.html" %}
 {% block title %}{{ K.title }}{% endblock %}
 {% block content %}
-<div class="row"><h1>{{ K.title }} · {{ company.short_name }}</h1><span class="spacer"></span><a class="btn" href="{{ K.back }}">{{ 'Oferty' if kind == 'offer' else 'Umowy' }}</a></div>
+<div class="row"><h1>{{ K.title }} · {{ company.short_name }}</h1><span class="spacer"></span><a class="btn" href="{{ K.back }}">{{ {'offer': 'Oferty', 'contract': 'Umowy', 'order': 'Zamówienia'}[kind] }}</a></div>
 <p class="muted">Zmieniaj nazwy, kolory i kolejność (przeciągnij za ⠿ albo strzałkami).
-{% if kind == 'offer' %}„Grupa” mówi programowi, czy oferta jeszcze czeka na klienta (liczy się do otwartych i przypomnień), czy jest wygrana albo przegrana.{% else %}Status umowy to informacja dla zespołu. Faktury cykliczne włączasz osobno w umowie („Wystawiaj faktury”), więc zmiana statusu ich nie zatrzymuje.{% endif %}
+{% if kind == 'offer' %}„Grupa” mówi programowi, czy oferta jeszcze czeka na klienta (liczy się do otwartych i przypomnień), czy jest wygrana albo przegrana.{% elif kind == 'order' %}„Grupa” mówi programowi, czy zamówienie jest jeszcze w toku (liczy się do otwartych i terminów), zrealizowane czy anulowane.{% else %}Status umowy to informacja dla zespołu. Faktury cykliczne włączasz osobno w umowie („Wystawiaj faktury”), więc zmiana statusu ich nie zatrzymuje.{% endif %}
 Wbudowanych statusów nie da się usunąć, ale możesz je ukryć z listy wyboru.</p>
 {% if error %}<div class="error">{{ error }}</div>{% endif %}
 <form method="post" id="st-form">
 <div class="card tbl"><table id="st-table">
-<tr><th></th><th>Nazwa</th><th>Grupa</th><th>Kolor</th><th class="n">{{ 'Ofert' if kind == 'offer' else 'Umów' }}</th><th>Ukryty</th><th>Usuń</th></tr>
+<tr><th></th><th>Nazwa</th><th>Grupa</th><th>Kolor</th><th class="n">{{ {'offer': 'Ofert', 'contract': 'Umów', 'order': 'Zamówień'}[kind] }}</th><th>Ukryty</th><th>Usuń</th></tr>
 {% for r in rows %}<tr class="st-row">
   <td style="white-space:nowrap"><span class="dash-grip" title="Przeciągnij">⠿</span><button type="button" class="btn small st-up" title="W górę">↑</button><button type="button" class="btn small st-down" title="W dół">↓</button></td>
   <td><input type="hidden" name="k" value="{{ r.k }}"><input name="label" value="{{ r.label }}" maxlength="60" required>
@@ -21,7 +21,7 @@ Wbudowanych statusów nie da się usunąć, ale możesz je ukryć z listy wyboru
   <td>{% if not r.builtin %}<input type="hidden" name="delete" value="0"><input type="checkbox" class="st-flag" data-for="delete" aria-label="usuń">{% else %}<input type="hidden" name="delete" value="0">{% endif %}</td>
 </tr>{% endfor %}
 <tr class="st-row"><td class="muted">nowy</td>
-  <td><input type="hidden" name="k" value=""><input name="label" value="" maxlength="60" placeholder="{{ 'np. Czeka na wizję lokalną' if kind == 'offer' else 'np. Zawieszona, Wypowiedziana' }}"></td>
+  <td><input type="hidden" name="k" value=""><input name="label" value="" maxlength="60" placeholder="{{ {'offer': 'np. Czeka na wizję lokalną', 'contract': 'np. Zawieszona, Wypowiedziana', 'order': 'np. Czeka na montaż'}[kind] }}"></td>
   <td><select name="group">{% for g, gl in GROUPS.items() %}<option value="{{ g }}">{{ gl }}</option>{% endfor %}</select></td>
   <td><select name="color">{% for c, cl in COLORS.items() %}<option value="{{ c }}">{{ cl }}</option>{% endfor %}</select></td>
   <td></td><td><input type="hidden" name="hidden" value="0"></td><td><input type="hidden" name="delete" value="0"></td></tr>

@@ -9,13 +9,13 @@ Numer 0100 zostawia miejsce na migracje modulow (0026-0099); przy laczeniu galez
 ustawiamy na ostatnia z nich.
 
 Revision ID: 0100
-Revises: 0025
+Revises: 0027
 """
 import sqlalchemy as sa
 from alembic import op
 
 revision = "0100"
-down_revision = "0025"
+down_revision = "0027"
 branch_labels = None
 depends_on = None
 

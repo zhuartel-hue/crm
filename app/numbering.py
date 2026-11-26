@@ -27,6 +27,23 @@ PATTERNS = {"vat": "pattern_vat", "proforma": "pattern_proforma", "advance": "pa
             "correction": "pattern_correction", "wz": "pattern_wz", "pz": "pattern_pz", "offer": "pattern_offer"}
 
 
+EXTRA_PATTERNS = {"order": "{RRRR}/{MM}/{NNN}/Z/S"}  # jak w Firmao; wzor firmy w app_settings
+
+
+def extra_pattern(db: Session, company: Company, kind: str) -> str:
+    from .models import AppSetting
+    row = db.get(AppSetting, f"pattern_{kind}:{company.id}")
+    return (row.value if row is not None and row.value.strip() else EXTRA_PATTERNS[kind])
+
+
+def set_extra_pattern(db: Session, company: Company, kind: str, value: str) -> None:
+    from .models import AppSetting
+    key = f"pattern_{kind}:{company.id}"
+    row = db.get(AppSetting, key) or AppSetting(key=key)
+    row.value = (value or "").strip()[:60] or EXTRA_PATTERNS[kind]
+    db.add(row)
+
+
 def next_number(db: Session, company: Company, kind: str, issue_date: dt.date) -> tuple[int, str]:
     """Kolejny numer w serii danego rodzaju (koncowa liczy sie razem z fakturami VAT)."""
     kind = NUMBER_SERIES.get(kind, kind)
@@ -40,7 +57,7 @@ def next_number(db: Session, company: Company, kind: str, issue_date: dt.date) -
         seq_row = NumberSequence(company_id=company.id, kind=kind, period=period, last=0)
         db.add(seq_row)
     seq_row.last += 1
-    pattern = getattr(company, PATTERNS[kind])
+    pattern = getattr(company, PATTERNS[kind]) if kind in PATTERNS else extra_pattern(db, company, kind)
     return seq_row.last, format_number(pattern, seq_row.last, issue_date)
 
 

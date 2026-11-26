@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session
 
 from . import firmao_import, numbering
 from .models import (VAT_RATES, Company, Contact, Contractor, ContractorNote, Delivery, DeliveryItem, Equipment, Invoice,
-                     InvoiceItem, NumberSequence, Offer, OfferItem, Product, PurchaseInvoice, RecurringInvoice, Task)
+                     InvoiceItem, NumberSequence, Offer, OfferItem, Order, OrderItem, Product, PurchaseInvoice, RecurringInvoice, Task)
 
 INVOICE_TYPES = {"INVOICE": "vat", "VAT": "vat", "VAT_INVOICE": "vat", "CORRECTION": "correction",
                  "PROFORMA": "proforma", "PRO_FORMA": "proforma", "ADVANCE": "advance", "ADVANCE_INVOICE": "advance",
@@ -804,7 +804,79 @@ def import_tasks(db: Session, company: Company, tasks: list[dict]) -> dict:
 
 
 SECTIONS = ("klienci", "osoby", "produkty", "faktury", "zakupy", "wz", "oferty", "notatki", "umowy", "sprzet", "zadania",
-            "statusy_ofert", "tytuly_ofert")
+            "statusy_ofert", "tytuly_ofert", "zamowienia", "polaczenia")
+ORDER_STATUS = {"NEW": "new", "INCOMPLETE": "new", "PREPARED": "new", "SENT": "sent", "ACCEPTED": "confirmed",
+                "ORDERED": "confirmed", "IN_PROGRESS": "in_progress", "DURING_CALCULATIONS": "in_progress",
+                "DURING_NEGOTIATIONS": "in_progress", "WAITING_FOR_PAYMENT": "waiting", "EXECUTED": "done",
+                "REJECTED": "cancelled"}
+
+
+def import_orders(ctx: Ctx, offers: list[dict], entries: dict) -> dict:
+    """Zamowienia z Firmao: w eksporcie to oferty z type = ORDER (SALE od klienta, PURCHASE do dostawcy)."""
+    db, company = ctx.db, ctx.company
+    have = _existing(db, Order, company.id)
+    taken = set(db.scalars(select(Order.number).where(Order.company_id == company.id, Order.number.is_not(None))))
+    offer_by_number = {o.number: o.id for o in db.scalars(select(Offer).where(Offer.company_id == company.id,
+                                                                              Offer.number.is_not(None)))}
+    out = {"added": 0, "updated": 0, "skipped": 0, "renamed": 0, "items": 0, "purchase": 0, "linked_offers": 0,
+           "statuses": defaultdict(int)}
+    for o in offers:
+        if str(o.get("type") or "").upper() != "ORDER" or o.get("deleted"):
+            continue
+        ref = f"firmao:{o['id']}"
+        z = have.get(ref)
+        number = (o.get("number") or o.get("documentNumber") or f"FIRMAO-{o['id']}")[:60]
+        if z is None:
+            if number in taken:
+                number = _free_number(taken, number)
+                out["renamed"] += 1
+            z = Order(company_id=company.id, source_ref=ref, number=number, created_by="Firmao", title="", phone="",
+                      customer_ref="", contact_person="", email="", recipient_address="", notes="", internal_notes="")
+            db.add(z)
+            taken.add(number)
+            out["added"] += 1
+        else:
+            out["updated"] += 1
+            z.items.clear()
+        raw = o.get("offerStatus") if o.get("offerStatus") else o.get("orderStatus")
+        key = raw.get("key") if isinstance(raw, dict) else raw
+        z.status = ORDER_STATUS.get(str(key or "").upper(), "new")
+        out["statuses"][z.status] += 1
+        z.direction = "purchase" if str(o.get("mode") or "").upper() == "PURCHASE" else "sale"
+        out["purchase"] += z.direction == "purchase"
+        z.issue_date = _date(o.get("offerDate")) or _date(o.get("documentDate")) or dt.date.today()
+        z.due_date = _date(o.get("paymentDate")) or _date(o.get("validFrom"))
+        if z.due_date and z.due_date < z.issue_date:
+            z.due_date = None
+        z.title = (o.get("name") or "")[:300]
+        z.contractor_id = ctx.contractor(o)
+        z.recipient_name = (o.get("customerName") or (o.get("customer") or {}).get("label") or "")[:300] or "—"
+        z.recipient_address = _addr(o.get("customerAddress"))
+        contact = o.get("contact") or {}
+        z.contact_person = (contact.get("label") or "")[:200]
+        emails = (o.get("customer") or {}).get("emails") or contact.get("emails") or []
+        z.email = (o.get("recipientEmailAddress") or (emails[0] if emails else "") or "")[:200]
+        z.prices_gross = bool(o.get("calculateFromGross"))
+        z.notes = "\n".join(str(x) for x in (o.get("introductoryNote"), o.get("annotations")) if x)
+        z.internal_notes = str(o.get("description") or "")
+        if str(o.get("connectedDocType") or "").upper() == "OFFER" and o.get("connectedDocNumber"):
+            z.offer_id = offer_by_number.get(str(o["connectedDocNumber"]))
+            out["linked_offers"] += z.offer_id is not None
+        pos = 0
+        for e in entries.get(("offer", int(o["id"])), []):
+            pos += 1
+            price = e.get("unitBruttoPrice") if z.prices_gross else e.get("unitNettoPrice")
+            z.items.append(OrderItem(
+                position=pos, product_id=ctx.product(e), code=(e.get("productCode") or "")[:60],
+                name=(e.get("name") or "Pozycja")[:500], quantity=_q(e.get("quantity")),
+                unit=_unit(e.get("unit")), unit_price=_d(price), vat_rate=_vat(e.get("vatPercent")),
+                net=_d(e.get("nettoPrice")), vat=_d(e.get("vatPrice")), gross=_d(e.get("bruttoPrice"))))
+            out["items"] += 1
+        z.total_net, z.total_vat, z.total_gross = _d(o.get("nettoPrice") or o.get("baseNettoPrice")), \
+            _d(o.get("vatPrice") or o.get("baseVatPrice")), _d(o.get("bruttoPrice") or o.get("baseBruttoPrice"))
+    db.flush()
+    out["statuses"] = dict(out["statuses"])
+    return out
 
 
 def update_offer_titles(db: Session, company: Company, offers: list[dict]) -> dict:
@@ -882,8 +954,19 @@ def import_all(db: Session, data: dict[str, list], company: Company, log=print, 
     if only and "tytuly_ofert" in only and data.get("offers"):
         summary["tytuly_ofert"] = update_offer_titles(db, company, data["offers"])
         log(f"tytuly_ofert: {summary['tytuly_ofert']}")
+    def extras() -> None:  # po ofertach i zadaniach, bo zamowienia wskazuja oferty, a polaczenia zadania
+        if want("zamowienia") and data.get("offers"):
+            summary["zamowienia"] = import_orders(Ctx(db, company), data["offers"],
+                                                  group_entries(data.get("transactionentries") or []))
+            log(f"zamowienia: {summary['zamowienia']}")
+        if want("polaczenia") and data.get("phonecalls"):
+            from . import calls
+            summary["polaczenia"] = calls.import_firmao(db, company.id, data["phonecalls"])
+            log(f"polaczenia: {summary['polaczenia']}")
+
     docs = [k for k in ("faktury", "zakupy", "wz", "oferty") if want(k)]
     if not docs:
+        extras()
         if want("umowy") and data.get("agreements"):
             summary["umowy"] = import_agreements(db, company, data["agreements"],
                                                  group_entries(data.get("transactionentries") or []),
@@ -912,4 +995,5 @@ def import_all(db: Session, data: dict[str, list], company: Company, log=print, 
     for name, res in (("faktury", inv), ("wz", wz), ("oferty", of)):
         res.pop("_map", None)
         summary[name] = res
+    extras()
     return summary

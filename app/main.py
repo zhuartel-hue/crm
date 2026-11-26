@@ -21,6 +21,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from . import dashboard as dash
 from . import offer_statuses as ost
+from . import calls, orders
 from . import jobs, tenancy
 from . import users as users_mod
 from . import api, auth, calc, config, firmao_import, mail_templates, mcp_server, migrate, nip_lookup, numbering, offers, password, payments, pdf, recurring, secretbox, wz
@@ -41,6 +42,11 @@ from . import services
 from .services import ServiceError, audit, car_item_name
 from .db import SessionLocal, get_db
 from .models import (
+    CALL_DIRECTIONS,
+    CALL_STATUSES,
+    PhoneCall,
+    ORDER_DIRECTIONS,
+    Order,
     CONTRACT_FILE_KINDS,
     ContractFile,
     CAR_STATUSES,
@@ -360,6 +366,7 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
                   equipment_due=equipment_due, tasks_today=tasks_today, now=dt.datetime.now(),
                   bank_warnings=bank_connect.warnings(db, company.id), overdue=overdue, deliveries=deliveries,
                   mails=mails, offers_expiring=offers.expiring(db, company.id), today=today,
+                  orders_due=orders.due_soon(db, company.id),
                   layout=layout, custom_layout=custom, WIDGETS=dash.WIDGETS, DASH_COLS=dash.COLS, DASH_MAX_H=dash.MAX_H,
                   hidden=[k for k in dash.WIDGETS if k not in shown])
 
@@ -976,7 +983,14 @@ def contractor_edit(cid: int, request: Request, db: Session = Depends(get_db)):
     contracts = db.scalars(select(RecurringInvoice).where(RecurringInvoice.contractor_id == cid,
                                                           RecurringInvoice.company_id == current_company(request, db).id)
                            .order_by(RecurringInvoice.active.desc(), RecurringInvoice.id.desc())).all()
+    order_rows = db.scalars(select(Order).where(Order.contractor_id == cid,
+                                                Order.company_id == current_company(request, db).id)
+                            .order_by(Order.issue_date.desc()).limit(30)).all()
+    call_rows = db.scalars(select(PhoneCall).where(PhoneCall.contractor_id == cid,
+                                                   PhoneCall.company_id == current_company(request, db).id)
+                           .order_by(PhoneCall.started_at.desc()).limit(15)).all()
     return render(request, db, "contractor_form.html", c=c, invoices=invoices, mails=mails, offers=offer_rows,
+                  orders=order_rows, calls=call_rows, CALL_DIRECTIONS=CALL_DIRECTIONS,
                   deliveries=deliveries, equipment=equipment, contracts=contracts, today=dt.date.today(),
                   task_rows=db.scalars(select(Task).where(Task.contractor_id == cid, Task.parent_id.is_(None),
                                                           Task.company_id == current_company(request, db).id)
@@ -1356,7 +1370,8 @@ COMPANY_FIELDS = ["short_name", "name", "nip", "street", "postal_code", "city", 
 
 @app.get("/ustawienia", response_class=HTMLResponse)
 def settings_form(request: Request, db: Session = Depends(get_db)):
-    return render(request, db, "settings.html", KSEF_ENVS=KSEF_ENVS)
+    return render(request, db, "settings.html", KSEF_ENVS=KSEF_ENVS,
+                  pattern_order=numbering.extra_pattern(db, current_company(request, db), "order"))
 
 
 @app.post("/ustawienia/ksef")
@@ -1449,10 +1464,13 @@ async def settings_save(request: Request, db: Session = Depends(get_db)):
     days = form.get("default_payment_days") or "7"
     company.default_payment_days = int(days) if days.isdigit() else 7
     for p in (company.pattern_vat, company.pattern_correction, company.pattern_advance, company.pattern_proforma, company.pattern_wz,
-              company.pattern_pz, company.pattern_offer):
+              company.pattern_pz, company.pattern_offer, form.get("pattern_order") or "{nr}"):
         if "{nr}" not in p and "{NNN}" not in p:
             db.rollback()
-            return render(request, db, "settings.html", KSEF_ENVS=KSEF_ENVS, error="Wzór numeru musi zawierać {nr} albo {NNN}.")
+            return render(request, db, "settings.html", KSEF_ENVS=KSEF_ENVS, error="Wzór numeru musi zawierać {nr} albo {NNN}.",
+                          pattern_order=form.get("pattern_order") or "")
+    if form.get("pattern_order"):
+        numbering.set_extra_pattern(db, company, "order", form.get("pattern_order"))
     db.commit()
     flash(request, "Zapisano ustawienia firmy.")
     return redirect("/ustawienia")
@@ -2676,7 +2694,7 @@ def _offer_form(request: Request, db: Session, o: Offer, error: str | None = Non
                   products_json=script_json(prod.picker_json(products)), contractors=contractors, error=error)
 
 
-STATUS_KINDS = {"statusy-ofert": "offer", "statusy-umow": "contract"}
+STATUS_KINDS = {"statusy-ofert": "offer", "statusy-umow": "contract", "statusy-zamowien": "order"}
 
 
 @app.get("/ustawienia/statusy-{what}", response_class=HTMLResponse)
@@ -2950,6 +2968,295 @@ def offer_delete(oid: int, request: Request, db: Session = Depends(get_db)):
     db.commit()
     flash(request, f"Usunięto ofertę {o.number}.")
     return redirect("/oferty")
+
+
+# ---------------------------------------------------------------- zamowienia
+
+def _get_order(db: Session, request: Request, zid: int) -> Order:
+    z = db.get(Order, zid)
+    if z is None or z.company_id != current_company(request, db).id:
+        raise HTTPException(404)
+    return z
+
+
+def _order_form(request: Request, db: Session, z: Order, error: str | None = None):
+    company = current_company(request, db)
+    products = prod.search(db, company.id, "", active_only=True)
+    return render(request, db, "order_form.html", z=z, products=products,
+                  STATUSES=ost.visible(db, company.id, z.status, kind="order"), DIRECTIONS=ORDER_DIRECTIONS,
+                  products_json=script_json(prod.picker_json(products)), contractors=_contractors(db, company.id),
+                  error=error)
+
+
+@app.get("/zamowienia", response_class=HTMLResponse)
+def order_list(request: Request, q: str = "", status: str = "", kierunek: str = "", db: Session = Depends(get_db)):
+    company = current_company(request, db)
+    stmt = select(Order).where(Order.company_id == company.id)
+    all_st = {r["k"]: r["label"] for r in ost.config(db, company.id, "order")}
+    open_keys = ost.keys(db, company.id, "open", "order")
+    if status == "otwarte":
+        stmt = stmt.where(Order.status.in_(open_keys))
+    elif status in all_st:
+        stmt = stmt.where(Order.status == status)
+    if kierunek in ORDER_DIRECTIONS:
+        stmt = stmt.where(Order.direction == kierunek)
+    if q:
+        like = f"%{q}%"
+        stmt = stmt.where(or_(Order.number.ilike(like), Order.recipient_name.ilike(like), Order.title.ilike(like),
+                              Order.customer_ref.ilike(like)))
+    rows = db.scalars(stmt.order_by(Order.issue_date.desc(), Order.id.desc()).limit(300)).all()
+    opened = db.scalars(select(Order).where(Order.company_id == company.id, Order.status.in_(open_keys))).all()
+    stats = dict(open_count=len(opened), open_gross=sum((z.total_gross for z in opened), Decimal("0")),
+                 overdue=sum(1 for z in opened if z.overdue))
+    return render(request, db, "order_list.html", rows=rows, q=q, status=status, kierunek=kierunek,
+                  STATUSES=ost.visible(db, company.id, kind="order"), ALL_STATUSES=all_st, DIRECTIONS=ORDER_DIRECTIONS,
+                  stats=stats)
+
+
+@app.get("/zamowienia/nowe", response_class=HTMLResponse)
+def order_new(request: Request, kontrahent: int = 0, kopia: int = 0, oferta: int = 0, kierunek: str = "",
+              db: Session = Depends(get_db)):
+    company = current_company(request, db)
+    if kopia:
+        z = orders.duplicate(_get_order(db, request, kopia), web_actor(request))
+    elif oferta:
+        z = orders.from_offer(_get_offer(db, request, oferta), web_actor(request))
+    else:
+        z = orders.new(company.id, web_actor(request))
+        if kierunek in ORDER_DIRECTIONS:
+            z.direction = kierunek
+        c = _own(db, request, Contractor, kontrahent) if kontrahent else None
+        if c is not None:
+            z.contractor_id, z.recipient_name = c.id, c.name
+            z.recipient_address = "\n".join(c.address_lines)
+            z.email = (c.email or "").split(",")[0].strip()
+            z.phone = (c.phone or "")[:40]
+    return _order_form(request, db, z)
+
+
+async def _order_save(request: Request, db: Session, z: Order):
+    form = await request.form()
+    for f, n in (("title", 300), ("recipient_name", 300), ("contact_person", 200), ("email", 200), ("phone", 40),
+                 ("customer_ref", 100)):
+        setattr(z, f, (form.get(f) or "").strip()[:n])
+    z.recipient_address = (form.get("recipient_address") or "").strip()
+    z.notes = (form.get("notes") or "").strip()
+    z.internal_notes = (form.get("internal_notes") or "").strip()
+    z.prices_gross = form.get("prices_gross") == "1"
+    if form.get("direction") in ORDER_DIRECTIONS:
+        z.direction = form.get("direction")
+    cid = form.get("contractor_id") or ""
+    z.contractor_id = int(cid) if cid.isdigit() and _own(db, request, Contractor, int(cid)) else None
+    oid = form.get("offer_id") or ""
+    if oid.isdigit() and z.offer_id is None:
+        o = db.get(Offer, int(oid))
+        z.offer_id = o.id if o is not None and o.company_id == z.company_id else None
+    try:
+        z.issue_date = dt.date.fromisoformat(form.get("issue_date") or "")
+    except ValueError:
+        z.issue_date = dt.date.today()
+    try:
+        z.due_date = dt.date.fromisoformat(form.get("due_date") or "")
+    except ValueError:
+        z.due_date = None
+    if ost.find(db, z.company_id, form.get("status") or "", "order") is not None:
+        z.status = form.get("status")
+    try:
+        orders.set_items(db, z, form.getlist("item_name"), form.getlist("item_qty"), form.getlist("item_unit"),
+                         form.getlist("item_product"), form.getlist("item_price"), form.getlist("item_rate"))
+        is_new = z.id is None
+        db.add(z)
+        orders.save(db, z)
+        if is_new:
+            audit(db, web_actor(request), "order.create", f"Zamówienie {z.number} ({z.recipient_name})",
+                  company_id=z.company_id, entity="order", entity_id=z.id)
+            if z.offer_id:
+                o = db.get(Offer, z.offer_id)
+                if o is not None and o.is_open and ost.find(db, o.company_id, "ordered") is not None:
+                    o.status = "ordered"
+        db.commit()
+    except ValueError as e:
+        db.rollback()
+        return _order_form(request, db, z, error=str(e))
+    flash(request, f"Zapisano zamówienie {z.number}.")
+    return redirect(f"/zamowienia/{z.id}")
+
+
+@app.post("/zamowienia/nowe")
+async def order_create(request: Request, db: Session = Depends(get_db)):
+    return await _order_save(request, db, orders.new(current_company(request, db).id, web_actor(request)))
+
+
+@app.get("/zamowienia/{zid}", response_class=HTMLResponse)
+def order_view(zid: int, request: Request, db: Session = Depends(get_db)):
+    z = _get_order(db, request, zid)
+    return render(request, db, "order_view.html", z=z, STATUSES=ost.visible(db, z.company_id, z.status, kind="order"))
+
+
+@app.get("/zamowienia/{zid}/edytuj", response_class=HTMLResponse)
+def order_edit(zid: int, request: Request, db: Session = Depends(get_db)):
+    return _order_form(request, db, _get_order(db, request, zid))
+
+
+@app.post("/zamowienia/{zid}/edytuj")
+async def order_update(zid: int, request: Request, db: Session = Depends(get_db)):
+    return await _order_save(request, db, _get_order(db, request, zid))
+
+
+@app.post("/zamowienia/{zid}/status")
+async def order_status(zid: int, request: Request, db: Session = Depends(get_db)):
+    z = _get_order(db, request, zid)
+    form = await request.form()
+    try:
+        orders.set_status(z, form.get("status") or "")
+    except ValueError as e:
+        flash(request, str(e))
+        return redirect(f"/zamowienia/{z.id}")
+    audit(db, web_actor(request), "order.status", f"{z.number}: status {z.status_label}",
+          company_id=z.company_id, entity="order", entity_id=z.id)
+    db.commit()
+    back = form.get("back") or ""
+    if back.startswith("/zamowienia"):
+        return redirect(back)
+    flash(request, f"Status zamówienia: {z.status_label}.")
+    return redirect(f"/zamowienia/{z.id}")
+
+
+@app.post("/zamowienia/{zid}/tytul")
+async def order_title(zid: int, request: Request, db: Session = Depends(get_db)):
+    z = _get_order(db, request, zid)
+    form = await request.form()
+    title = (form.get("title") or "").strip()[:300]
+    if title != z.title:
+        z.title = title
+        db.commit()
+    back = form.get("back") or "/zamowienia"
+    return redirect(back if back.startswith("/zamowienia") else "/zamowienia")
+
+
+@app.post("/zamowienia/{zid}/faktura")
+def order_to_invoice(zid: int, request: Request, db: Session = Depends(get_db)):
+    z = _get_order(db, request, zid)
+    try:
+        inv = orders.to_invoice(db, web_actor(request), z)
+    except ValueError as e:
+        db.rollback()
+        flash(request, str(e))
+        return redirect(f"/zamowienia/{z.id}")
+    flash(request, f"Utworzono szkic faktury z zamówienia {z.number}. Sprawdź i wystaw.")
+    return redirect(f"/faktury/{inv.id}/edytuj")
+
+
+@app.post("/zamowienia/{zid}/wz")
+def order_to_wz(zid: int, request: Request, db: Session = Depends(get_db)):
+    z = _get_order(db, request, zid)
+    try:
+        d = orders.to_wz(db, z)
+    except ValueError as e:
+        db.rollback()
+        flash(request, str(e))
+        return redirect(f"/zamowienia/{z.id}")
+    flash(request, f"Utworzono szkic {d.kind.upper()} z zamówienia {z.number}. Sprawdź i wystaw.")
+    return redirect(f"/wz/{d.id}/edytuj")
+
+
+@app.post("/zamowienia/{zid}/usun")
+def order_delete(zid: int, request: Request, db: Session = Depends(get_db)):
+    z = _get_order(db, request, zid)
+    if z.invoice_id or z.delivery_id:
+        flash(request, "Z tego zamówienia jest już faktura albo WZ. Zmień jego status (np. anulowane), zamiast usuwać.")
+        return redirect(f"/zamowienia/{z.id}")
+    audit(db, web_actor(request), "order.delete", f"Usunięto zamówienie {z.number}", company_id=z.company_id,
+          entity="order", entity_id=z.id)
+    db.delete(z)
+    db.commit()
+    flash(request, f"Usunięto zamówienie {z.number}.")
+    return redirect("/zamowienia")
+
+
+# ---------------------------------------------------------------- polaczenia
+
+@app.get("/polaczenia", response_class=HTMLResponse)
+def call_list(request: Request, q: str = "", kierunek: str = "", wynik: str = "", db: Session = Depends(get_db)):
+    company = current_company(request, db)
+    stmt = select(PhoneCall).where(PhoneCall.company_id == company.id)
+    if kierunek in CALL_DIRECTIONS:
+        stmt = stmt.where(PhoneCall.direction == kierunek)
+    if wynik in CALL_STATUSES:
+        stmt = stmt.where(PhoneCall.status == wynik)
+    if q:
+        like = f"%{q}%"
+        key = calls.digits(q)
+        stmt = stmt.outerjoin(Contractor, PhoneCall.contractor_id == Contractor.id).where(or_(
+            Contractor.name.ilike(like), PhoneCall.note.ilike(like), PhoneCall.user_label.ilike(like),
+            *( [PhoneCall.phone.like(f"%{key[-6:]}%")] if len(key) >= 6 else [])))
+    rows = db.scalars(stmt.order_by(PhoneCall.started_at.desc()).limit(300)).all()
+    return render(request, db, "call_list.html", rows=rows, q=q, kierunek=kierunek, wynik=wynik,
+                  DIRECTIONS=CALL_DIRECTIONS, CALL_DIRECTIONS=CALL_DIRECTIONS, CALL_STATUSES=CALL_STATUSES, contractors=_contractors(db, company.id),
+                  now=dt.datetime.now())
+
+
+@app.post("/polaczenia/nowe")
+async def call_add(request: Request, db: Session = Depends(get_db)):
+    """Notatka z rozmowy (reczny wpis), z listy polaczen albo z karty klienta."""
+    company = current_company(request, db)
+    form = await request.form()
+    cid = form.get("contractor_id") or ""
+    contractor = _own(db, request, Contractor, int(cid)) if cid.isdigit() else None
+    try:
+        started = dt.datetime.fromisoformat(form["started_at"]) if form.get("started_at") else None
+    except ValueError:
+        started = None
+    try:
+        minutes = float((form.get("minutes") or "0").replace(",", "."))
+    except ValueError:
+        minutes = 0
+    back = form.get("back") or "/polaczenia"
+    try:
+        c = calls.add(db, company.id, direction=form.get("direction") or "out", phone=form.get("phone") or "",
+                      note=form.get("note") or "", status=form.get("status") or "answered", started_at=started,
+                      seconds=int(minutes * 60), user_label=str(request.session.get("user", ""))[:100],
+                      contractor_id=contractor.id if contractor else None)
+    except ValueError as e:
+        flash(request, str(e))
+        return redirect(back if back.startswith(("/polaczenia", "/kontrahenci")) else "/polaczenia")
+    db.flush()
+    audit(db, web_actor(request), "call.add", f"Notatka z rozmowy ({c.direction_label})", company_id=company.id,
+          entity="call", entity_id=c.id)
+    db.commit()
+    flash(request, "Zapisano rozmowę." + ("" if c.contractor_id else " Nie znalazłem klienta po numerze, możesz go wskazać."))
+    return redirect(back if back.startswith(("/polaczenia", "/kontrahenci")) else "/polaczenia")
+
+
+@app.post("/polaczenia/{call_id}")
+async def call_update(call_id: int, request: Request, db: Session = Depends(get_db)):
+    """Notatka i klient przy polaczeniu (prosto z listy)."""
+    c = db.get(PhoneCall, call_id)
+    if c is None or c.company_id != current_company(request, db).id:
+        raise HTTPException(404)
+    form = await request.form()
+    if "note" in form:
+        c.note = (form.get("note") or "").strip()
+    if "contractor_id" in form:
+        cid = form.get("contractor_id") or ""
+        contractor = _own(db, request, Contractor, int(cid)) if cid.isdigit() else None
+        c.contractor_id = contractor.id if contractor else None
+    if "done" in form:
+        c.done = form.get("done") == "1"
+    db.commit()
+    back = form.get("back") or "/polaczenia"
+    return redirect(back if back.startswith(("/polaczenia", "/kontrahenci")) else "/polaczenia")
+
+
+@app.post("/polaczenia/{call_id}/usun")
+def call_delete(call_id: int, request: Request, db: Session = Depends(get_db)):
+    c = db.get(PhoneCall, call_id)
+    if c is None or c.company_id != current_company(request, db).id:
+        raise HTTPException(404)
+    db.delete(c)
+    db.commit()
+    flash(request, "Usunięto wpis.")
+    return redirect("/polaczenia")
 
 
 # ---------------------------------------------------------------- import z Firmao

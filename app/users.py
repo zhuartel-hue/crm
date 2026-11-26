@@ -31,7 +31,7 @@ ROLE_HINTS = {
     "wlasciciel": "Wszystko, także użytkownicy, Claude i ustawienia.",
     "ksiegowosc": "Faktury, koszty, bank, należności i ustawienia firmy. Bez zarządzania użytkownikami.",
     "handlowiec": "Kontrahenci, oferty, faktury, umowy, zadania. Bez banku, kosztów i ustawień.",
-    "magazyn": "Magazyn (WZ/PZ), produkty, sprzęt i serwis, zadania.",
+    "magazyn": "Magazyn (WZ/PZ), zamówienia, produkty, sprzęt i serwis, zadania.",
 }
 
 # Sciezki zawsze dostepne po zalogowaniu.
@@ -43,7 +43,7 @@ _DENY = {
 }
 # Magazyn: tylko to, co jest tu wymienione.
 _ALLOW_ONLY = {
-    "magazyn": ("/start", "/wz", "/produkty", "/sprzet", "/zadania", "/kalendarz"),
+    "magazyn": ("/start", "/wz", "/produkty", "/sprzet", "/zadania", "/kalendarz", "/zamowienia"),
 }
 
 MAX_FAILED = 5
