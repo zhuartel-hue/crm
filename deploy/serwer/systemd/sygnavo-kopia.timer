@@ -1,0 +1,8 @@
+[Unit]
+Description=Sygnavo: kopia bazy co godzine
+[Timer]
+OnCalendar=*-*-* *:17:00
+Persistent=true
+RandomizedDelaySec=120
+[Install]
+WantedBy=timers.target

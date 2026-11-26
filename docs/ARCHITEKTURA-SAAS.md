@@ -156,15 +156,22 @@ sesje i kolejka są w bazie.
 
 | Kopia | Częstotliwość | Miejsce | Przechowywanie |
 | --- | --- | --- | --- |
-| Ciągły zapis zmian (WAL, pgBackRest) | na bieżąco, strata max 5 min | Storage Box | 14 dni, odtworzenie do dowolnej minuty |
-| Pełny zrzut bazy, zaszyfrowany | co noc i przed każdym wdrożeniem | Storage Box | 30 dziennych, 12 miesięcznych |
+| Zrzut bazy (pg_dump), zaszyfrowany, restic | co godzinę i przed każdym wdrożeniem; strata max 1 h | Storage Box (inne centrum danych) | 48 godzinowych, 30 dziennych, 12 miesięcznych, 6 rocznych |
+| Ten sam zrzut | co godzinę | dysk systemowy serwera (nie Volume) | 48 ostatnich + 10 sprzed wdrożeń |
 | Ten sam zrzut | co noc | iMac `~/kopie-faktur` | 60 dni |
-| Obraz serwera | co noc | Hetzner Backups | 7 dni |
-| Pliki (logo, zdjęcia, PDF) | co noc | Storage Box | 30 dni |
+| Obraz serwera (bez Volume) | co noc | Hetzner Backups | 7 dni |
 
-- Kopie szyfrowane kluczem, który nie leży na serwerze.
+Wszystkie dane programu (także zdjęcia produktów, logo, załączniki maili) są w bazie, więc zrzut bazy
+jest pełną kopią. Skrypty: `deploy/serwer/kopia.sh`, `deploy/serwer/test-odtwarzania.sh`.
+
+Dlaczego zrzut co godzinę, a nie ciągły zapis zmian (WAL): to jedno proste narzędzie zamiast dwóch,
+łatwe do sprawdzenia i odtworzenia. Ciągły zapis (pgBackRest, strata max kilka minut) dokładamy,
+gdy pojawią się klienci zewnętrzni (etap E).
+
+- Kopie na Storage Box szyfruje restic. Hasło jest na serwerze (żeby kopie mogły się robić same)
+  i **obowiązkowo także poza serwerem** (menedżer haseł właściciela, iMac). Bez niego kopii nie da się odczytać.
 - **Test odtwarzania co tydzień automatycznie**: odtworzenie ostatniej kopii w osobnym kontenerze,
-  porównanie liczby faktur, kontrahentów i sumy kwot z produkcją; wynik do monitoringu, błąd = alarm.
+  porównanie liczby faktur, kontrahentów i produktów z produkcją; wynik do monitoringu, błąd = alarm.
 - Raz na kwartał pełne odtworzenie na nowym serwerze z pomiarem czasu. Cel: pełne przywrócenie w 1 h.
 - Kopia, której odtworzenia nie sprawdzono, nie liczy się jako kopia.
 
@@ -172,6 +179,7 @@ sesje i kolejka są w bazie.
 
 - Dostępność strony co minutę, publiczna strona statusu (UptimeRobot lub Better Stack, plan darmowy).
 - Błędy aplikacji (Sentry, region UE, plan darmowy).
+- Kopie i test odtwarzania zgłaszają się do healthchecks.io; brak zgłoszenia w terminie = alarm.
 - Alarmy: dysk > 80%, RAM, CPU, nieudana kopia, nieudany test odtwarzania, wygasający certyfikat
   HTTPS lub KSeF, zerwane połączenie z bankiem, zablokowana kolejka zadań.
 - Alarmy idą na info@margotsystem.com i jako powiadomienie na telefon.

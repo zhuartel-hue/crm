@@ -1,0 +1,10 @@
+# Zarzadzane przez repozytorium (deploy/serwer/Caddyfile). Zmiany tylko przez PR.
+{$APP_DOMAIN} {
+	encode gzip
+	reverse_proxy app:8000
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+	}
+}
