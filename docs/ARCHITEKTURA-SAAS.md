@@ -221,6 +221,14 @@ Do czasu przejścia: wdrożenia jak dotąd przez iMaca, zawsze z kopią przed zm
 Otwarte: która firma (Margot czy ARI) sprzedaje Sygnavo; nazwa i domena produktu; regulamin,
 polityka prywatności i umowa powierzenia (do sprawdzenia przez prawnika).
 
+## 10a. Wiedza, pomoc i asystent AI
+
+Wszystko, co przechodzimy przy budowie i używaniu Sygnavo, zapisujemy w `docs/wiedza/` (strony modułów i FAQ).
+Z tego powstanie centrum pomocy z forum, treści na bloga i social media oraz asystent AI w programie,
+który odpowiada klientom na podstawie tej wiedzy (wyszukiwanie w bazie wiedzy, odpowiedzi tylko z niej,
+bez dostępu asystenta do danych innych organizacji). Asystent korzysta z istniejącego serwera MCP (`/mcp`)
+tylko w zakresie organizacji zalogowanego użytkownika.
+
 ## 11. Kolejność prac
 
 | Etap | Zakres | Termin |
@@ -238,4 +246,5 @@ polityka prywatności i umowa powierzenia (do sprawdzenia przez prawnika).
 | 25.11.2026 | Sygnavo będzie sprzedawane innym firmom; nowy kod pisany „pod wielu klientów” | właściciel |
 | 25.11.2026 | Najpierw testy wewnętrzne, platforma sprzedaży później | właściciel |
 | 26.11.2026 | Bezpieczna, prosta i odwracalna rozbudowa serwera to priorytet; zasady zapisane w repozytorium (ten plik) | właściciel |
+| 26.11.2026 | Od teraz dokumentujemy procesy w bazie wiedzy (`docs/wiedza/`) pod forum, blog i asystenta AI | właściciel |
 | 26.11.2026 | Rekomendacja: osobny serwer Hetzner CX33 + Volume + Storage Box; czeka na zgodę | Claude |

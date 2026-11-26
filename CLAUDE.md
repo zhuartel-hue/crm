@@ -15,3 +15,5 @@ Zasady obowiązkowe przy każdej zmianie:
    architektury, ze skryptu w `deploy/`, nigdy ręcznie „na żywo”.
 7. Aplikacja nie trzyma stanu w pamięci procesu; zadania w tle idą przez kolejkę.
 8. Zmiana zasad z dokumentu architektury wymaga zgody właściciela i wpisu w jego „Dzienniku decyzji”.
+9. Baza wiedzy: każda nowa lub zmieniona funkcja aktualizuje `docs/wiedza/` (strona modułu, FAQ z pytań
+   właściciela). To źródło dla centrum pomocy, bloga i asystenta AI dla klientów. Bez danych osobowych.
