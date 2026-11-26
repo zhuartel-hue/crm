@@ -5,6 +5,7 @@ import datetime as dt
 from decimal import Decimal
 
 from sqlalchemy import false as sa_false
+from sqlalchemy import true as sa_true
 from sqlalchemy import Date, DateTime, ForeignKey, Index, Integer, LargeBinary, Numeric, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -974,10 +975,37 @@ class RecurringInvoice(Base):
     notes: Mapped[str] = mapped_column(Text, default="")
     active: Mapped[bool] = mapped_column(default=True)
     last_error: Mapped[str] = mapped_column(Text, default="")
+    # Umowa: numer (drukowany na fakturach), daty, adnotacje. active=False = umowa zakonczona.
+    number: Mapped[str] = mapped_column(String(60), default="", server_default="")
+    signed_date: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
+    start_date: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
+    invoicing: Mapped[bool] = mapped_column(default=True, server_default=sa_true())  # faktury cykliczne wlaczone
+    mail_account_id: Mapped[int | None] = mapped_column(ForeignKey("mail_accounts.id", ondelete="SET NULL"),
+                                                        nullable=True)
+    contract_notes: Mapped[str] = mapped_column(Text, default="", server_default="")  # adnotacje do umowy
+    source_ref: Mapped[str] = mapped_column(String(120), default="", server_default="", index=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
 
     company: Mapped[Company] = relationship()
     contractor: Mapped[Contractor | None] = relationship()
+    mail_account: Mapped["MailAccount | None"] = relationship()
+
+    @property
+    def display_number(self) -> str:
+        return self.number or f"bez numeru #{self.id}"
+
+    @property
+    def status(self) -> str:
+        if not self.active:
+            return "ended"
+        if self.start_date and self.start_date > dt.date.today():
+            return "future"
+        return "active" if self.invoicing else "no_invoices"
+
+    @property
+    def status_label(self) -> str:
+        return {"ended": "zakończona", "future": "od " + (f"{self.start_date:%d.%m.%Y}" if self.start_date else ""),
+                "active": "aktywna", "no_invoices": "aktywna, bez faktur"}[self.status]
 
     @property
     def interval_label(self) -> str:

@@ -1,30 +1,39 @@
 {% extends "base.html" %}
-{% block title %}{{ r.name or 'Nowa faktura cykliczna' }}{% endblock %}
+{% block title %}{{ r.name or 'Nowa umowa' }}{% endblock %}
 {% block content %}
-<div class="row"><h1>{{ r.name if r.id else 'Nowa faktura cykliczna' }}</h1>
-{% if r.id and not r.active %}<span class="badge">wstrzymana</span>{% endif %}<span class="spacer"></span>
-{% if r.id and r.active %}<form method="post" action="/cykliczne/{{ r.id }}/teraz" onsubmit="return confirm('Utworzyć teraz fakturę za {{ r.next_date|date }}?')"><button class="btn">Utwórz teraz</button></form>{% endif %}
-<a class="btn" href="/cykliczne">Wróć</a></div>
+<div class="row"><h1>{{ r.name if r.id else 'Nowa umowa' }}</h1>
+{% if r.id %}<span class="badge {{ 'm' if r.status == 'active' }}">{{ r.status_label }}</span>{% endif %}<span class="spacer"></span>
+{% if r.id and r.active and r.invoicing %}<form method="post" action="/umowy/{{ r.id }}/teraz" onsubmit="return confirm('Utworzyć teraz fakturę za {{ r.next_date|date }}?')"><button class="btn">Utwórz teraz</button></form>{% endif %}
+{% if r.id and r.active %}<form method="post" action="/umowy/{{ r.id }}/zakoncz" onsubmit="return confirm('Zakończyć umowę z dniem dzisiejszym? Kolejne faktury nie będą tworzone.')"><button class="btn">Zakończ umowę</button></form>{% endif %}
+{% if r.id and not r.active %}<form method="post" action="/umowy/{{ r.id }}/wznow"><button class="btn">Wznów umowę</button></form>{% endif %}
+<a class="btn" href="/umowy">Wróć</a></div>
 {% if r.last_error %}<div class="error">Ostatnia próba się nie udała: {{ r.last_error }}</div>{% endif %}
 <div class="split">
-<form method="post" action="{{ '/cykliczne/%d' % r.id if r.id else '/cykliczne/nowa' }}">
+<form method="post" action="{{ '/umowy/%d' % r.id if r.id else '/umowy/nowa' }}">
 <div class="card">
   <div class="grid">
-    <div style="grid-column:1/-1"><label>Nazwa (dla Ciebie)</label><input name="name" value="{{ r.name }}" required placeholder="np. Abonament serwisowy – Firma X"></div>
+    <div><label>Numer umowy (drukowany na fakturach)</label><input name="number" value="{{ r.number or '' }}" placeholder="np. 12/2026"></div>
+    <div><label>Nazwa (dla Ciebie)</label><input name="name" value="{{ r.name }}" placeholder="np. Abonament serwisowy – Firma X"></div>
+    <div><label>Data zawarcia</label><input type="date" name="signed_date" value="{{ r.signed_date.isoformat() if r.signed_date }}"></div>
+    <div><label>Obowiązuje od</label><input type="date" name="start_date" value="{{ r.start_date.isoformat() if r.start_date }}"></div>
+    <div><label>Obowiązuje do</label><input type="date" name="end_date" value="{{ r.end_date.isoformat() if r.end_date }}">
+      <div class="muted" style="font-size:12px">Puste = bezterminowo: faktury idą, dopóki nie zakończysz umowy.</div></div>
     <div><label>Kontrahent z bazy</label><select name="contractor_id" id="contractor"><option value="">— wpisz ręcznie —</option>
       {% for c in contractors %}<option value="{{ c.id }}" data-search="{{ c.nip }} {{ c.city }}" data-name="{{ c.name }}" data-address="{{ c.address_lines|join('\n') }}" data-email="{{ (c.email or '').split(',')[0] }}" {{ 'selected' if c.id == r.contractor_id }}>{{ c.name }}</option>{% endfor %}</select></div>
     <div><label>NIP</label><input name="buyer_nip" value="{{ r.buyer_nip }}" inputmode="numeric"></div>
     <div style="grid-column:1/-1"><label>Nabywca</label><input name="recipient_name" id="recipient_name" value="{{ r.buyer_name }}"></div>
     <div style="grid-column:1/-1"><label>Adres</label><textarea name="recipient_address" id="recipient_address" rows="2">{{ r.buyer_address }}</textarea></div>
+    <div style="grid-column:1/-1"><label>Adnotacje do umowy (tylko w programie)</label><textarea name="contract_notes" rows="2" placeholder="np. warunki, zakres serwisu, aneksy">{{ r.contract_notes or '' }}</textarea></div>
   </div>
 </div>
 <div class="card">
-  <h2 style="margin-top:0">Harmonogram</h2>
+  <h2 style="margin-top:0">Faktury cykliczne</h2>
+  <p><label><input type="checkbox" name="invoicing" value="1" id="invoicing" {{ 'checked' if r.invoicing }}> Wystawiaj faktury cykliczne z tej umowy</label></p>
+  <div id="inv-opts">
   <div class="grid">
     <div><label>Co ile</label><select name="interval_months">{% for k, v in INTERVALS.items() %}<option value="{{ k }}" {{ 'selected' if r.interval_months == k }}>{{ v }}</option>{% endfor %}</select></div>
     <div><label>Dzień miesiąca (0 = ostatni)</label><input name="day_of_month" type="number" min="0" max="28" value="{{ r.day_of_month }}"></div>
     <div><label>Najbliższa faktura</label><input type="date" name="next_date" value="{{ r.next_date.isoformat() if r.next_date }}" required></div>
-    <div><label>Koniec umowy (opcjonalnie)</label><input type="date" name="end_date" value="{{ r.end_date.isoformat() if r.end_date }}"></div>
     <div><label>Termin płatności (dni)</label><input name="due_days" type="number" min="0" value="{{ r.due_days }}"></div>
     <div><label>Płatność</label><select name="payment_method">{% for k, v in PAYMENT_METHODS.items() %}<option value="{{ k }}" {{ 'selected' if r.payment_method == k }}>{{ v }}</option>{% endfor %}</select></div>
   </div>
@@ -34,11 +43,19 @@
   </div>
   <div class="grid" id="send-opts" style="margin-top:12px">
     <div><label>E-mail klienta</label><input name="email_to" id="email_to" value="{{ r.email_to }}" inputmode="email"></div>
-    <div><label>Szablon maila</label><select name="template_id"><option value="">domyślny</option>
-      {% for t in tpls %}<option value="{{ t.id }}" {{ 'selected' if t.id == r.template_id }}>{{ t.kind_label }} · {{ t.name }}</option>{% endfor %}</select></div>
+    <div><label>Wysyłaj z adresu</label><select name="mail_account_id"><option value="">pierwsza skrzynka firmy</option>
+      {% for a in accounts %}<option value="{{ a.id }}" {{ 'selected' if a.id == r.mail_account_id }}>{{ a.email }}</option>{% endfor %}</select></div>
+    <div style="grid-column:1/-1"><label>Szablon maila</label><select name="template_id" id="tpl">
+      {% for t in tpls %}<option value="{{ t.id }}" data-subject="{{ t.subject }}" data-body="{{ t.body }}" {{ 'selected' if t.id == (r.template_id or default_tpl_id) }}>{{ t.name }}{{ ' (domyślny)' if t.id == default_tpl_id }}</option>{% endfor %}</select></div>
+    <div style="grid-column:1/-1"><label>Temat maila</label><input name="mail_subject" id="mail_subject"></div>
+    <div style="grid-column:1/-1"><label>Treść maila</label><textarea name="mail_body" id="mail_body" rows="6"></textarea>
+      <div class="muted" style="font-size:12px">Program wstawi: <code>{numer}</code> faktury, <code>{kwota}</code>, <code>{termin}</code> płatności, <code>{konto}</code>, <code>{nabywca}</code>, <code>{firma}</code>, <code>{miesiac}</code> ({{ period.miesiac }}), <code>{okres}</code> ({{ period.okres }}). Faktura w PDF idzie w załączniku.</div></div>
+    <div style="grid-column:1/-1"><label class="choice"><input type="radio" name="tpl_save" value="update" checked> Zmiany zapisz w tym szablonie (dotyczy wszystkich umów z tym szablonem)</label>
+      <label class="choice"><input type="radio" name="tpl_save" value="new"> Zapisz jako nowy szablon o nazwie:</label>
+      <input name="tpl_name" placeholder="np. Rozliczenie usługi – klienci prywatni"></div>
   </div>
   {% if not has_mail %}<p class="muted">Wysyłka mailem wymaga skrzynki w <a href="/ustawienia/poczta">Ustawieniach poczty</a>.</p>{% endif %}
-  <p><label><input type="checkbox" name="active" value="1" {{ 'checked' if r.active }}> Aktywna (odznacz, żeby wstrzymać)</label></p>
+  </div>
 </div>
 <div class="card">
   <div class="row"><h2 style="margin:0">Pozycje</h2><span class="spacer"></span>
@@ -60,9 +77,10 @@
   </div>
   <datalist id="product-list">{% for pr in products %}<option value="{{ pr.label }}"></option>{% endfor %}</datalist>
   <p class="row"><button type="button" class="btn" id="add">+ Pozycja</button><span class="spacer"></span><b id="total"></b></p>
+  <p class="muted" style="margin-bottom:4px">Na fakturze program sam dopisze: „Na podstawie umowy nr …{{ ' z dnia …' }}”.</p>
   <div><label>Uwagi na fakturze</label><textarea name="notes" rows="2" placeholder="np. Okres rozliczeniowy: {okres}">{{ r.notes }}</textarea></div>
 </div>
-<div class="row" style="margin-bottom:16px"><button class="btn primary">Zapisz</button><a class="btn" href="/cykliczne">Anuluj</a></div>
+<div class="row" style="margin-bottom:16px"><button class="btn primary">Zapisz</button><a class="btn" href="/umowy">Anuluj</a></div>
 </form>
 <div>
   <div class="card preview">
@@ -74,7 +92,7 @@
   </div>
   {% if history %}<div class="card"><div class="muted" style="font-size:13px;margin-bottom:6px">Wystawione z tej umowy</div>
   {% for i in history %}<div><a href="/faktury/{{ i.id }}">{{ i.display_number }}</a> · {{ i.issue_date|date }} · {{ i.total_gross|money }} zł</div>{% endfor %}</div>{% endif %}
-  {% if r.id %}<form method="post" action="/cykliczne/{{ r.id }}/usun" onsubmit="return confirm('Usunąć fakturę cykliczną? Wystawione faktury zostaną.')"><button class="btn danger small">Usuń</button></form>{% endif %}
+  {% if r.id %}<form method="post" action="/umowy/{{ r.id }}/usun" onsubmit="return confirm('Usunąć umowę? Wystawione faktury zostaną.')"><button class="btn danger small">Usuń</button></form>{% endif %}
 </div>
 </div>
 {% endblock %}
@@ -88,6 +106,12 @@
   const opts = document.getElementById('send-opts');
   const upd = () => { const m = document.querySelector('[name=mode]:checked'); opts.style.display = m && m.value === 'send' ? '' : 'none'; };
   document.querySelectorAll('[name=mode]').forEach((x) => x.addEventListener('change', upd)); upd();
+  const inv = document.getElementById('invoicing'), io = document.getElementById('inv-opts');
+  const upd2 = () => { io.style.display = inv.checked ? '' : 'none'; };
+  inv.addEventListener('change', upd2); upd2();
+  const tpl = document.getElementById('tpl'), subj = document.getElementById('mail_subject'), body = document.getElementById('mail_body');
+  const fillTpl = () => { const o = tpl.selectedOptions[0]; if (o) { subj.value = o.dataset.subject || ''; body.value = o.dataset.body || ''; } };
+  tpl.addEventListener('change', fillTpl); fillTpl();
 })();
 </script>
 {% endblock %}

@@ -55,7 +55,7 @@ def items(r: RecurringInvoice) -> list[dict]:
         return []
 
 
-def set_items(db: Session, r: RecurringInvoice, names, qtys, units, prices, rates, product_ids) -> None:
+def set_items(db: Session, r: RecurringInvoice, names, qtys, units, prices, rates, product_ids, required: bool = True) -> None:
     out = []
     for k, name in enumerate(names):
         name = (name or "").strip()
@@ -77,7 +77,7 @@ def set_items(db: Session, r: RecurringInvoice, names, qtys, units, prices, rate
             name = product.name
         out.append(dict(name=name[:500], quantity=str(qty), unit=((units[k] if k < len(units) else "") or "szt.")[:10],
                         unit_price=str(price), vat_rate=rate, product_id=product.id if product else None))
-    if not out:
+    if not out and required:
         raise ValueError("Dodaj przynajmniej jedną pozycję.")
     r.items_json = json.dumps(out, ensure_ascii=False)
 
@@ -100,7 +100,11 @@ def schedule(r: RecurringInvoice, count: int = 6) -> list[dt.date]:
 
 def validate(r: RecurringInvoice) -> None:
     if not r.name.strip():
-        raise ValueError("Podaj nazwę (np. „Abonament serwisowy – Firma X”).")
+        r.name = (r.number and f"Umowa {r.number}") or ""
+    if not r.name.strip():
+        raise ValueError("Podaj nazwę albo numer umowy.")
+    if r.start_date and r.end_date and r.end_date < r.start_date:
+        raise ValueError("Umowa kończy się przed datą rozpoczęcia.")
     if not r.contractor_id and not r.buyer_name.strip():
         raise ValueError("Wybierz kontrahenta albo wpisz nabywcę.")
     if r.interval_months not in RECURRING_INTERVALS:
@@ -109,10 +113,26 @@ def validate(r: RecurringInvoice) -> None:
         raise ValueError("Wybierz, co program ma robić.")
     if r.payment_method not in PAYMENT_METHODS:
         r.payment_method = "transfer"
-    if r.end_date and r.end_date < r.next_date:
-        raise ValueError("Data końca jest przed najbliższą fakturą.")
-    if r.mode == "send" and not r.email_to.strip():
+    if r.invoicing and r.active and r.end_date and r.end_date < r.next_date:
+        raise ValueError("Data końca umowy jest przed najbliższą fakturą.")
+    if r.invoicing and r.mode == "send" and not r.email_to.strip():
         raise ValueError("Przy wysyłce mailem podaj adres e-mail klienta.")
+
+
+def invoice_notes(r: RecurringInvoice, when: dt.date) -> str:
+    """Uwagi na fakturze: numer umowy (z data zawarcia) i uwagi z umowy."""
+    head = ""
+    if r.number:
+        head = f"Na podstawie umowy nr {r.number}" + (f" z dnia {r.signed_date:%d.%m.%Y}" if r.signed_date else "") + "."
+    return "\n".join(x for x in (head, fill(r.notes, when).strip()) if x)
+
+
+def end_contract(r: RecurringInvoice, today: dt.date | None = None) -> None:
+    """Konczy umowe: bez kolejnych faktur; data konca = dzis, jesli nie byla wczesniejsza."""
+    today = today or dt.date.today()
+    if r.end_date is None or r.end_date > today:
+        r.end_date = today
+    r.active = False
 
 
 def generate(db: Session, actor: str, r: RecurringInvoice, advance: bool = True) -> Invoice:
@@ -129,7 +149,7 @@ def generate(db: Session, actor: str, r: RecurringInvoice, advance: bool = True)
     inv = create_invoice_draft(db, actor, dict(
         company=r.company_id, kind="vat", buyer=buyer, items=rows, prices_gross=r.prices_gross,
         payment_method=r.payment_method, due_days=r.due_days, issue_date=max(when, dt.date.today()).isoformat(),
-        sale_date=when.isoformat(), notes=fill(r.notes, when)))
+        sale_date=when.isoformat(), notes=invoice_notes(r, when)))
     inv.recurring_id = r.id
     db.commit()
     if r.mode in ("issue", "send"):
@@ -148,8 +168,9 @@ def generate(db: Session, actor: str, r: RecurringInvoice, advance: bool = True)
 def _send(db: Session, actor: str, r: RecurringInvoice, inv: Invoice) -> None:
     from .mail import service as mail
 
-    acc = db.scalar(select(MailAccount).where(MailAccount.company_id == r.company_id, MailAccount.active)
-                    .order_by(MailAccount.id).limit(1))
+    acc = r.mail_account if r.mail_account and r.mail_account.active else None
+    acc = acc or db.scalar(select(MailAccount).where(MailAccount.company_id == r.company_id, MailAccount.active)
+                           .order_by(MailAccount.id).limit(1))
     if acc is None:
         raise ServiceError("Faktura wystawiona, ale nie wysłana: firma nie ma skrzynki pocztowej (Ustawienia → Poczta).")
     tpl = db.get(EmailTemplate, r.template_id) if r.template_id else None
@@ -167,7 +188,8 @@ def run_due(db: Session, today: dt.date | None = None, actor: str = "system (fak
     """Tworzy zalegle faktury (za kazdy termin <= dzis). Zwraca liczbe utworzonych."""
     today = today or dt.date.today()
     made = 0
-    for r in db.scalars(select(RecurringInvoice).where(RecurringInvoice.active, RecurringInvoice.next_date <= today)
+    for r in db.scalars(select(RecurringInvoice).where(RecurringInvoice.active, RecurringInvoice.invoicing,
+                                                       RecurringInvoice.next_date <= today)
                         .order_by(RecurringInvoice.id)).all():
         for _ in range(24):  # zabezpieczenie: najwyzej 2 lata zaleglosci naraz
             if not r.active or r.next_date > today:
@@ -197,4 +219,4 @@ def from_invoice(inv: Invoice) -> RecurringInvoice:
         items_json=json.dumps(rows, ensure_ascii=False), prices_gross=inv.prices_gross, payment_method=inv.payment_method,
         due_days=max(0, due), interval_months=1, day_of_month=min(inv.issue_date.day, 28), next_date=start,
         mode="draft", email_to=(contractor.email.split(",")[0].strip() if contractor and contractor.email else ""),
-        notes="", active=True, last_error="")
+        notes="", active=True, last_error="", invoicing=True, number="", contract_notes="", start_date=start)

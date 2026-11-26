@@ -2627,15 +2627,25 @@ def _get_recurring(db: Session, request: Request, rid: int) -> RecurringInvoice:
     return r
 
 
-@app.get("/cykliczne", response_class=HTMLResponse)
-def recurring_list(request: Request, db: Session = Depends(get_db)):
+@app.get("/umowy", response_class=HTMLResponse)
+def recurring_list(request: Request, q: str = "", status: str = "", db: Session = Depends(get_db)):
     company = current_company(request, db)
-    rows = db.scalars(select(RecurringInvoice).where(RecurringInvoice.company_id == company.id)
-                      .order_by(RecurringInvoice.active.desc(), RecurringInvoice.next_date, RecurringInvoice.name)).all()
-    month = [r for r in rows if r.active]
-    monthly = sum((recurring.totals(r)["gross"] / r.interval_months for r in month), Decimal("0"))
+    base = select(RecurringInvoice).where(RecurringInvoice.company_id == company.id)
+    every = db.scalars(base.where(RecurringInvoice.active)).all()
+    cond = []
+    if status == "zakonczone":
+        cond.append(RecurringInvoice.active.is_(False))
+    elif status != "wszystkie":
+        cond.append(RecurringInvoice.active)
+    if q:
+        like = f"%{q}%"
+        cond.append(or_(RecurringInvoice.number.ilike(like), RecurringInvoice.name.ilike(like),
+                        RecurringInvoice.buyer_name.ilike(like)))
+    rows = db.scalars(base.where(*cond).order_by(RecurringInvoice.active.desc(), RecurringInvoice.next_date,
+                                                 RecurringInvoice.name)).all()
+    monthly = sum((recurring.totals(r)["gross"] / r.interval_months for r in every if r.invoicing), Decimal("0"))
     return render(request, db, "recurring_list.html", rows=rows, totals={r.id: recurring.totals(r) for r in rows},
-                  monthly=calc.money(monthly), active_count=len(month))
+                  monthly=calc.money(monthly), active_count=len(every), q=q, status=status)
 
 
 def _recurring_form(request: Request, db: Session, r: RecurringInvoice, error: str | None = None):
@@ -2645,17 +2655,20 @@ def _recurring_form(request: Request, db: Session, r: RecurringInvoice, error: s
     mail_templates.ensure_defaults(db, company)
     tpls = db.scalars(select(EmailTemplate).where(EmailTemplate.company_id == company.id,
                                                   EmailTemplate.kind.in_(("recurring", "invoice")))).all()
+    default_tpl = mail_templates.default_for(db, company, "recurring")
     history = db.scalars(select(Invoice).where(Invoice.recurring_id == r.id).order_by(Invoice.issue_date.desc())
                          .limit(24)).all() if r.id else []
-    has_mail = _company_accounts(db, company.id) != []
-    return render(request, db, "recurring_form.html", r=r, rows=recurring.items(r) or [None], products=products,
+    accounts = _company_accounts(db, company.id)
+    has_mail = accounts != []
+    return render(request, db, "recurring_form.html", r=r, accounts=accounts,
+                  default_tpl_id=default_tpl.id if default_tpl else None, rows=recurring.items(r) or [None], products=products,
                   products_json=script_json(prod.picker_json(products)), contractors=contractors, tpls=tpls,
                   INTERVALS=RECURRING_INTERVALS, MODES=RECURRING_MODES, schedule=recurring.schedule(r) if r.next_date else [],
                   totals=recurring.totals(r), history=history, has_mail=has_mail, error=error,
                   period=recurring.period_ctx(r.next_date or dt.date.today()))
 
 
-@app.get("/cykliczne/nowa", response_class=HTMLResponse)
+@app.get("/umowy/nowa", response_class=HTMLResponse)
 def recurring_new(request: Request, faktura: int = 0, db: Session = Depends(get_db)):
     company = current_company(request, db)
     if faktura:
@@ -2664,11 +2677,12 @@ def recurring_new(request: Request, faktura: int = 0, db: Session = Depends(get_
         r = RecurringInvoice(company_id=company.id, name="", buyer_name="", buyer_nip="", buyer_address="", items_json="[]",
                              prices_gross=False, payment_method="transfer", due_days=company.default_payment_days,
                              interval_months=1, day_of_month=1, next_date=recurring.first_date(dt.date.today(), 1),
-                             mode="draft", email_to="", notes="", active=True, last_error="")
+                             mode="send", email_to="", notes="", active=True, last_error="", start_date=dt.date.today())
+    r.invoicing, r.number, r.contract_notes = True, "", ""
     return _recurring_form(request, db, r)
 
 
-@app.get("/cykliczne/{rid}", response_class=HTMLResponse)
+@app.get("/umowy/{rid}", response_class=HTMLResponse)
 def recurring_edit(rid: int, request: Request, db: Session = Depends(get_db)):
     return _recurring_form(request, db, _get_recurring(db, request, rid))
 
@@ -2689,8 +2703,17 @@ async def _recurring_save(request: Request, db: Session, r: RecurringInvoice):
     tid = form.get("template_id") or ""
     r.template_id = int(tid) if tid.isdigit() else None
     r.notes = (form.get("notes") or "").strip()
-    r.active = form.get("active") == "1"
+    r.number = (form.get("number") or "").strip()[:60]
+    r.contract_notes = (form.get("contract_notes") or "").strip()
+    r.invoicing = form.get("invoicing") == "1"
+    if r.active is None:
+        r.active = True
+    aid = form.get("mail_account_id") or ""
+    r.mail_account_id = int(aid) if aid.isdigit() and any(a.id == int(aid) for a in _company_accounts(db, r.company_id)) \
+        else None
     try:
+        r.signed_date = dt.date.fromisoformat(form["signed_date"]) if form.get("signed_date") else None
+        r.start_date = dt.date.fromisoformat(form["start_date"]) if form.get("start_date") else None
         r.interval_months = int(form.get("interval_months") or 1)
         r.day_of_month = max(0, min(28, int(form.get("day_of_month") or 1)))
         r.due_days = max(0, int(form.get("due_days") or 14))
@@ -2698,35 +2721,60 @@ async def _recurring_save(request: Request, db: Session, r: RecurringInvoice):
         r.next_date = recurring.day_in_month(start.year, start.month, r.day_of_month)
         r.end_date = dt.date.fromisoformat(form["end_date"]) if form.get("end_date") else None
         recurring.set_items(db, r, form.getlist("item_name"), form.getlist("item_qty"), form.getlist("item_unit"),
-                            form.getlist("item_price"), form.getlist("item_rate"), form.getlist("item_product"))
+                            form.getlist("item_price"), form.getlist("item_rate"), form.getlist("item_product"),
+                            required=r.invoicing)
         recurring.validate(r)
     except ValueError as e:
         msg = str(e)
         if "isoformat" in msg or "Invalid isoformat" in msg or "invalid literal" in msg:
             msg = "Sprawdź daty i liczby."
         return _recurring_form(request, db, r, msg)
+    _recurring_mail_template(db, request, r, form)
     is_new = r.id is None
     db.add(r)
     db.flush()
-    audit(db, web_actor(request), "recurring.save", f"{'Nowa' if is_new else 'Zmieniona'} faktura cykliczna „{r.name}”",
+    audit(db, web_actor(request), "recurring.save", f"{'Nowa' if is_new else 'Zmieniona'} umowa „{r.name}”",
           company_id=r.company_id, entity="recurring", entity_id=r.id)
     db.commit()
-    flash(request, f"Zapisano. Najbliższa faktura: {r.next_date:%d.%m.%Y}.")
-    return redirect(f"/cykliczne/{r.id}")
+    flash(request, f"Zapisano umowę. Najbliższa faktura: {r.next_date:%d.%m.%Y}." if r.invoicing and r.active
+          else "Zapisano umowę.")
+    return redirect(f"/umowy/{r.id}")
 
 
-@app.post("/cykliczne/nowa")
+def _recurring_mail_template(db: Session, request: Request, r: RecurringInvoice, form) -> None:
+    """Tresc maila edytowana w umowie: zapis w wybranym szablonie albo jako nowy szablon."""
+    subject, body = (form.get("mail_subject") or "").strip(), (form.get("mail_body") or "").strip()
+    if not body:
+        return
+    tpl = db.get(EmailTemplate, r.template_id) if r.template_id else None
+    if tpl is not None and tpl.company_id != r.company_id:
+        tpl = r.template_id = None
+    if form.get("tpl_save") == "new":
+        name = (form.get("tpl_name") or "").strip()[:120] or f"Umowa {r.number or r.name}"[:120]
+        tpl = EmailTemplate(company_id=r.company_id, kind="recurring", name=name, subject=subject[:300], body=body,
+                            is_default=False)
+        db.add(tpl)
+        db.flush()
+        r.template_id = tpl.id
+        audit(db, web_actor(request), "template.save", f"Nowy szablon maila „{name}” (z umowy)", company_id=r.company_id)
+    elif tpl is not None and (tpl.subject != subject[:300] or tpl.body != body):
+        tpl.subject, tpl.body = subject[:300], body
+        audit(db, web_actor(request), "template.save", f"Zmieniony szablon maila „{tpl.name}” (z umowy)",
+              company_id=r.company_id)
+
+
+@app.post("/umowy/nowa")
 async def recurring_create(request: Request, db: Session = Depends(get_db)):
     company = current_company(request, db)
     return await _recurring_save(request, db, RecurringInvoice(company_id=company.id, last_error=""))
 
 
-@app.post("/cykliczne/{rid}")
+@app.post("/umowy/{rid}")
 async def recurring_update(rid: int, request: Request, db: Session = Depends(get_db)):
     return await _recurring_save(request, db, _get_recurring(db, request, rid))
 
 
-@app.post("/cykliczne/{rid}/teraz")
+@app.post("/umowy/{rid}/teraz")
 def recurring_now(rid: int, request: Request, db: Session = Depends(get_db)):
     r = _get_recurring(db, request, rid)
     try:
@@ -2734,12 +2782,42 @@ def recurring_now(rid: int, request: Request, db: Session = Depends(get_db)):
     except (ServiceError, ValueError) as e:
         db.rollback()
         flash(request, str(e))
-        return redirect(f"/cykliczne/{rid}")
+        return redirect(f"/umowy/{rid}")
     flash(request, f"Utworzono {inv.display_number}. Następna: {r.next_date:%d.%m.%Y}.")
     return redirect(f"/faktury/{inv.id}")
 
 
-@app.post("/cykliczne/{rid}/usun")
+@app.post("/umowy/{rid}/zakoncz")
+def recurring_end(rid: int, request: Request, db: Session = Depends(get_db)):
+    r = _get_recurring(db, request, rid)
+    recurring.end_contract(r)
+    audit(db, web_actor(request), "recurring.end", f"Zakończono umowę „{r.name}” z dniem {r.end_date:%d.%m.%Y}",
+          company_id=r.company_id, entity="recurring", entity_id=r.id)
+    db.commit()
+    flash(request, f"Umowa zakończona z dniem {r.end_date:%d.%m.%Y}. Kolejnych faktur nie będzie.")
+    return redirect(f"/umowy/{rid}")
+
+
+@app.post("/umowy/{rid}/wznow")
+def recurring_resume(rid: int, request: Request, db: Session = Depends(get_db)):
+    r = _get_recurring(db, request, rid)
+    r.active, r.end_date = True, None
+    today = dt.date.today()
+    if r.next_date < today:
+        r.next_date = recurring.first_date(today, r.day_of_month)
+    audit(db, web_actor(request), "recurring.resume", f"Wznowiono umowę „{r.name}”",
+          company_id=r.company_id, entity="recurring", entity_id=r.id)
+    db.commit()
+    flash(request, f"Umowa wznowiona, bezterminowo. Najbliższa faktura: {r.next_date:%d.%m.%Y}.")
+    return redirect(f"/umowy/{rid}")
+
+
+@app.get("/cykliczne{rest:path}")
+def recurring_old_url(rest: str):
+    return redirect("/umowy" + rest)
+
+
+@app.post("/umowy/{rid}/usun")
 def recurring_delete(rid: int, request: Request, db: Session = Depends(get_db)):
     r = _get_recurring(db, request, rid)
     db.execute(update(Invoice).where(Invoice.recurring_id == r.id).values(recurring_id=None))
@@ -2747,5 +2825,5 @@ def recurring_delete(rid: int, request: Request, db: Session = Depends(get_db)):
           company_id=r.company_id, entity="recurring")
     db.delete(r)
     db.commit()
-    flash(request, "Usunięto fakturę cykliczną. Wystawione faktury zostają.")
-    return redirect("/cykliczne")
+    flash(request, "Usunięto umowę. Wystawione faktury zostają.")
+    return redirect("/umowy")
