@@ -216,6 +216,9 @@ AGREEMENTS = [
      "annotations": "Abonament serwisowy", "copyAnnotations": True},
     {"id": 401, "number": "2024/03/002/U", "customer": {"id": 10}, "issuePeriod": "QUARTER", "issueDay": 20,
      "agreementStatus": "EXPIRED", "validFrom": "2024-03-01", "validTo": "2025-02-28", "nettoPrice": 50},
+    # status "Nowa", ale Firmao z niej fakturuje (jak AUTO-ROJAN): ma fakturowac
+    {"id": 402, "number": "2024/11/001/U", "customer": {"id": 10}, "issuePeriod": "MONTH", "issueDay": 1,
+     "agreementStatus": "NEW", "validFrom": "2024-11-01", "lastInvoiceIssueDate": "2026-11-01", "nettoPrice": 115},
 ]
 AGREEMENT_ENTRIES = [
     {"id": 1100, "agreement": {"id": 400}, "entryOrder": 1, "name": "Abonament monitoringu", "quantity": 1,
@@ -249,7 +252,7 @@ def test_agreements_equipment_tasks(client):
         s = firmao_archive.import_all(db, data, _margot(db), log=lambda *_: None,
                                       only={"umowy", "sprzet", "zadania"})
         db.commit()
-        assert s["umowy"]["added"] == 2 and s["umowy"]["linked_invoices"] == 1 and s["umowy"]["ksef_auto"] == 1
+        assert s["umowy"]["added"] == 3 and s["umowy"]["linked_invoices"] == 1 and s["umowy"]["ksef_auto"] == 1
         r = db.query(RecurringInvoice).filter_by(source_ref="firmao:400").one()
         assert r.number == "2025/01/001/U" and r.name == "Umowa 2025/01/001/U" and r.mode == "draft"
         assert r.active and r.invoicing and r.end_date is None and r.email_to == "biuro@klient.pl"
@@ -260,6 +263,8 @@ def test_agreements_equipment_tasks(client):
         assert db.query(Invoice).filter_by(source_ref="firmao:1").one().recurring_id == r.id
         old = db.query(RecurringInvoice).filter_by(source_ref="firmao:401").one()
         assert not old.active and not old.invoicing and old.interval_months == 3 and '"unit_price": "50.00"' in old.items_json
+        new = db.query(RecurringInvoice).filter_by(source_ref="firmao:402").one()
+        assert new.active and new.invoicing and new.mode == "draft" and new.status_label == "aktywna"
         e = db.query(Equipment).one()
         assert e.category == "Narzędzia" and e.location == "AUTO Citroen Jumper" and e.serial_no == "H-77"
         assert str(e.price) == "1299.99" and "akumulatorowa" in e.notes and e.contractor_id is None

@@ -645,7 +645,8 @@ def import_agreements(db: Session, company: Company, agreements: list[dict], ent
         status = str(a.get("agreementStatus") or "").upper()
         ended = status == "EXPIRED" or (r.end_date is not None and r.end_date < today)
         r.active = not ended
-        r.invoicing = status == "ACTIVE" and not ended and bool(rows)
+        # Firmao fakturuje takze umowy o statusie "Nowa" (np. AUTO-ROJAN), wiec liczy sie tylko koniec i pozycje.
+        r.invoicing = not ended and bool(rows)
         last = _date(a.get("lastInvoiceIssueDate"))
         upcoming = recurring.first_date(max(today + dt.timedelta(days=1), r.start_date or today), r.day_of_month)
         nxt = recurring.add_months(last, r.interval_months, r.day_of_month) if last else upcoming
