@@ -23,11 +23,12 @@ WIDGETS: dict[str, tuple[str, int, int]] = {
     "wz": ("Ostatnie WZ", 2, 3),
     "overdue": ("Po terminie (lista)", 2, 3),
     "offers": ("Oferty do przypomnienia", 2, 3),
+    "orders": ("Zamówienia z terminem", 2, 3),
     "equipment": ("Przeglądy i gwarancje", 2, 3),
     "cars": ("Auta na placu", 2, 3),
 }
 DEFAULT_ORDER = ["stat_month", "stat_unpaid", "stat_overdue", "stat_ksef", "tasks", "invoices", "mails", "wz",
-                 "overdue", "offers", "equipment"]
+                 "overdue", "offers", "orders", "equipment"]
 
 
 def _key(company_id: int, user: str) -> str:

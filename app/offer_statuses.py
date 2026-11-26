@@ -9,18 +9,32 @@ import json
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from .models import OFFER_LEGACY, OFFER_OPEN, OFFER_STATUSES, OFFER_WON, AppSetting, Offer, RecurringInvoice
+from .models import (
+    OFFER_LEGACY,
+    OFFER_OPEN,
+    OFFER_STATUSES,
+    OFFER_WON,
+    ORDER_STATUSES,
+    AppSetting,
+    Offer,
+    Order,
+    RecurringInvoice,
+)
 
 GROUPS = {"open": "otwarta", "won": "wygrana", "lost": "przegrana"}
 # Umowy: status jest informacja dla zespolu; fakturowanie wlacza sie osobno w umowie.
 CONTRACT_STATUSES = {"new": "nowa", "sent": "wysłana", "accepted": "zaakceptowana", "active": "aktywna",
                      "expired": "wygasła"}  # klucze 1:1 z Firmao (NEW, SENT, ACCEPTED, ACTIVE, EXPIRED)
 CONTRACT_GROUPS = {"run": "trwa", "end": "zakończona"}
-KINDS = {"offer": {"title": "Statusy ofert", "groups": GROUPS, "back": "/oferty", "what": "ofert"},
+ORDER_GROUPS = {"open": "w toku", "done": "zrealizowane", "lost": "anulowane"}
+KINDS = {"order": {"title": "Statusy zamówień", "groups": ORDER_GROUPS, "back": "/zamowienia", "what": "zamówień"},
+         "offer": {"title": "Statusy ofert", "groups": GROUPS, "back": "/oferty", "what": "ofert"},
          "contract": {"title": "Statusy umów", "groups": CONTRACT_GROUPS, "back": "/umowy", "what": "umów"}}
 
 
 def _col(kind: str):
+    if kind == "order":
+        return Order.status, Order.company_id
     return (RecurringInvoice.contract_status, RecurringInvoice.company_id) if kind == "contract" \
         else (Offer.status, Offer.company_id)
 COLORS = {"": "szary", "m": "niebieski", "ok": "zielony", "warn": "żółty", "due": "czerwony"}
@@ -33,6 +47,14 @@ def _key(company_id: int, kind: str = "offer") -> str:
 
 def defaults(kind: str = "offer") -> list[dict]:
     out = []
+    if kind == "order":
+        colors = {"new": "m", "sent": "m", "confirmed": "warn", "in_progress": "warn", "waiting": "due", "ready": "ok",
+                  "done": "ok", "cancelled": ""}
+        for k, label in ORDER_STATUSES.items():
+            group = "done" if k == "done" else ("lost" if k == "cancelled" else "open")
+            out.append({"k": k, "label": label, "group": group, "color": colors.get(k, ""), "hidden": False,
+                        "builtin": True})
+        return out
     if kind == "contract":
         for k, label in CONTRACT_STATUSES.items():
             group = "end" if k == "expired" else "run"

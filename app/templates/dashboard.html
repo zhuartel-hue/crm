@@ -29,6 +29,9 @@
 {% elif k == 'offers' %}<div class="card tile"><div class="tile-h"><h2>Oferty do przypomnienia</h2><a href="/oferty?status=otwarte">oferty</a></div>
     {% for o in offers_expiring %}<a class="tile-row" href="/oferty/{{ o.id }}"><span><b>{{ o.display_number }}</b> · {{ o.recipient_name }}</span>
       <span class="n {{ 'muted' if not o.expired }}" {% if o.expired %}style="color:var(--danger)"{% endif %}>{{ 'minęła ' if o.expired else 'do ' }}{{ o.valid_until|date }}</span></a>{% else %}<p class="muted">Brak ofert do przypomnienia.</p>{% endfor %}</div>
+{% elif k == 'orders' %}<div class="card tile"><div class="tile-h"><h2>Zamówienia z terminem</h2><a href="/zamowienia?status=otwarte">zamówienia</a></div>
+    {% for z in orders_due %}<a class="tile-row" href="/zamowienia/{{ z.id }}"><span><b>{{ z.display_number }}</b> · {{ z.title or z.recipient_name }}</span>
+      <span class="n {{ 'muted' if not z.overdue }}" {% if z.overdue %}style="color:var(--danger)"{% endif %}>{{ 'po terminie ' if z.overdue else 'do ' }}{{ z.due_date|date }}</span></a>{% else %}<p class="muted">Brak zamówień na najbliższe dni.</p>{% endfor %}</div>
 {% elif k == 'equipment' %}<div class="card tile"><div class="tile-h"><h2>Przeglądy i gwarancje</h2><a href="/sprzet?widok=przeglady">sprzęt</a></div>
     {% for e in equipment_due %}<a class="tile-row" href="/sprzet/{{ e.id }}"><span><b>{{ e.name }}</b>{% if e.contractor %} · {{ e.contractor.name }}{% endif %}</span>
       <span class="n">{% if e.service_state(today) in ('over', 'soon') %}<span {% if e.service_state(today) == 'over' %}style="color:var(--danger)"{% endif %}>przegląd {{ e.next_service|date }}</span>{% else %}gwarancja do {{ e.warranty_until|date }}{% endif %}</span></a>{% else %}<p class="muted">Brak zbliżających się przeglądów i gwarancji.</p>{% endfor %}</div>

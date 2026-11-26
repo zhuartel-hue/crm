@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edycja ' ~ z.display_number if z.id else 'Nowe zamówienie' }}{% endblock %}
+{% block content %}
+<h1>{{ 'Edycja zamówienia ' ~ z.display_number if z.id else 'Nowe zamówienie' }}</h1>
+<form method="post" class="card" action="{{ '/zamowienia/%d/edytuj' % z.id if z.id else '/zamowienia/nowe' }}">
+{% if z.offer_id and not z.id %}<input type="hidden" name="offer_id" value="{{ z.offer_id }}"><p class="muted">Z oferty {{ z.offer.display_number if z.offer else '' }}.</p>{% endif %}
+<div class="grid">
+  <div style="grid-column:1/-1"><label>Tytuł (dla nas)</label><input name="title" value="{{ z.title }}" placeholder="np. Montaż kamer, Kowalski"></div>
+  <div><label>Rodzaj</label><select name="direction">{% for k, v in DIRECTIONS.items() %}<option value="{{ k }}" {{ 'selected' if z.direction == k }}>Zamówienie {{ v }}</option>{% endfor %}</select></div>
+  <div><label>Status</label><select name="status" class="searchable" data-placeholder="szukaj statusu">{% for k, v in STATUSES.items() %}<option value="{{ k }}" {{ 'selected' if z.status == k }}>{{ v }}</option>{% endfor %}</select></div>
+  <div><label>Data zamówienia</label><input type="date" name="issue_date" value="{{ z.issue_date.isoformat() if z.issue_date }}"></div>
+  <div><label>Termin realizacji</label><input type="date" name="due_date" value="{{ z.due_date.isoformat() if z.due_date }}"></div>
+  <div><label>Nr zamówienia klienta (opcjonalnie)</label><input name="customer_ref" value="{{ z.customer_ref }}" placeholder="np. PO/123/2026"></div>
+  <div style="grid-column:1/-1"><label>Kontrahent z bazy</label><select name="contractor_id" id="contractor">
+    <option value="">—</option>
+    {% for c in contractors %}<option value="{{ c.id }}" data-search="{{ c.nip }} {{ c.city }}" data-name="{{ c.name }}" data-address="{{ c.address_lines|join('\n') }}" data-email="{{ (c.email or '').split(',')[0]|trim }}" data-phone="{{ c.phone }}" {{ 'selected' if c.id == z.contractor_id }}>{{ c.name }}</option>{% endfor %}
+  </select></div>
+  <div style="grid-column:1/-1"><label>Klient / dostawca</label><input name="recipient_name" id="recipient_name" value="{{ z.recipient_name }}" required></div>
+  <div style="grid-column:1/-1"><label>Adres (dostawy)</label><textarea name="recipient_address" id="recipient_address" rows="2">{{ z.recipient_address }}</textarea></div>
+  <div><label>Osoba kontaktowa</label><input name="contact_person" value="{{ z.contact_person }}"></div>
+  <div><label>Telefon</label><input name="phone" id="order_phone" value="{{ z.phone }}" inputmode="tel"></div>
+  <div><label>E-mail</label><input name="email" id="order_email" value="{{ z.email }}" inputmode="email"></div>
+</div>
+<h2>Pozycje</h2>
+<p><label><input type="checkbox" name="prices_gross" value="1" id="prices_gross" {{ 'checked' if z.prices_gross }}> Ceny brutto</label> <span class="muted" style="font-size:13px">Cena może zostać pusta (np. przy zamówieniu do dostawcy).</span></p>
+<div id="items">
+{% for it in (z.items or [none]) %}
+  <div class="item grid">
+    <div class="name" style="grid-column:1/-1"><label>Nazwa{% if products %} (wpisz kod lub nazwę produktu){% endif %}</label>
+      <input name="item_name" list="product-list" autocomplete="off" value="{{ it.name if it else '' }}">
+      <input type="hidden" name="item_product" value="{{ (it.product_id or '') if it else '' }}"></div>
+    <div><label>Ilość</label><input name="item_qty" inputmode="decimal" value="{{ it.quantity|qty if it else '1' }}"></div>
+    <div><label>Jedn.</label><input name="item_unit" value="{{ it.unit if it else 'szt.' }}"></div>
+    <div><label>Cena</label><input name="item_price" inputmode="decimal" value="{{ it.unit_price|money if it and it.unit_price is not none else '' }}"></div>
+    <div><label>VAT</label><select name="item_rate">{% for r in VAT_RATES %}<option value="{{ r }}" {{ 'selected' if (it.vat_rate if it else '23') == r }}>{{ r }}{{ '%' if r.isdigit() }}</option>{% endfor %}</select></div>
+    <div><label>&nbsp;</label><button type="button" class="btn small remove">Usuń pozycję</button></div>
+  </div>
+{% endfor %}
+</div>
+<datalist id="product-list">{% for pr in products %}<option value="{{ pr.label }}"></option>{% endfor %}</datalist>
+<p class="row"><button type="button" class="btn" id="add">+ Pozycja</button>
+<button type="button" class="btn" data-quick="Dojazd" data-unit="km">+ Dojazd (km)</button>
+<button type="button" class="btn" data-quick="Roboczogodziny" data-unit="rbh">+ Roboczogodziny</button>
+<span class="spacer"></span><b id="total"></b></p>
+<div class="grid">
+  <div style="grid-column:1/-1"><label>Uwagi (dla klienta, na fakturę/WZ przepisujesz sam)</label><textarea name="notes" rows="2">{{ z.notes }}</textarea></div>
+  <div style="grid-column:1/-1"><label>Notatka wewnętrzna</label><textarea name="internal_notes" rows="2">{{ z.internal_notes }}</textarea></div>
+</div>
+<p class="row"><button class="btn primary">Zapisz zamówienie</button>{% if z.id %}<a class="btn" href="/zamowienia/{{ z.id }}">Anuluj</a>{% endif %}</p>
+</form>
+{% endblock %}
+{% block scripts %}
+<script>const PRODUCTS = {{ products_json|safe }};</script>
+<script src="/static/wz.js"></script>
+<script>
+document.getElementById('contractor').addEventListener('change', function () {
+  var o = this.selectedOptions[0], e = document.getElementById('order_email'), ph = document.getElementById('order_phone');
+  if (o && o.value && o.dataset.email && !e.value) e.value = o.dataset.email;
+  if (o && o.value && o.dataset.phone && !ph.value) ph.value = o.dataset.phone;
+});
+</script>
+{% endblock %}

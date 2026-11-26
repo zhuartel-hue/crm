@@ -44,8 +44,16 @@ def main(argv=None) -> int:
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--tylko", default="", help="wybrane czesci, np. notatki albo klienci,osoby "
                                                  f"({', '.join(firmao_archive.SECTIONS)})")
+    ap.add_argument("--dodaj", action="append", default=[], metavar="KLUCZ=PLIK",
+                    help="dodatkowy plik z eksportu, np. phonecalls=/root/firmao-eksport/phonecalls.json")
     a = ap.parse_args(argv)
     data = read_bundle(a.plik)
+    for extra in a.dodaj:
+        key, _, path = extra.partition("=")
+        if not key or not path:
+            print(f"--dodaj: podaj KLUCZ=PLIK, a jest „{extra}”", file=sys.stderr)
+            return 2
+        data[key.strip()] = read_bundle(path.strip())
     nip = re.sub(r"\D", "", a.firma)
     with SessionLocal() as db:
         company = db.scalar(select(Company).where(Company.nip == nip))

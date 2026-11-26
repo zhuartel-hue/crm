@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Zamówienia{% endblock %}
+{% block content %}
+<div class="row"><h1>Zamówienia</h1><span class="spacer"></span>
+<a class="btn" href="/ustawienia/statusy-zamowien">Statusy</a>
+<a class="btn" href="/zamowienia/nowe?kierunek=purchase">+ Do dostawcy</a>
+<a class="btn primary" href="/zamowienia/nowe">+ Zamówienie</a></div>
+<div class="grid stats">
+  <div class="card stat"><div class="l">W toku</div><div class="v"><a href="/zamowienia?status=otwarte">{{ stats.open_count }}</a></div></div>
+  <div class="card stat"><div class="l">Wartość w toku (brutto)</div><div class="v">{{ stats.open_gross|money }} zł</div></div>
+  <div class="card stat"><div class="l">Po terminie</div><div class="v">{% if stats.overdue %}<span style="color:var(--due,#c0262d)">{{ stats.overdue }}</span>{% else %}0{% endif %}</div></div>
+</div>
+<form class="row" style="margin-bottom:12px" method="get">
+  <select name="status" style="max-width:190px" onchange="this.form.submit()"><option value="">wszystkie</option>
+    <option value="otwarte" {{ 'selected' if status == 'otwarte' }}>w toku</option>
+    {% for k, v in ALL_STATUSES.items() %}<option value="{{ k }}" {{ 'selected' if status == k }}>{{ v }}</option>{% endfor %}</select>
+  <select name="kierunek" style="max-width:160px" onchange="this.form.submit()"><option value="">od klientów i do dostawców</option>
+    {% for k, v in DIRECTIONS.items() %}<option value="{{ k }}" {{ 'selected' if kierunek == k }}>{{ v }}</option>{% endfor %}</select>
+  <input name="q" value="{{ q }}" placeholder="Numer, klient, tytuł albo nr klienta" style="max-width:320px"><button class="btn">Szukaj</button>
+</form>
+<div class="card tbl"><table>
+<tr><th>Numer</th><th>Tytuł</th><th>Data</th><th>Klient</th><th>Termin</th><th class="n">Netto</th><th class="n">VAT</th><th class="n">Brutto</th><th>Status</th></tr>
+{% for z in rows %}
+<tr><td style="white-space:nowrap"><a href="/zamowienia/{{ z.id }}">{{ z.display_number }}</a>{% if z.direction != 'sale' %}<br><span class="badge">do dostawcy</span>{% endif %}</td>
+<td style="min-width:160px"><form method="post" action="/zamowienia/{{ z.id }}/tytul" style="margin:0"><input type="hidden" name="back" value="{{ request.url.path }}{{ '?' ~ request.url.query if request.url.query }}"><input name="title" value="{{ z.title }}" maxlength="300" placeholder="dodaj tytuł…" aria-label="Tytuł zamówienia {{ z.display_number }}" onchange="this.form.submit()" style="padding:5px 8px;font-size:14px"></form></td>
+<td>{{ z.issue_date|date }}</td><td>{{ z.recipient_name }}</td>
+<td>{{ z.due_date|date if z.due_date else '—' }}{% if z.overdue %} <span class="badge due">po terminie</span>{% endif %}</td>
+<td class="n">{{ z.total_net|money }}</td><td class="n">{{ z.total_vat|money }}</td><td class="n">{{ z.total_gross|money }}</td>
+<td><form method="post" action="/zamowienia/{{ z.id }}/status" style="margin:0"><input type="hidden" name="back" value="{{ request.url.path }}{{ '?' ~ request.url.query if request.url.query }}"><select name="status" class="searchable status-pick {{ z.status_class }}" data-placeholder="szukaj statusu" aria-label="Status zamówienia {{ z.display_number }}" onchange="this.form.submit()">
+{% for k, v in STATUSES.items() %}<option value="{{ k }}" {{ 'selected' if z.status == k }}>{{ v }}</option>{% endfor %}{% if z.status not in STATUSES %}<option value="{{ z.status }}" selected>{{ z.status_label }}</option>{% endif %}</select></form></td></tr>
+{% else %}<tr><td colspan="9" class="muted">Brak zamówień. <a href="/zamowienia/nowe">Dodaj pierwsze</a> albo utwórz je z oferty przyciskiem „Zamówienie z oferty”.</td></tr>{% endfor %}
+</table></div>
+{% endblock %}
