@@ -205,3 +205,73 @@ def test_bundle_tool(tmp_path):
                    capture_output=True)
     data = json.loads(gzip.decompress(dst.read_bytes()))
     assert data["transactions"] == [{"id": 1, "z": 5}] and data["offers"] == []
+
+
+AGREEMENTS = [
+    {"id": 400, "number": "2025/01/001/U", "name": "", "customer": {"id": 10, "emails": ["biuro@klient.pl"]},
+     "customerName": "Klient Sp. z o.o.", "nipNumber": "8672239415", "issuePeriod": "MONTH", "issueDay": 1,
+     "issueType": "AUTO_ISSUE_AND_SEND", "lastInvoiceIssueDate": "2026-11-01", "alwaysSendToKsef": True,
+     "agreementStatus": "ACTIVE", "validFrom": "2025-01-01", "agreementDate": "2024-12-20", "daysToDueDate": 7,
+     "paymentType": "TRANSFER", "mailTemplate": {"id": 4, "name": "Faktura automatyczna"}, "nettoPrice": 100,
+     "annotations": "Abonament serwisowy", "copyAnnotations": True},
+    {"id": 401, "number": "2024/03/002/U", "customer": {"id": 10}, "issuePeriod": "QUARTER", "issueDay": 20,
+     "agreementStatus": "EXPIRED", "validFrom": "2024-03-01", "validTo": "2025-02-28", "nettoPrice": 50},
+]
+AGREEMENT_ENTRIES = [
+    {"id": 1100, "agreement": {"id": 400}, "entryOrder": 1, "name": "Abonament monitoringu", "quantity": 1,
+     "unit": "usługa", "unitNettoPrice": 100, "vatPercent": 23, "nettoPrice": 100, "vatPrice": 23, "bruttoPrice": 123},
+]
+RESOURCES = [
+    {"id": 500, "name": "Wiertarka Hilti", "resourceClass": {"id": 1, "name": "Narzędzia"}, "serialNumber": "H-77",
+     "localization": {"id": 1, "name": "AUTO Citroen Jumper"}, "supplier": {"id": 9, "label": "Hurtownia"},
+     "acquisitionDate": "2023-05-10", "purchasePrice": 1299.99, "tags": [{"id": 1, "label": "akumulatorowa"}]},
+]
+TASKS = [
+    {"id": 600, "name": "Przegląd kamer", "status": {"key": "OPEN", "group": "OPEN"}, "priority": 300,
+     "customer": {"id": 10}, "address": "Długa 1, Chojnice", "plannedStartDate": "2026-12-03",
+     "responsibleUsers": [{"id": 1, "label": "Arek"}], "category": {"key": "5", "label": "Serwis"}},
+    {"id": 601, "name": "Montaż alarmu", "status": {"key": "CLOSED", "group": "CLOSED"}, "priority": 100,
+     "actualEndDate": "2025-04-02T13:00:00Z", "actualWorkHours": 2.5, "description": "<p>Gotowe</p>"},
+]
+
+
+def test_agreements_equipment_tasks(client):
+    import datetime as dt
+    from app import firmao_archive
+    from app.db import SessionLocal
+    from app.models import Contractor, Equipment, Invoice, RecurringInvoice, Task
+    data = dict(bundle(), agreements=AGREEMENTS, resources=RESOURCES, tasks=TASKS,
+                transactionentries=ENTRIES + AGREEMENT_ENTRIES)
+    data["transactions"] = [dict(TRANSACTIONS[0], agreements=[{"id": 400, "number": "2025/01/001/U"}]), *TRANSACTIONS[1:]]
+    with SessionLocal() as db:
+        firmao_archive.import_all(db, dict(data, agreements=[], resources=[], tasks=[]), _margot(db), log=lambda *_: None)
+        db.commit()
+        s = firmao_archive.import_all(db, data, _margot(db), log=lambda *_: None,
+                                      only={"umowy", "sprzet", "zadania"})
+        db.commit()
+        assert s["umowy"]["added"] == 2 and s["umowy"]["linked_invoices"] == 1 and s["umowy"]["ksef_auto"] == 1
+        r = db.query(RecurringInvoice).filter_by(source_ref="firmao:400").one()
+        assert r.number == "2025/01/001/U" and r.name == "Umowa 2025/01/001/U" and r.mode == "draft"
+        assert r.active and r.invoicing and r.end_date is None and r.email_to == "biuro@klient.pl"
+        assert r.next_date == max(dt.date(2026, 12, 1), r.next_date) and r.next_date.day == 1
+        assert r.notes == "Abonament serwisowy" and "wyślij automatycznie" in r.contract_notes
+        assert '"Abonament monitoringu"' in r.items_json and r.signed_date == dt.date(2024, 12, 20)
+        assert db.query(Contractor).filter_by(source_ref="firmao:10").one().ksef_auto
+        assert db.query(Invoice).filter_by(source_ref="firmao:1").one().recurring_id == r.id
+        old = db.query(RecurringInvoice).filter_by(source_ref="firmao:401").one()
+        assert not old.active and not old.invoicing and old.interval_months == 3 and '"unit_price": "50.00"' in old.items_json
+        e = db.query(Equipment).one()
+        assert e.category == "Narzędzia" and e.location == "AUTO Citroen Jumper" and e.serial_no == "H-77"
+        assert str(e.price) == "1299.99" and "akumulatorowa" in e.notes and e.contractor_id is None
+        open_t = db.query(Task).filter_by(source_ref="firmao:600").one()
+        assert open_t.status == "todo" and open_t.priority == "urgent" and open_t.contractor_id and open_t.all_day
+        assert open_t.start_at == dt.datetime(2026, 12, 3) and open_t.assignee == "Arek" and open_t.category == "Serwis"
+        done = db.query(Task).filter_by(source_ref="firmao:601").one()
+        assert done.status == "done" and done.minutes_spent == 150 and done.description == "Gotowe" and done.done_at
+        # powtorka bez dubli
+        s = firmao_archive.import_all(db, data, _margot(db), log=lambda *_: None, only={"umowy", "sprzet", "zadania"})
+        assert s["umowy"]["added"] == 0 and s["sprzet"]["added"] == 0 and s["zadania"]["added"] == 0
+        db.commit()
+    assert "2025/01/001/U" in client.get("/umowy").text
+    assert "Wiertarka Hilti" in client.get("/sprzet").text
+    assert "Przegląd kamer" in client.get("/zadania?widok=otwarte").text

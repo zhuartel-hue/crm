@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import datetime as dt
 import html
+import json
 import re
 from zoneinfo import ZoneInfo
 from collections import defaultdict
@@ -19,8 +20,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from . import firmao_import, numbering
-from .models import (VAT_RATES, Company, Contact, Contractor, ContractorNote, Delivery, DeliveryItem, Invoice, InvoiceItem, NumberSequence,
-                     Offer, OfferItem, Product, PurchaseInvoice)
+from .models import (VAT_RATES, Company, Contact, Contractor, ContractorNote, Delivery, DeliveryItem, Equipment, Invoice,
+                     InvoiceItem, NumberSequence, Offer, OfferItem, Product, PurchaseInvoice, RecurringInvoice, Task)
 
 INVOICE_TYPES = {"INVOICE": "vat", "VAT": "vat", "VAT_INVOICE": "vat", "CORRECTION": "correction",
                  "PROFORMA": "proforma", "PRO_FORMA": "proforma", "ADVANCE": "advance", "ADVANCE_INVOICE": "advance",
@@ -569,7 +570,223 @@ def sync_sequences(db: Session, company: Company) -> dict:
     return out
 
 
-SECTIONS = ("klienci", "osoby", "produkty", "faktury", "zakupy", "wz", "oferty", "notatki")
+PERIODS = {"MONTH": 1, "MONTHLY": 1, "TWO_MONTHS": 2, "QUARTER": 3, "QUARTERLY": 3, "HALF_YEAR": 6, "SIX_MONTHS": 6,
+           "YEAR": 12, "YEARLY": 12, "ANNUAL": 12}
+
+
+def import_agreements(db: Session, company: Company, agreements: list[dict], entries: dict,
+                      transactions: list[dict], today: dt.date | None = None) -> dict:
+    """Umowy (faktury cykliczne) z Firmao. W okresie przejsciowym tylko szkice (mode="draft"), zeby nie dublowac
+    faktur wystawianych jeszcze w Firmao. Nastepny termin liczony od ostatniej faktury z Firmao, nigdy wstecz.
+    alwaysSendToKsef zaznacza u kontrahenta automatyczna wysylke do KSeF."""
+    from . import recurring
+
+    today = today or dt.date.today()
+    firms = {c.source_ref: c for c in db.scalars(select(Contractor).where(Contractor.source_ref != ""))}
+    products = {p.source_ref: p.id for p in db.scalars(select(Product).where(Product.source_ref != ""))}
+    have = _existing(db, RecurringInvoice, company.id)
+    out = {"added": 0, "updated": 0, "skipped": 0, "invoicing": 0, "ended": 0, "ksef_auto": 0, "no_items": 0,
+           "linked_invoices": 0}
+    by_firmao: dict[int, RecurringInvoice] = {}
+    for a in agreements:
+        if a.get("deleted"):
+            out["skipped"] += 1
+            continue
+        ref = f"firmao:{a['id']}"
+        r = have.get(ref)
+        if r is None:
+            r = RecurringInvoice(company_id=company.id, source_ref=ref, last_error="")
+            db.add(r)
+            out["added"] += 1
+        else:
+            out["updated"] += 1
+        c = firms.get(f"firmao:{_id(a.get('customer'))}") if _id(a.get("customer")) else None
+        r.number = str(a.get("number") or a.get("documentNumber") or "")[:60]
+        r.contractor_id = c.id if c else None
+        r.buyer_name = str(a.get("customerName") or (a.get("customer") or {}).get("label") or (c.name if c else ""))[:300]
+        r.buyer_nip = str(a.get("nipNumber") or (c.nip if c else "") or "").replace("-", "").replace(" ", "")[:20]
+        r.buyer_address = _addr(a.get("customerAddress")) or ("\n".join(c.address_lines) if c else "")
+        r.name = (str(a.get("name") or "").strip() or f"Umowa {r.number or a['id']}")[:200]
+        r.prices_gross = bool(a.get("calculateFromGross"))
+        r.payment_method = PAYMENT_TYPES.get(str(a.get("paymentType") or "").upper(), "transfer")
+        r.due_days = int(a.get("daysToDueDate") or 7)
+        r.interval_months = PERIODS.get(str(a.get("issuePeriod") or "MONTH").upper(), 1)
+        day = int(a.get("issueDay") or 1)
+        r.day_of_month = day if 1 <= day <= 28 else 0
+        r.signed_date = _date(a.get("agreementDate")) or _date(a.get("documentDate"))
+        r.start_date = _date(a.get("validFrom"))
+        r.end_date = _date(a.get("validTo"))
+        emails = [a.get(k) for k in ("email", "email2", "email3") if a.get(k)] + list(a.get("emails") or []) \
+            + list((a.get("customer") or {}).get("emails") or [])
+        r.email_to = str(emails[0] if emails else (c.email.split(",")[0].strip() if c and c.email else ""))[:300]
+        r.mode = "draft"  # okres przejsciowy: faktury wystawia jeszcze Firmao
+        r.notes = str(a.get("annotations") or "") if a.get("copyAnnotations") else ""
+        auto = str(a.get("issueType") or "")
+        r.contract_notes = "\n".join(x for x in (
+            str(a.get("description") or "").strip(),
+            "W Firmao: wystaw i wyślij automatycznie." if auto == "AUTO_ISSUE_AND_SEND" else "",
+            f"W Firmao szablon maila: {(a.get('mailTemplate') or {}).get('name')}" if (a.get("mailTemplate") or {}).get("name") else "",
+        ) if x)
+        rows = []
+        for e in entries.get(("agreement", int(a["id"])), []):
+            price = e.get("unitBruttoPrice") if r.prices_gross else e.get("unitNettoPrice")
+            pid = products.get(f"firmao:{_id(e.get('product'))}") if _id(e.get("product")) else None
+            rows.append(dict(name=(e.get("name") or "Pozycja")[:500], quantity=str(_q(e.get("quantity"))),
+                             unit=_unit(e.get("unit")), unit_price=str(_d(price)), vat_rate=_vat(e.get("vatPercent")),
+                             product_id=pid))
+        if not rows:
+            out["no_items"] += 1
+            net = _d(a.get("nettoPrice"))
+            if net:
+                rows.append(dict(name=r.name[:500], quantity="1", unit="usł.", unit_price=str(net), vat_rate="23",
+                                 product_id=None))
+        r.items_json = json.dumps(rows, ensure_ascii=False)
+        status = str(a.get("agreementStatus") or "").upper()
+        ended = status == "EXPIRED" or (r.end_date is not None and r.end_date < today)
+        r.active = not ended
+        r.invoicing = status == "ACTIVE" and not ended and bool(rows)
+        last = _date(a.get("lastInvoiceIssueDate"))
+        upcoming = recurring.first_date(max(today + dt.timedelta(days=1), r.start_date or today), r.day_of_month)
+        nxt = recurring.add_months(last, r.interval_months, r.day_of_month) if last else upcoming
+        r.next_date = max(nxt, upcoming)
+        out["ended"] += ended
+        out["invoicing"] += r.invoicing
+        if a.get("alwaysSendToKsef") and c is not None and r.active:
+            if not c.ksef_auto:
+                c.ksef_auto = True
+                out["ksef_auto"] += 1
+        by_firmao[int(a["id"])] = r
+    db.flush()
+    refs = {f"firmao:{t['id']}": t for t in transactions if t.get("agreements")}
+    if refs:
+        for inv in db.scalars(select(Invoice).where(Invoice.company_id == company.id,
+                                                    Invoice.source_ref.in_(list(refs)))):
+            for ag in refs[inv.source_ref].get("agreements") or []:
+                r = by_firmao.get(int(_id(ag) or 0))
+                if r is not None and not ag.get("deleted"):
+                    inv.recurring_id = r.id
+                    out["linked_invoices"] += 1
+                    break
+    db.flush()
+    return out
+
+
+def import_resources(db: Session, company: Company, resources: list[dict]) -> dict:
+    """Sprzet z Firmao (resources): numery, klient, gwarancja, lokalizacja. Zezlomowany = wycofany."""
+    firms = {c.source_ref: c.id for c in db.scalars(select(Contractor).where(Contractor.source_ref != ""))}
+    people = {c.source_ref: c for c in db.scalars(select(Contact).where(Contact.source_ref != ""))}
+    products = {p.source_ref: p.id for p in db.scalars(select(Product).where(Product.source_ref != ""))}
+    have = _existing(db, Equipment, company.id)
+    out = {"added": 0, "updated": 0, "skipped": 0, "with_client": 0, "retired": 0}
+    for r in resources:
+        if r.get("deleted"):
+            out["skipped"] += 1
+            continue
+        ref = f"firmao:{r['id']}"
+        e = have.get(ref)
+        if e is None:
+            e = Equipment(company_id=company.id, source_ref=ref, warranty_remind_days=30, service_interval_months=0)
+            db.add(e)
+            out["added"] += 1
+        else:
+            out["updated"] += 1
+        e.name = str(r.get("name") or (r.get("product") or {}).get("label") or f"Sprzęt {r['id']}")[:300]
+        e.category = str((r.get("resourceClass") or {}).get("name") or "")[:100]
+        e.inventory_no = str(r.get("inventoryNumber") or "")[:100]
+        e.serial_no = str(r.get("serialNumber") or "")[:150]
+        e.barcode = str(r.get("manufacturerBarCode") or "")[:100]
+        e.product_id = products.get(f"firmao:{_id(r.get('product'))}") if _id(r.get("product")) else None
+        e.contractor_id = firms.get(f"firmao:{_id(r.get('customer'))}") if _id(r.get("customer")) else None
+        p = people.get(f"firmao:{_id(r.get('contact'))}") if _id(r.get("contact")) else None
+        e.contact_id = p.id if p else None
+        if e.contractor_id is None and p is not None:
+            e.contractor_id = p.contractor_id
+        e.supplier = str((r.get("supplier") or {}).get("label") or "")[:300]
+        e.location = str((r.get("localization") or {}).get("name") or "")[:300]
+        e.purchase_date = _date(r.get("acquisitionDate"))
+        e.price = _d(r.get("purchasePrice"), None) if r.get("purchasePrice") not in (None, "") else None
+        e.warranty_until = _date(r.get("warrantyExpirationDate"))
+        adv = r.get("reminderAdvance")
+        if isinstance(adv, (int, float)) and 0 < adv <= 365:
+            e.warranty_remind_days = int(adv)
+        tags = ", ".join(str(t.get("label")) for t in (r.get("tags") or []) if isinstance(t, dict) and t.get("label"))
+        who = (r.get("responsibleUser") or {}).get("label") if isinstance(r.get("responsibleUser"), dict) else ""
+        e.notes = "\n".join(x for x in (_plain(str(r.get("description") or "")), f"Etykiety: {tags}" if tags else "",
+                                        f"Odpowiada: {who}" if who else "") if x)
+        e.active = not r.get("disposalDate")
+        out["with_client"] += e.contractor_id is not None
+        out["retired"] += not e.active
+    db.flush()
+    return out
+
+
+def _task_dt(v) -> dt.datetime | None:
+    """Data z Firmao: sam dzien (polnoc) albo data z godzina (UTC -> Warszawa)."""
+    if not v:
+        return None
+    if len(str(v)) <= 10:
+        d = _date(v)
+        return dt.datetime.combine(d, dt.time(0, 0)) if d else None
+    return _dt(v)
+
+
+def _priority(v) -> str:
+    try:
+        n = int(v)
+    except (TypeError, ValueError):
+        return "normal"
+    return "low" if n < 100 else "normal" if n < 200 else "high" if n < 300 else "urgent"
+
+
+def import_tasks(db: Session, company: Company, tasks: list[dict]) -> dict:
+    """Zadania z Firmao: OPEN -> do zrobienia, CLOSED -> zrobione; terminy, klient, adres, czas pracy."""
+    firms = {c.source_ref: c.id for c in db.scalars(select(Contractor).where(Contractor.source_ref != ""))}
+    people = {c.source_ref: c.id for c in db.scalars(select(Contact).where(Contact.source_ref != ""))}
+    have = _existing(db, Task, company.id)
+    out = {"added": 0, "updated": 0, "skipped": 0, "open": 0, "with_client": 0}
+    for r in tasks:
+        if r.get("deleted"):
+            out["skipped"] += 1
+            continue
+        ref = f"firmao:{r['id']}"
+        t = have.get(ref)
+        if t is None:
+            t = Task(company_id=company.id, source_ref=ref)
+            db.add(t)
+            out["added"] += 1
+        else:
+            out["updated"] += 1
+        st = r.get("status") or {}
+        key = str((st.get("group") or st.get("key")) if isinstance(st, dict) else st or "").upper()
+        t.status = "todo" if key == "OPEN" else "done"
+        t.title = str(r.get("name") or "Zadanie")[:300]
+        t.description = _plain(str(r.get("description") or ""))
+        t.address = str(r.get("address") or "")[:300]
+        t.priority = _priority(r.get("priority"))
+        cat = r.get("category") or {}
+        t.category = str(cat.get("label") or "")[:100] if isinstance(cat, dict) else ""
+        t.contractor_id = firms.get(f"firmao:{_id(r.get('customer'))}") if _id(r.get("customer")) else None
+        contacts = r.get("contacts") or []
+        t.contact_id = people.get(f"firmao:{_id(contacts[0])}") if contacts else None
+        t.start_at = _task_dt(r.get("plannedStartDate"))
+        t.due_at = _task_dt(r.get("plannedEndDate"))
+        if t.due_at and t.start_at and t.due_at < t.start_at:
+            t.due_at = None
+        times = [x for x in (t.start_at, t.due_at) if x]
+        t.all_day = all(x.time() == dt.time(0, 0) for x in times)
+        t.done_at = (_task_dt(r.get("actualEndDate")) or _task_dt(r.get("lastUpdateDate"))) if t.status == "done" else None
+        hours = r.get("actualWorkHours")
+        t.minutes_spent = int(round(float(hours) * 60)) if isinstance(hours, (int, float)) and hours > 0 else 0
+        users = r.get("responsibleUsers") or []
+        t.assignee = str(users[0].get("label") or "")[:100] if users and isinstance(users[0], dict) else ""
+        t.timer_started_at = None
+        out["open"] += t.status == "todo"
+        out["with_client"] += t.contractor_id is not None
+    db.flush()
+    return out
+
+
+SECTIONS = ("klienci", "osoby", "produkty", "faktury", "zakupy", "wz", "oferty", "notatki", "umowy", "sprzet", "zadania")
 
 
 def import_all(db: Session, data: dict[str, list], company: Company, log=print, only: set[str] | None = None) -> dict:
@@ -589,8 +806,19 @@ def import_all(db: Session, data: dict[str, list], company: Company, log=print, 
     if want("notatki") and data.get("salesnotes"):
         summary["notatki"] = import_notes(db, data["salesnotes"])
         log(f"notatki: {summary['notatki']}")
+    if want("zadania") and data.get("tasks"):
+        summary["zadania"] = import_tasks(db, company, data["tasks"])
+        log(f"zadania: {summary['zadania']}")
+    if want("sprzet") and data.get("resources"):
+        summary["sprzet"] = import_resources(db, company, data["resources"])
+        log(f"sprzet: {summary['sprzet']}")
     docs = [k for k in ("faktury", "zakupy", "wz", "oferty") if want(k)]
     if not docs:
+        if want("umowy") and data.get("agreements"):
+            summary["umowy"] = import_agreements(db, company, data["agreements"],
+                                                 group_entries(data.get("transactionentries") or []),
+                                                 data.get("transactions") or [])
+            log(f"umowy: {summary['umowy']}")
         return summary
     if len(docs) < 4:
         raise ValueError("Dokumenty (faktury, zakupy, wz, oferty) importuje się razem, bo są ze sobą powiązane.")
@@ -605,6 +833,9 @@ def import_all(db: Session, data: dict[str, list], company: Company, log=print, 
     log(f"wz/pz: { {k: v for k, v in wz.items() if k != '_map'} }")
     of = import_offers(ctx, data.get("offers") or [], entries)
     log(f"oferty: { {k: v for k, v in of.items() if k != '_map'} }")
+    if want("umowy") and data.get("agreements"):
+        summary["umowy"] = import_agreements(db, company, data["agreements"], entries, tx)
+        log(f"umowy: {summary['umowy']}")
     summary["powiazania"] = link_documents(db, tx, data.get("offers") or [], inv["_map"], wz["_map"], of["_map"])
     summary["wzory"] = adopt_patterns(db, company)
     summary["numeracja"] = sync_sequences(db, company)

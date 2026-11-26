@@ -14,7 +14,8 @@ import json
 import os
 from pathlib import Path
 
-COLLECTIONS = ["customers", "contacts", "products", "transactions", "transactionentries", "storagedocs", "offers", "salesnotes"]
+COLLECTIONS = ["customers", "contacts", "products", "transactions", "transactionentries", "storagedocs", "offers", "salesnotes",
+               "agreements", "resources", "resourceclasses", "tasks"]
 # Ciezkie pola, z ktorych import nie korzysta.
 DROP = {"observers", "images", "documentAccess", "attachments", "changes", "history", "permissions", "customFields",
         "htmlContent", "content", "thumbnail"}
