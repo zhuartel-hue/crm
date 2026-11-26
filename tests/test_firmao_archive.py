@@ -275,3 +275,22 @@ def test_agreements_equipment_tasks(client):
     assert "2025/01/001/U" in client.get("/umowy").text
     assert "Wiertarka Hilti" in client.get("/sprzet").text
     assert "Przegląd kamer" in client.get("/zadania?widok=otwarte").text
+
+
+def test_offer_statuses_only(client):
+    from app.db import SessionLocal
+    from app.firmao_archive import import_all
+    from app.models import Company, Offer
+
+    with SessionLocal() as db:
+        company = db.get(Company, 1)
+        db.add(Offer(company_id=1, number="O/1", source_ref="firmao:5", status="new", issue_date=__import__("datetime").date(2026, 1, 2),
+                     title="", recipient_name="X", recipient_address="", contact_person="", email="", notes="",
+                     internal_notes=""))
+        db.commit()
+        res = import_all(db, {"offers": [{"id": 5, "offerStatus": "DURING_NEGOTIATIONS"}, {"id": 6, "offerStatus": "SENT"}]},
+                         company, log=lambda *_: None, only={"statusy_ofert"})
+        db.commit()
+        assert res["statusy_ofert"]["changed"] == 1 and res["statusy_ofert"]["missing"] == 1
+        assert db.scalar(__import__("sqlalchemy").select(Offer.status).where(Offer.number == "O/1")) == "negotiating"
+    assert "w trakcie negocjacji" in client.get("/oferty").text

@@ -787,7 +787,32 @@ def import_tasks(db: Session, company: Company, tasks: list[dict]) -> dict:
     return out
 
 
-SECTIONS = ("klienci", "osoby", "produkty", "faktury", "zakupy", "wz", "oferty", "notatki", "umowy", "sprzet", "zadania")
+SECTIONS = ("klienci", "osoby", "produkty", "faktury", "zakupy", "wz", "oferty", "notatki", "umowy", "sprzet", "zadania",
+            "statusy_ofert")
+
+
+def update_offer_statuses(db: Session, company: Company, offers: list[dict]) -> dict:
+    """Tylko statusy ofert z Firmao (1:1), bez ruszania pozycji i reszty dokumentu."""
+    have = {o.source_ref: o for o in db.scalars(select(Offer).where(Offer.company_id == company.id,
+                                                                    Offer.source_ref.like("firmao:%")))}
+    out: dict = {"changed": 0, "same": 0, "missing": 0, "statuses": defaultdict(int)}
+    for o in offers:
+        of = have.get(f"firmao:{o.get('id')}")
+        if of is None:
+            out["missing"] += 1
+            continue
+        raw = o.get("offerStatus")
+        key = raw.get("key") if isinstance(raw, dict) else raw
+        status = OFFER_STATUS.get(str(key or "").upper(), "new")
+        out["statuses"][status] += 1
+        if of.status != status:
+            of.status = status
+            out["changed"] += 1
+        else:
+            out["same"] += 1
+    db.flush()
+    out["statuses"] = dict(out["statuses"])
+    return out
 
 
 def import_all(db: Session, data: dict[str, list], company: Company, log=print, only: set[str] | None = None) -> dict:
@@ -813,6 +838,9 @@ def import_all(db: Session, data: dict[str, list], company: Company, log=print, 
     if want("sprzet") and data.get("resources"):
         summary["sprzet"] = import_resources(db, company, data["resources"])
         log(f"sprzet: {summary['sprzet']}")
+    if only and "statusy_ofert" in only and data.get("offers"):
+        summary["statusy_ofert"] = update_offer_statuses(db, company, data["offers"])
+        log(f"statusy_ofert: {summary['statusy_ofert']}")
     docs = [k for k in ("faktury", "zakupy", "wz", "oferty") if want(k)]
     if not docs:
         if want("umowy") and data.get("agreements"):
