@@ -51,6 +51,7 @@ from .models import (
     VAT_RATES,
     Car,
     Company,
+    Contact,
     Contractor,
     Delivery,
     DeliveryItem,
@@ -395,7 +396,8 @@ def _form_context(db: Session, company: Company) -> dict:
 
 
 @app.get("/faktury/nowa", response_class=HTMLResponse)
-def invoice_new(request: Request, rodzaj: str = "vat", auto: int | None = None, db: Session = Depends(get_db)):
+def invoice_new(request: Request, rodzaj: str = "vat", auto: int | None = None, kontrahent: int = 0,
+                db: Session = Depends(get_db)):
     company = current_company(request, db)
     kind = rodzaj if rodzaj in NEW_KINDS else "vat"
     today = dt.date.today()
@@ -416,6 +418,10 @@ def invoice_new(request: Request, rodzaj: str = "vat", auto: int | None = None, 
         correction_reason="",
     )
     inv.items = []
+    buyer = db.get(Contractor, kontrahent) if kontrahent else None
+    if buyer is not None:
+        inv.contractor_id, inv.buyer_name, inv.buyer_nip = buyer.id, buyer.name, buyer.nip
+        inv.buyer_address = "\n".join(buyer.address_lines)
     car = db.get(Car, auto) if auto else None
     if car and car.company_id == company.id:
         inv.car_id = car.id
@@ -817,11 +823,16 @@ def contractor_list(request: Request, q: str = "", db: Session = Depends(get_db)
     stmt = select(Contractor)
     if q:
         like = f"%{q}%"
-        stmt = stmt.where(or_(Contractor.name.ilike(like), Contractor.nip.ilike(like), Contractor.city.ilike(like)))
+        stmt = stmt.where(or_(Contractor.name.ilike(like), Contractor.nip.ilike(like), Contractor.city.ilike(like),
+                              Contractor.email.ilike(like), Contractor.phone.ilike(like),
+                              Contractor.id.in_(select(Contact.contractor_id).where(or_(
+                                  Contact.last_name.ilike(like), Contact.first_name.ilike(like),
+                                  Contact.email.ilike(like), Contact.phone.ilike(like))))))
     return render(request, db, "contractors.html", contractors=db.scalars(stmt.order_by(Contractor.name)).all(), q=q)
 
 
-CONTRACTOR_FIELDS = ["name", "nip", "pesel", "street", "postal_code", "city", "country", "email", "phone", "notes"]
+CONTRACTOR_FIELDS = ["name", "nip", "pesel", "street", "postal_code", "city", "country", "email", "phone", "website",
+                     "notes"]
 
 
 @app.get("/kontrahenci/nowy", response_class=HTMLResponse)
@@ -840,7 +851,11 @@ def contractor_edit(cid: int, request: Request, db: Session = Depends(get_db)):
     offer_rows = db.scalars(select(Offer).where(Offer.contractor_id == cid,
                                                 Offer.company_id == current_company(request, db).id)
                             .order_by(Offer.issue_date.desc()).limit(50)).all()
-    return render(request, db, "contractor_form.html", c=c, invoices=invoices, mails=mails, offers=offer_rows)
+    deliveries = db.scalars(select(Delivery).where(Delivery.contractor_id == cid,
+                                                   Delivery.company_id == current_company(request, db).id)
+                            .order_by(Delivery.issue_date.desc()).limit(30)).all()
+    return render(request, db, "contractor_form.html", c=c, invoices=invoices, mails=mails, offers=offer_rows,
+                  deliveries=deliveries)
 
 
 async def _save_contractor(request: Request, db: Session, c: Contractor):
@@ -1492,7 +1507,8 @@ def mail_refresh(request: Request, db: Session = Depends(get_db)):
 
 @app.get("/poczta/nowa", response_class=HTMLResponse)
 def mail_compose(request: Request, faktura: int = 0, odpowiedz: int = 0, kontrahent: int = 0, do: str = "",
-                 przypomnienie: int = 0, szablon: int = 0, oferta: int = 0, db: Session = Depends(get_db)):
+                 przypomnienie: int = 0, szablon: int = 0, oferta: int = 0, kontakt: int = 0,
+                 db: Session = Depends(get_db)):
     company = current_company(request, db)
     accounts = [a for a in _company_accounts(db, company.id) if a.active]
     draft = {"to": do, "cc": "", "subject": "", "body": "", "in_reply_to": "", "invoice_id": 0, "account_id": 0,
@@ -1523,6 +1539,10 @@ def mail_compose(request: Request, faktura: int = 0, odpowiedz: int = 0, kontrah
             ctx = mail_templates.context(company, inv, offer=offer)
             draft["subject"] = mail_templates.render(tpl.subject, ctx)
             draft["body"] = mail_templates.render(tpl.body, ctx)
+    if kontakt and not draft["to"]:
+        p = db.get(Contact, kontakt)
+        if p and p.email:
+            draft["to"] = p.email.split(",")[0].strip()
     if kontrahent and not draft["to"]:
         c = db.get(Contractor, kontrahent)
         if c and c.email:
@@ -1896,6 +1916,81 @@ def wz_delete(wid: int, request: Request, db: Session = Depends(get_db)):
     return redirect("/wz")
 
 
+# ---------------------------------------------------------------- osoby kontaktowe
+
+CONTACT_FIELDS = ["first_name", "last_name", "position", "email", "phone", "phone2", "notes"]
+
+
+def _get_contact(db: Session, pid: int) -> Contact:
+    p = db.get(Contact, pid)
+    if p is None:
+        raise HTTPException(404)
+    return p
+
+
+@app.get("/kontakty", response_class=HTMLResponse)
+def contact_list(request: Request, q: str = "", db: Session = Depends(get_db)):
+    stmt = select(Contact).outerjoin(Contractor, Contact.contractor_id == Contractor.id)
+    if q:
+        like = f"%{q}%"
+        stmt = stmt.where(or_(Contact.first_name.ilike(like), Contact.last_name.ilike(like), Contact.email.ilike(like),
+                              Contact.phone.ilike(like), Contact.position.ilike(like), Contractor.name.ilike(like)))
+    rows = db.scalars(stmt.order_by(Contact.last_name, Contact.first_name).limit(500)).all()
+    return render(request, db, "contacts.html", rows=rows, q=q)
+
+
+def _contact_form(request: Request, db: Session, p: Contact, error: str | None = None):
+    contractors = db.scalars(select(Contractor).order_by(Contractor.name)).all()
+    return render(request, db, "contact_form.html", p=p, contractors=contractors, error=error)
+
+
+@app.get("/kontakty/nowy", response_class=HTMLResponse)
+def contact_new(request: Request, kontrahent: int = 0, db: Session = Depends(get_db)):
+    return _contact_form(request, db, Contact(contractor_id=kontrahent or None))
+
+
+async def _contact_save(request: Request, db: Session, p: Contact):
+    form = await request.form()
+    for f in CONTACT_FIELDS:
+        setattr(p, f, (form.get(f) or "").strip())
+    p.first_name, p.last_name, p.position = p.first_name[:100], p.last_name[:100], p.position[:150]
+    p.email, p.phone, p.phone2 = p.email[:200], p.phone[:40], p.phone2[:40]
+    cid = form.get("contractor_id") or ""
+    p.contractor_id = int(cid) if cid.isdigit() and db.get(Contractor, int(cid)) else None
+    if not (p.first_name or p.last_name or p.email):
+        return _contact_form(request, db, p, error="Podaj imię, nazwisko albo e-mail.")
+    db.add(p)
+    db.commit()
+    flash(request, f"Zapisano: {p.name}.")
+    return redirect(f"/kontrahenci/{p.contractor_id}" if form.get("back") == "kontrahent" and p.contractor_id
+                    else "/kontakty")
+
+
+@app.post("/kontakty/nowy")
+async def contact_create(request: Request, db: Session = Depends(get_db)):
+    return await _contact_save(request, db, Contact())
+
+
+@app.get("/kontakty/{pid}", response_class=HTMLResponse)
+def contact_edit(pid: int, request: Request, db: Session = Depends(get_db)):
+    return _contact_form(request, db, _get_contact(db, pid))
+
+
+@app.post("/kontakty/{pid}")
+async def contact_update(pid: int, request: Request, db: Session = Depends(get_db)):
+    return await _contact_save(request, db, _get_contact(db, pid))
+
+
+@app.post("/kontakty/{pid}/usun")
+def contact_delete(pid: int, request: Request, db: Session = Depends(get_db)):
+    p = _get_contact(db, pid)
+    back = f"/kontrahenci/{p.contractor_id}" if p.contractor_id else "/kontakty"
+    db.delete(p)
+    db.commit()
+    flash(request, f"Usunięto: {p.name}.")
+    return redirect(back)
+
+
 # ---------------------------------------------------------------- Oferty
 
 def _get_offer(db: Session, request: Request, oid: int) -> Offer:
@@ -2085,6 +2180,7 @@ def firmao_import_page(request: Request, db: Session = Depends(get_db)):
     counts = {"contractors": db.scalar(select(func.count(Contractor.id))),
               "contractors_firmao": db.scalar(select(func.count(Contractor.id)).where(Contractor.source_ref.like("firmao:%"))),
               "products": db.scalar(select(func.count(Product.id))),
+              "contacts": db.scalar(select(func.count(Contact.id))),
               "products_firmao": db.scalar(select(func.count(Product.id)).where(Product.source_ref.like("firmao:%")))}
     return render(request, db, "firmao_import.html", counts=counts, result=request.session.pop("firmao_result", None))
 
@@ -2095,7 +2191,8 @@ async def firmao_import_run(request: Request, db: Session = Depends(get_db)):
     result = {}
     try:
         for field, label, fn in (("customers", "Klienci", firmao_import.import_customers),
-                                 ("products", "Produkty", firmao_import.import_products)):
+                                 ("products", "Produkty", firmao_import.import_products),
+                                 ("contacts", "Osoby kontaktowe", firmao_import.import_contacts)):
             f = form.get(field)
             if not getattr(f, "filename", None):
                 continue

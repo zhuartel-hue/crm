@@ -16,13 +16,20 @@
   <div><label>Kraj</label><input name="country" value="{{ c.country or 'PL' }}" maxlength="2"></div>
   <div><label>E-mail</label><input name="email" type="email" value="{{ c.email or '' }}"></div>
   <div><label>Telefon</label><input name="phone" type="tel" value="{{ c.phone or '' }}"></div>
+  <div style="grid-column:1/-1"><label>Strona www</label><input name="website" value="{{ c.website or '' }}" inputmode="url"></div>
   <div style="grid-column:1/-1"><label>Notatki</label><textarea name="notes">{{ c.notes or '' }}</textarea></div>
 </div>
 <div class="row"><button class="btn primary">Zapisz</button><a class="btn" href="/kontrahenci">Anuluj</a></div>
 </form>
 {% if c.id and not (invoices|selectattr('status', 'equalto', 'issued')|list) %}
 <form method="post" action="/kontrahenci/{{ c.id }}/usun" onsubmit="return confirm('Usunąć tego kontrahenta?')" style="margin-top:12px"><button class="btn danger">Usuń kontrahenta</button></form>{% endif %}
-{% if invoices %}<h2>Faktury</h2>{% include "_invoice_rows.html" %}{% endif %}
+{% if c.id %}<div class="row"><h2>Osoby kontaktowe</h2><span class="spacer"></span><a class="btn small" href="/kontakty/nowy?kontrahent={{ c.id }}">+ Osoba</a></div>
+{% if c.contacts %}<div class="card tbl"><table>{% for p in c.contacts %}<tr><td><a href="/kontakty/{{ p.id }}">{{ p.name }}</a>{% if p.position %}<br><span class="muted">{{ p.position }}</span>{% endif %}</td>
+<td>{% if p.phone %}<a href="tel:{{ p.phone }}">{{ p.phone }}</a>{% endif %}</td>
+<td class="hide-sm">{% if p.email %}<a href="/poczta/nowa?kontakt={{ p.id }}">{{ p.email }}</a>{% endif %}</td></tr>{% endfor %}</table></div>
+{% else %}<p class="muted">Brak osób kontaktowych.</p>{% endif %}{% endif %}
+{% if invoices %}<div class="row"><h2>Faktury</h2><span class="spacer"></span><a class="btn small" href="/faktury/nowa?kontrahent={{ c.id }}">+ Faktura</a></div>{% include "_invoice_rows.html" %}{% endif %}
+{% if deliveries %}<h2>WZ i PZ</h2><div class="card tbl"><table>{% for d in deliveries %}<tr><td><a href="/wz/{{ d.id }}">{{ d.display_number }}</a></td><td>{{ d.issue_date|date }}</td><td class="n">{{ d.total_gross|money if d.total_gross }}</td></tr>{% endfor %}</table></div>{% endif %}
 {% if c.id %}<div class="row"><h2>Oferty</h2><span class="spacer"></span><a class="btn small" href="/oferty/nowa?kontrahent={{ c.id }}">+ Oferta</a></div>
 {% if offers %}<div class="card tbl"><table>{% for o in offers %}<tr><td><a href="/oferty/{{ o.id }}">{{ o.display_number }}</a></td><td>{{ o.issue_date|date }}</td>
 <td class="n">{{ o.total_gross|money }}</td><td>{{ o.status_label }}</td></tr>{% endfor %}</table></div>

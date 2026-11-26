@@ -76,13 +76,41 @@ class Contractor(Base):
     email: Mapped[str] = mapped_column(String(200), default="")
     phone: Mapped[str] = mapped_column(String(40), default="")
     notes: Mapped[str] = mapped_column(Text, default="")
+    website: Mapped[str] = mapped_column(String(200), default="")
     # Skad pochodzi (np. "firmao:123"), do ponownego importu bez dubli.
     source_ref: Mapped[str] = mapped_column(String(120), default="", index=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
 
+    contacts: Mapped[list["Contact"]] = relationship(back_populates="contractor", order_by="Contact.last_name")
+
     @property
     def address_lines(self) -> list[str]:
         return [x for x in (self.street, f"{self.postal_code} {self.city}".strip()) if x]
+
+
+class Contact(Base):
+    """Osoba kontaktowa (wspolna dla obu firm), zwykle pracownik klienta."""
+
+    __tablename__ = "contacts"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    contractor_id: Mapped[int | None] = mapped_column(ForeignKey("contractors.id", ondelete="SET NULL"),
+                                                      nullable=True, index=True)
+    first_name: Mapped[str] = mapped_column(String(100), default="")
+    last_name: Mapped[str] = mapped_column(String(100), default="")
+    position: Mapped[str] = mapped_column(String(150), default="")
+    email: Mapped[str] = mapped_column(String(200), default="")
+    phone: Mapped[str] = mapped_column(String(40), default="")
+    phone2: Mapped[str] = mapped_column(String(40), default="")
+    notes: Mapped[str] = mapped_column(Text, default="")
+    source_ref: Mapped[str] = mapped_column(String(120), default="", index=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
+
+    contractor: Mapped[Contractor | None] = relationship(back_populates="contacts")
+
+    @property
+    def name(self) -> str:
+        return f"{self.first_name} {self.last_name}".strip() or self.email or f"Osoba #{self.id}"
 
 
 CAR_STATUSES = {"available": "Na placu", "reserved": "Zarezerwowany", "sold": "Sprzedany"}

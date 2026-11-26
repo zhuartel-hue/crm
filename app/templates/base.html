@@ -27,7 +27,7 @@
                 ('/wz', 'Magazyn WZ / PZ', 'box', p.startswith('/wz')),
                 ('/produkty', 'Produkty', 'tag', p.startswith('/produkty'))]),
   ('Klienci', [('/kontrahenci', 'Kontrahenci', 'users', p.startswith('/kontrahenci')),
-               ('', 'Osoby kontaktowe', 'user', False),
+               ('/kontakty', 'Osoby kontaktowe', 'user', p.startswith('/kontakty')),
                ('/auta', 'Auta', 'car', p.startswith('/auta')),
                ('', 'Sprzęt i serwis', 'tool', False),
                ('/poczta', 'Poczta', 'mail', p.startswith('/poczta')),

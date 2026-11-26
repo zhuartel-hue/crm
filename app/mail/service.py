@@ -28,7 +28,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .. import secretbox
-from ..models import Contractor, Invoice, MailAccount, MailAttachment, MailMessage
+from ..models import Contact, Contractor, Invoice, MailAccount, MailAttachment, MailMessage
 
 from zoneinfo import ZoneInfo
 
@@ -142,6 +142,10 @@ def contractor_for(db: Session, emails: list[str]) -> Contractor | None:
     for c in db.scalars(select(Contractor).where(Contractor.email != "")):
         if wanted & set(_emails_of(c.email)):
             return c
+    # Adres osoby kontaktowej tez wskazuje jej firme.
+    for p in db.scalars(select(Contact).where(Contact.email != "", Contact.contractor_id.is_not(None))):
+        if wanted & set(_emails_of(p.email)):
+            return p.contractor
     return None
 
 

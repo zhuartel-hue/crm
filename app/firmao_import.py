@@ -12,7 +12,7 @@ from decimal import Decimal, InvalidOperation
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .models import VAT_RATES, Contractor, Product
+from .models import VAT_RATES, Contact, Contractor, Product
 
 COUNTRIES = {"polska": "PL", "poland": "PL", "niemcy": "DE", "germany": "DE", "czechy": "CZ", "litwa": "LT",
              "ukraina": "UA", "wielka brytania": "GB", "holandia": "NL", "francja": "FR", "włochy": "IT"}
@@ -167,5 +167,45 @@ def import_products(db: Session, rows: list[dict]) -> dict:
         by_ref[ref] = p
         if code:
             by_code[code] = p
+    db.flush()
+    return out
+
+
+def import_contacts(db: Session, rows: list[dict]) -> dict:
+    """Osoby kontaktowe; firme wskazuje customer.id z Firmao (klientow importuj wczesniej albo razem)."""
+    by_ref = {p.source_ref: p for p in db.scalars(select(Contact).where(Contact.source_ref != ""))}
+    firms = {c.source_ref: c.id for c in db.scalars(select(Contractor).where(Contractor.source_ref.like("firmao:%")))}
+    out = {"added": 0, "updated": 0, "skipped": 0}
+    for r in rows:
+        if r.get("deleted") or not r.get("id"):
+            out["skipped"] += 1
+            continue
+        first, last = (r.get("firstName") or "").strip(), (r.get("lastName") or "").strip()
+        email = _first(r.get("emails")) or _first(r.get("email"))
+        if not (first or last or email):
+            out["skipped"] += 1
+            continue
+        ref = f"firmao:{r['id']}"
+        p = by_ref.get(ref)
+        if p is None:
+            p = Contact(notes="")
+            db.add(p)
+            out["added"] += 1
+        else:
+            out["updated"] += 1
+        cust = r.get("customer")
+        cust_id = cust.get("id") if isinstance(cust, dict) else cust
+        phones = [x for x in ([_first(x) for x in r.get("phones") or []] or [_first(r.get("phone"))]) if x]
+        p.source_ref, p.first_name, p.last_name = ref, first[:100], last[:100]
+        p.position = (r.get("position") or p.position or "")[:150]
+        p.email = (email or p.email or "")[:200]
+        p.phone = (phones[0] if phones else p.phone or "")[:40]
+        p.phone2 = (phones[1] if len(phones) > 1 else p.phone2 or "")[:40]
+        desc = (r.get("description") or "").strip()
+        if desc and desc not in (p.notes or ""):
+            p.notes = ((p.notes + "\n") if p.notes else "") + desc
+        if cust_id:
+            p.contractor_id = firms.get(f"firmao:{cust_id}", p.contractor_id)
+        by_ref[ref] = p
     db.flush()
     return out
