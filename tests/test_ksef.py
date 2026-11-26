@@ -342,7 +342,7 @@ def test_bulk_send_and_auto_send(client, db, monkeypatch):
     assert r.headers["location"] == "/faktury"
 
     # kontrahent z automatem: idzie od razu po wystawieniu
-    c = Contractor(name="Auto Klient", nip="8672239415", ksef_auto=True)
+    c = Contractor(company_id=1, name="Auto Klient", nip="8672239415", ksef_auto=True)
     db.add(c)
     db.commit()
     auto = _issue(db, buyer={"contractor_id": c.id}, items=[{"name": "Serwis", "unit_price": "50.00"}])

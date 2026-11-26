@@ -59,7 +59,7 @@ def test_matches_existing_by_nip_and_bad_file(client):
     from app.models import Contractor
 
     with SessionLocal() as db:
-        db.add(Contractor(name="Euro-Box", nip="9271003914"))
+        db.add(Contractor(company_id=1, name="Euro-Box", nip="9271003914"))
         db.commit()
     _post(client, [{"id": 784, "name": "Euro-Box Sp. z o.o.", "nipNumber": "9271003914"}])
     with SessionLocal() as db:

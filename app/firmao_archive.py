@@ -122,8 +122,10 @@ def _invoice_items(ctx: "Ctx", rows: list[dict], gross_prices: bool, correction:
 class Ctx:
     def __init__(self, db: Session, company: Company):
         self.db, self.company = db, company
-        self.contractors = {c.source_ref: c.id for c in db.scalars(select(Contractor).where(Contractor.source_ref != ""))}
-        self.products = {p.source_ref: p.id for p in db.scalars(select(Product).where(Product.source_ref != ""))}
+        self.contractors = {c.source_ref: c.id for c in db.scalars(select(Contractor).where(
+            Contractor.company_id == company.id, Contractor.source_ref != ""))}
+        self.products = {p.source_ref: p.id for p in db.scalars(select(Product).where(
+            Product.company_id == company.id, Product.source_ref != ""))}
 
     def contractor(self, rec: dict) -> int | None:
         cid = _id(rec.get("customer"))
@@ -422,11 +424,11 @@ def _dt(v) -> dt.datetime | None:
         return None
 
 
-def import_notes(db: Session, notes: list[dict]) -> dict:
+def import_notes(db: Session, company: Company, notes: list[dict]) -> dict:
     """Notatki handlowe z Firmao przy kontrahentach (bez klienta - pomijane)."""
-    firms = {c.source_ref: c.id for c in db.scalars(select(Contractor).where(Contractor.source_ref != ""))}
-    people = {c.source_ref: c.id for c in db.scalars(select(Contact).where(Contact.source_ref != ""))}
-    have = {n.source_ref: n for n in db.scalars(select(ContractorNote).where(ContractorNote.source_ref != ""))}
+    firms = {c.source_ref: c.id for c in db.scalars(select(Contractor).where(Contractor.company_id == company.id, Contractor.source_ref != ""))}
+    people = {c.source_ref: c.id for c in db.scalars(select(Contact).where(Contact.company_id == company.id, Contact.source_ref != ""))}
+    have = {n.source_ref: n for n in db.scalars(select(ContractorNote).join(Contractor, Contractor.id == ContractorNote.contractor_id).where(Contractor.company_id == company.id, ContractorNote.source_ref != ""))}
     out = {"added": 0, "updated": 0, "skipped": 0}
     for r in notes:
         cid = firms.get(f"firmao:{_id(r.get('customer'))}") if _id(r.get("customer")) else None
@@ -581,8 +583,8 @@ def import_agreements(db: Session, company: Company, agreements: list[dict], ent
     from . import recurring
 
     today = today or dt.date.today()
-    firms = {c.source_ref: c for c in db.scalars(select(Contractor).where(Contractor.source_ref != ""))}
-    products = {p.source_ref: p.id for p in db.scalars(select(Product).where(Product.source_ref != ""))}
+    firms = {c.source_ref: c for c in db.scalars(select(Contractor).where(Contractor.company_id == company.id, Contractor.source_ref != ""))}
+    products = {p.source_ref: p.id for p in db.scalars(select(Product).where(Product.company_id == company.id, Product.source_ref != ""))}
     have = _existing(db, RecurringInvoice, company.id)
     out = {"added": 0, "updated": 0, "skipped": 0, "invoicing": 0, "ended": 0, "ksef_auto": 0, "no_items": 0,
            "linked_invoices": 0}
@@ -672,9 +674,9 @@ def import_agreements(db: Session, company: Company, agreements: list[dict], ent
 
 def import_resources(db: Session, company: Company, resources: list[dict]) -> dict:
     """Sprzet z Firmao (resources): numery, klient, gwarancja, lokalizacja. Zezlomowany = wycofany."""
-    firms = {c.source_ref: c.id for c in db.scalars(select(Contractor).where(Contractor.source_ref != ""))}
-    people = {c.source_ref: c for c in db.scalars(select(Contact).where(Contact.source_ref != ""))}
-    products = {p.source_ref: p.id for p in db.scalars(select(Product).where(Product.source_ref != ""))}
+    firms = {c.source_ref: c.id for c in db.scalars(select(Contractor).where(Contractor.company_id == company.id, Contractor.source_ref != ""))}
+    people = {c.source_ref: c for c in db.scalars(select(Contact).where(Contact.company_id == company.id, Contact.source_ref != ""))}
+    products = {p.source_ref: p.id for p in db.scalars(select(Product).where(Product.company_id == company.id, Product.source_ref != ""))}
     have = _existing(db, Equipment, company.id)
     out = {"added": 0, "updated": 0, "skipped": 0, "with_client": 0, "retired": 0}
     for r in resources:
@@ -739,8 +741,8 @@ def _priority(v) -> str:
 
 def import_tasks(db: Session, company: Company, tasks: list[dict]) -> dict:
     """Zadania z Firmao: OPEN -> do zrobienia, CLOSED -> zrobione; terminy, klient, adres, czas pracy."""
-    firms = {c.source_ref: c.id for c in db.scalars(select(Contractor).where(Contractor.source_ref != ""))}
-    people = {c.source_ref: c.id for c in db.scalars(select(Contact).where(Contact.source_ref != ""))}
+    firms = {c.source_ref: c.id for c in db.scalars(select(Contractor).where(Contractor.company_id == company.id, Contractor.source_ref != ""))}
+    people = {c.source_ref: c.id for c in db.scalars(select(Contact).where(Contact.company_id == company.id, Contact.source_ref != ""))}
     have = _existing(db, Task, company.id)
     out = {"added": 0, "updated": 0, "skipped": 0, "open": 0, "with_client": 0}
     for r in tasks:
@@ -794,16 +796,16 @@ def import_all(db: Session, data: dict[str, list], company: Company, log=print, 
     want = (lambda k: True) if not only else (lambda k: k in only)
     summary: dict = {}
     if want("klienci") and data.get("customers"):
-        summary["klienci"] = firmao_import.import_customers(db, data["customers"])
+        summary["klienci"] = firmao_import.import_customers(db, data["customers"], company.id)
         log(f"klienci: {summary['klienci']}")
     if want("osoby") and data.get("contacts"):
-        summary["osoby"] = firmao_import.import_contacts(db, data["contacts"])
+        summary["osoby"] = firmao_import.import_contacts(db, data["contacts"], company.id)
         log(f"osoby: {summary['osoby']}")
     if want("produkty") and data.get("products"):
-        summary["produkty"] = firmao_import.import_products(db, data["products"])
+        summary["produkty"] = firmao_import.import_products(db, data["products"], company.id)
         log(f"produkty: {summary['produkty']}")
     if want("notatki") and data.get("salesnotes"):
-        summary["notatki"] = import_notes(db, data["salesnotes"])
+        summary["notatki"] = import_notes(db, company, data["salesnotes"])
         log(f"notatki: {summary['notatki']}")
     if want("zadania") and data.get("tasks"):
         summary["zadania"] = import_tasks(db, company, data["tasks"])

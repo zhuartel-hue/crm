@@ -135,15 +135,15 @@ def _emails_of(contractor_email: str) -> list[str]:
     return [e.strip().lower() for e in re.split(r"[,;\s]+", contractor_email or "") if "@" in e]
 
 
-def contractor_for(db: Session, emails: list[str]) -> Contractor | None:
+def contractor_for(db: Session, emails: list[str], company_id: int) -> Contractor | None:
     wanted = {e.lower() for e in emails}
     if not wanted:
         return None
-    for c in db.scalars(select(Contractor).where(Contractor.email != "")):
+    for c in db.scalars(select(Contractor).where(Contractor.company_id == company_id, Contractor.email != "")):
         if wanted & set(_emails_of(c.email)):
             return c
     # Adres osoby kontaktowej tez wskazuje jej firme.
-    for p in db.scalars(select(Contact).where(Contact.email != "", Contact.contractor_id.is_not(None))):
+    for p in db.scalars(select(Contact).where(Contact.company_id == company_id, Contact.email != "", Contact.contractor_id.is_not(None))):
         if wanted & set(_emails_of(p.email)):
             return p.contractor
     return None
@@ -277,7 +277,7 @@ def store(db: Session, acc: MailAccount, raw: bytes, folder: str, uid: int | Non
         from_addr=frm[0][1] if frm else "", from_name=(frm[0][0] if frm else "")[:200], to_addrs=to, cc_addrs=cc,
         date=date or _utcnow(), body_text=text or "", body_html=html_body or "", seen=seen or direction == "out",
     )
-    c = contractor_for(db, people)
+    c = contractor_for(db, people, acc.company_id)
     m.contractor_id = c.id if c else None
     inv = invoice_for(db, acc.company_id, subject)
     m.invoice_id = inv.id if inv else None

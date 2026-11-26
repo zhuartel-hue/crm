@@ -45,10 +45,10 @@ def test_mail_matches_contractor_by_contact_email(client):
 
     cid = _contractor(client)
     with SessionLocal() as db:
-        db.add(Contact(first_name="Jan", email="Jan@Hurt.pl", contractor_id=cid))
+        db.add(Contact(company_id=1, first_name="Jan", email="Jan@Hurt.pl", contractor_id=cid))
         db.commit()
-        assert contractor_for(db, ["jan@hurt.pl"]).id == cid
-        assert contractor_for(db, ["inny@x.pl"]) is None
+        assert contractor_for(db, ["jan@hurt.pl"], 1).id == cid
+        assert contractor_for(db, ["inny@x.pl"], 1) is None
 
 
 def test_import_contacts_from_firmao(client):
@@ -76,7 +76,7 @@ def test_contractor_notes(client):
     from app.models import Contractor, ContractorNote
 
     with SessionLocal() as db:
-        c = Contractor(name="Klient Notatek")
+        c = Contractor(company_id=1, name="Klient Notatek")
         db.add(c)
         db.commit()
         cid = c.id

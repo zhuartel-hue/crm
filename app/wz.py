@@ -51,6 +51,8 @@ def set_items(db: Session, d, names, qtys, units, product_ids, prices=None, rate
             raise ValueError(f"Pozycja {pos}: ilość musi być większa od zera.")
         pid = _at(product_ids, k)
         product = db.get(Product, int(pid)) if str(pid).isdigit() else None
+        if product is not None and product.company_id != d.company_id:
+            product = None
         if product is not None and product.label == name:
             name = product.name
         try:

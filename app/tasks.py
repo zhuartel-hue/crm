@@ -33,9 +33,12 @@ def apply_form(db: Session, t: Task, form) -> None:
     status = form.get("status") if form.get("status") in TASK_STATUSES else (t.status or "todo")
     set_status(t, status)
     cid = form.get("contractor_id") or ""
-    t.contractor_id = int(cid) if cid.isdigit() and db.get(Contractor, int(cid)) else None
+    own_c = db.get(Contractor, int(cid)) if cid.isdigit() else None
+    t.contractor_id = own_c.id if own_c is not None and own_c.company_id == t.company_id else None
     pid = form.get("contact_id") or ""
     contact = db.get(Contact, int(pid)) if pid.isdigit() else None
+    if contact is not None and contact.company_id != t.company_id:
+        contact = None
     t.contact_id = contact.id if contact else None
     eid = form.get("equipment_id") or ""
     e = db.get(Equipment, int(eid)) if eid.isdigit() else None

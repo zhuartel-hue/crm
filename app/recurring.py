@@ -73,6 +73,8 @@ def set_items(db: Session, r: RecurringInvoice, names, qtys, units, prices, rate
             raise ValueError(f"Pozycja {n}: stawka VAT jedna z {', '.join(VAT_RATES)}.")
         pid = product_ids[k] if k < len(product_ids) else ""
         product = db.get(Product, int(pid)) if str(pid).isdigit() else None
+        if product is not None and product.company_id != r.company_id:
+            product = None
         if product is not None and product.label == name:
             name = product.name
         out.append(dict(name=name[:500], quantity=str(qty), unit=((units[k] if k < len(units) else "") or "szt.")[:10],

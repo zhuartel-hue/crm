@@ -6,7 +6,7 @@ def _contractor(client):
     from app.db import SessionLocal
     from app.models import Contractor
     with SessionLocal() as db:
-        c = Contractor(name="Hotel Pod Lipą", nip="5551112233", city="Chojnice", street="ul. Lipowa 1",
+        c = Contractor(company_id=1, name="Hotel Pod Lipą", nip="5551112233", city="Chojnice", street="ul. Lipowa 1",
                        postal_code="89-600")
         db.add(c)
         db.commit()

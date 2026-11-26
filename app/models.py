@@ -88,11 +88,12 @@ INVOICE_TEMPLATES = {"klasyczny": "Klasyczny", "nowoczesny": "Nowoczesny (niebie
 
 
 class Contractor(Base):
-    """Kontrahent, wspolny dla obu firm."""
+    """Kontrahent jednej firmy (kazda firma ma swoja baze klientow)."""
 
     __tablename__ = "contractors"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id", name="fk_contractors_company"), index=True)
     name: Mapped[str] = mapped_column(String(300))
     is_company: Mapped[bool] = mapped_column(default=True)  # False = osoba prywatna
     nip: Mapped[str] = mapped_column(String(20), default="")
@@ -121,11 +122,12 @@ class Contractor(Base):
 
 
 class Contact(Base):
-    """Osoba kontaktowa (wspolna dla obu firm), zwykle pracownik klienta."""
+    """Osoba kontaktowa jednej firmy, zwykle pracownik klienta."""
 
     __tablename__ = "contacts"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id", name="fk_contacts_company"), index=True)
     contractor_id: Mapped[int | None] = mapped_column(ForeignKey("contractors.id", ondelete="SET NULL"),
                                                       nullable=True, index=True)
     first_name: Mapped[str] = mapped_column(String(100), default="")
@@ -451,11 +453,12 @@ class AuditLog(Base):
 
 
 class Product(Base):
-    """Produkt z katalogu (wspolny dla obu firm): kod, cena, VAT, opis i zdjecia."""
+    """Produkt z katalogu jednej firmy: kod, cena, VAT, opis i zdjecia."""
 
     __tablename__ = "products"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id", name="fk_products_company"), index=True)
     code: Mapped[str] = mapped_column(String(60), default="", index=True)
     name: Mapped[str] = mapped_column(String(300))
     unit: Mapped[str] = mapped_column(String(20), default="szt.")

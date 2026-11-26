@@ -172,7 +172,7 @@ def test_offer_pdf_looks(client):
         buf = io.BytesIO()
         Image.new("RGB", (60, 40), (200, 10, 10)).save(buf, "JPEG")
         from app import products
-        p = Product(name="Kamera", description="- 8 Mpx\n- IR 30 m")
+        p = Product(company_id=1, name="Kamera", description="- 8 Mpx\n- IR 30 m")
         products.add_photos(p, [("k.jpg", buf.getvalue())])
         db.add(p)
         o = db.get(Offer, oid)

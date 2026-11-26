@@ -89,8 +89,8 @@ def contractor_dict(c: Contractor) -> dict:
                 postal_code=c.postal_code, city=c.city, email=c.email, phone=c.phone)
 
 
-def search_contractors(db: Session, query: str = "", limit: int = 20) -> list[dict]:
-    stmt = select(Contractor)
+def search_contractors(db: Session, company, query: str = "", limit: int = 20) -> list[dict]:
+    stmt = select(Contractor).where(Contractor.company_id == resolve_company(db, company).id)
     if query:
         like = f"%{query.strip()}%"
         stmt = stmt.where(or_(Contractor.name.ilike(like), Contractor.nip.ilike(like.replace("-", "")),
@@ -103,15 +103,17 @@ def create_contractor(db: Session, actor: str, data: dict) -> dict:
     if not name:
         raise ServiceError("Podaj nazwę albo imię i nazwisko kontrahenta.")
     nip = (data.get("nip") or "").replace("-", "").replace(" ", "")
+    company = resolve_company(db, data.get("company"))
     c = Contractor(
-        name=name, nip=nip, is_company=bool(data.get("is_company", bool(nip))),
+        company_id=company.id, name=name, nip=nip, is_company=bool(data.get("is_company", bool(nip))),
         street=(data.get("street") or "").strip(), postal_code=(data.get("postal_code") or "").strip(),
         city=(data.get("city") or "").strip(), email=(data.get("email") or "").strip(),
         phone=(data.get("phone") or "").strip(), notes=(data.get("notes") or "").strip(),
     )
     db.add(c)
     db.flush()
-    audit(db, actor, "contractor.create", f"Nowy kontrahent {c.name}", entity="contractor", entity_id=c.id)
+    audit(db, actor, "contractor.create", f"Nowy kontrahent {c.name}", company_id=company.id,
+          entity="contractor", entity_id=c.id)
     db.commit()
     return contractor_dict(c)
 
@@ -259,13 +261,16 @@ def list_invoices(db: Session, company=None, kind: str = "", month: str = "", st
     return db.scalars(stmt.order_by(Invoice.issue_date.desc(), Invoice.id.desc()).limit(min(limit, 200))).all()
 
 
-def _parse_items(items: list, is_before: bool = False, db: Session | None = None, prices_gross: bool = True) -> list[InvoiceItem]:
+def _parse_items(items: list, is_before: bool = False, db: Session | None = None, prices_gross: bool = True,
+                 company_id: int | None = None) -> list[InvoiceItem]:
     """Pozycje z JSON. product_id bierze z katalogu nazwe, jednostke, cene (brutto/netto) i VAT, chyba ze podano."""
     out = []
     for n, it in enumerate(items, start=1):
         product = None
         if it.get("product_id") not in (None, ""):
             product = db.get(Product, int(it["product_id"])) if db is not None else None
+            if product is not None and company_id is not None and product.company_id != company_id:
+                product = None
             if product is None:
                 raise ServiceError(f"Pozycja {n}: nie ma produktu o id {it['product_id']}.")
         name = (it.get("name") or (product.name if product else "")).strip()
@@ -323,6 +328,8 @@ def create_invoice_draft(db: Session, actor: str, data: dict) -> Invoice:
     buyer = data.get("buyer") or {}
     if buyer.get("contractor_id"):
         c = db.get(Contractor, int(buyer["contractor_id"]))
+        if c is not None and c.company_id != company.id:
+            c = None
         if c is None:
             raise ServiceError(f"Nie ma kontrahenta o id {buyer['contractor_id']}.")
         inv.contractor_id = c.id
@@ -336,7 +343,7 @@ def create_invoice_draft(db: Session, actor: str, data: dict) -> Invoice:
         if buyer.get("save_as_contractor"):
             lines = inv.buyer_address.splitlines()
             postal, _, city = (lines[1] if len(lines) > 1 else "").partition(" ")
-            c = Contractor(name=inv.buyer_name, nip=inv.buyer_nip, is_company=bool(inv.buyer_nip),
+            c = Contractor(company_id=company.id, name=inv.buyer_name, nip=inv.buyer_nip, is_company=bool(inv.buyer_nip),
                            street=lines[0] if lines else "", postal_code=postal, city=city)
             db.add(c)
             db.flush()
@@ -362,7 +369,7 @@ def create_invoice_draft(db: Session, actor: str, data: dict) -> Invoice:
         inv.prices_gross = True
     if not items:
         raise ServiceError("Podaj pozycje (items) albo car_id.")
-    inv.items = _parse_items(items, db=db, prices_gross=inv.prices_gross)
+    inv.items = _parse_items(items, db=db, prices_gross=inv.prices_gross, company_id=company.id)
     calc.recalculate(inv)
     db.add(inv)
     db.flush()
@@ -412,7 +419,7 @@ def start_correction(db: Session, actor: str, invoice_id: int, reason: str = "",
     inv.sale_date = src.sale_date
     inv.correction_reason = (reason or "").strip()
     state = current_items(db, src)
-    after = _parse_items(items, db=db, prices_gross=src.prices_gross) if items else [_copy_item(i) for i in state]
+    after = _parse_items(items, db=db, prices_gross=src.prices_gross, company_id=src.company_id) if items else [_copy_item(i) for i in state]
     inv.items = [_copy_item(i, is_before=True) for i in state] + after
     calc.recalculate(inv)
     db.add(inv)

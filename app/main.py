@@ -248,6 +248,20 @@ def redirect(url: str) -> RedirectResponse:
     return RedirectResponse(url, status_code=303)
 
 
+def _own(db: Session, request: Request, model, oid):
+    """Rekord (kontrahent, produkt, osoba) bieżącej firmy albo None. Nie pokazujemy danych innej firmy."""
+    try:
+        oid = int(oid)
+    except (TypeError, ValueError):
+        return None
+    obj = db.get(model, oid) if oid else None
+    return obj if obj is not None and obj.company_id == current_company(request, db).id else None
+
+
+def _contractors(db: Session, company_id: int) -> list[Contractor]:
+    return list(db.scalars(select(Contractor).where(Contractor.company_id == company_id).order_by(Contractor.name)))
+
+
 def current_company(request: Request, db: Session) -> Company:
     companies = db.scalars(select(Company).order_by(Company.id)).all()
     cid = request.session.get("company_id")
@@ -442,7 +456,7 @@ async def invoice_ksef_send_many(request: Request, db: Session = Depends(get_db)
 
 
 def _form_context(db: Session, company: Company) -> dict:
-    contractors = db.scalars(select(Contractor).order_by(Contractor.name)).all()
+    contractors = _contractors(db, company.id)
     cars = db.scalars(select(Car).where(Car.company_id == company.id).order_by(Car.id.desc())).all()
     contractors_json = json.dumps(
         {
@@ -451,7 +465,7 @@ def _form_context(db: Session, company: Company) -> dict:
         },
         ensure_ascii=False,
     )
-    products = prod.search(db, active_only=True)
+    products = prod.search(db, company.id, active_only=True)
     products_json = script_json(prod.picker_json(products))
     return dict(contractors=contractors, cars=cars, contractors_json=contractors_json,
                 products=products, products_json=products_json)
@@ -480,7 +494,7 @@ def invoice_new(request: Request, rodzaj: str = "vat", auto: int | None = None, 
         correction_reason="",
     )
     inv.items = []
-    buyer = db.get(Contractor, kontrahent) if kontrahent else None
+    buyer = _own(db, request, Contractor, kontrahent) if kontrahent else None
     if buyer is not None:
         inv.contractor_id, inv.buyer_name, inv.buyer_nip = buyer.id, buyer.name, buyer.nip
         inv.buyer_address = "\n".join(buyer.address_lines)
@@ -532,13 +546,14 @@ def _apply_form(db: Session, inv: Invoice, form) -> None:
     inv.split_payment = form.get("split_payment") == "1"
 
     cid = form.get("contractor_id") or ""
-    inv.contractor_id = int(cid) if cid.isdigit() else None
+    own = db.get(Contractor, int(cid)) if cid.isdigit() else None
+    inv.contractor_id = own.id if own is not None and own.company_id == inv.company_id else None
     if inv.contractor_id is None and form.get("save_contractor") == "1" and inv.buyer_name:
         lines = inv.buyer_address.splitlines()
         street = lines[0] if lines else ""
         postal, _, city = (lines[1] if len(lines) > 1 else "").partition(" ")
         c = Contractor(
-            name=inv.buyer_name, nip=inv.buyer_nip, is_company=bool(inv.buyer_nip),
+            company_id=inv.company_id, name=inv.buyer_name, nip=inv.buyer_nip, is_company=bool(inv.buyer_nip),
             street=street, postal_code=postal, city=city,
         )
         db.add(c)
@@ -554,7 +569,7 @@ def _apply_form(db: Session, inv: Invoice, form) -> None:
     prices = form.getlist("item_price")
     rates = form.getlist("item_rate")
     product_ids = form.getlist("item_product")
-    valid_products = set(db.scalars(select(Product.id)).all()) if any(product_ids) else set()
+    valid_products = set(db.scalars(select(Product.id).where(Product.company_id == inv.company_id)).all()) if any(product_ids) else set()
     # Pozycje "przed korekta" sa kopia faktury korygowanej i nie zmieniaja sie w formularzu.
     for it in [i for i in inv.items if not i.is_before]:
         inv.items.remove(it)
@@ -890,7 +905,7 @@ def invoice_ksef_upo(invoice_id: int, request: Request, db: Session = Depends(ge
 
 @app.get("/kontrahenci", response_class=HTMLResponse)
 def contractor_list(request: Request, q: str = "", db: Session = Depends(get_db)):
-    stmt = select(Contractor)
+    stmt = select(Contractor).where(Contractor.company_id == current_company(request, db).id)
     if q:
         like = f"%{q}%"
         stmt = stmt.where(or_(Contractor.name.ilike(like), Contractor.nip.ilike(like), Contractor.city.ilike(like),
@@ -912,7 +927,7 @@ def contractor_new(request: Request, db: Session = Depends(get_db)):
 
 @app.get("/kontrahenci/{cid}", response_class=HTMLResponse)
 def contractor_edit(cid: int, request: Request, db: Session = Depends(get_db)):
-    c = db.get(Contractor, cid)
+    c = _own(db, request, Contractor, cid)
     if c is None:
         raise HTTPException(404)
     invoices = db.scalars(select(Invoice).where(Invoice.contractor_id == cid)
@@ -949,6 +964,8 @@ async def _save_contractor(request: Request, db: Session, c: Contractor):
     c.ksef_auto = form.get("ksef_auto") == "1"
     if not c.name:
         return render(request, db, "contractor_form.html", c=c, error="Podaj nazwę albo imię i nazwisko.")
+    if c.company_id is None:
+        c.company_id = current_company(request, db).id
     db.add(c)
     db.commit()
     flash(request, "Zapisano kontrahenta.")
@@ -962,7 +979,7 @@ async def contractor_create(request: Request, db: Session = Depends(get_db)):
 
 @app.post("/kontrahenci/{cid}")
 async def contractor_update(cid: int, request: Request, db: Session = Depends(get_db)):
-    c = db.get(Contractor, cid)
+    c = _own(db, request, Contractor, cid)
     if c is None:
         raise HTTPException(404)
     return await _save_contractor(request, db, c)
@@ -970,7 +987,7 @@ async def contractor_update(cid: int, request: Request, db: Session = Depends(ge
 
 @app.post("/kontrahenci/{cid}/ksef-auto")
 async def contractor_ksef_toggle(cid: int, request: Request, db: Session = Depends(get_db)):
-    c = db.get(Contractor, cid)
+    c = _own(db, request, Contractor, cid)
     if c is None:
         raise HTTPException(404)
     form = await request.form()
@@ -985,7 +1002,7 @@ async def contractor_ksef_toggle(cid: int, request: Request, db: Session = Depen
 
 @app.post("/kontrahenci/{cid}/notatki")
 async def contractor_note_add(cid: int, request: Request, db: Session = Depends(get_db)):
-    c = db.get(Contractor, cid)
+    c = _own(db, request, Contractor, cid)
     if c is None:
         raise HTTPException(404)
     form = await request.form()
@@ -1001,7 +1018,7 @@ async def contractor_note_add(cid: int, request: Request, db: Session = Depends(
 @app.post("/kontrahenci/{cid}/notatki/{nid}/usun")
 def contractor_note_delete(cid: int, nid: int, request: Request, db: Session = Depends(get_db)):
     n = db.get(ContractorNote, nid)
-    if n is None or n.contractor_id != cid:
+    if n is None or n.contractor_id != cid or _own(db, request, Contractor, cid) is None:
         raise HTTPException(404)
     db.delete(n)
     db.commit()
@@ -1011,7 +1028,7 @@ def contractor_note_delete(cid: int, nid: int, request: Request, db: Session = D
 
 @app.post("/kontrahenci/{cid}/usun")
 def contractor_delete(cid: int, request: Request, db: Session = Depends(get_db)):
-    c = db.get(Contractor, cid)
+    c = _own(db, request, Contractor, cid)
     if c is None:
         raise HTTPException(404)
     invoices = db.scalars(select(Invoice).where(Invoice.contractor_id == cid)).all()
@@ -1126,7 +1143,7 @@ def car_delete(car_id: int, request: Request, db: Session = Depends(get_db)):
 
 @app.get("/produkty", response_class=HTMLResponse)
 def product_list(request: Request, q: str = "", pokaz: str = "", db: Session = Depends(get_db)):
-    rows = prod.search(db, q, active_only=pokaz != "wszystkie")
+    rows = prod.search(db, current_company(request, db).id, q, active_only=pokaz != "wszystkie")
     return render(request, db, "products.html", products=rows, q=q, pokaz=pokaz,
                   suppliers=_last_suppliers(db, [r.id for r in rows]))
 
@@ -1151,8 +1168,8 @@ def product_new(request: Request, db: Session = Depends(get_db)):
                                                               ean="", description="", active=True))
 
 
-def _get_product(db: Session, pid: int) -> Product:
-    p = db.get(Product, pid)
+def _get_product(db: Session, pid: int, request: Request) -> Product:
+    p = _own(db, request, Product, pid)
     if p is None:
         raise HTTPException(404)
     return p
@@ -1160,7 +1177,7 @@ def _get_product(db: Session, pid: int) -> Product:
 
 @app.get("/produkty/{pid}", response_class=HTMLResponse)
 def product_edit(pid: int, request: Request, db: Session = Depends(get_db)):
-    p = _get_product(db, pid)
+    p = _get_product(db, pid, request)
     used = db.scalar(select(func.count()).select_from(InvoiceItem).where(InvoiceItem.product_id == pid))
     moves = db.scalars(select(StockMovement).where(StockMovement.product_id == pid)
                        .order_by(StockMovement.date.desc(), StockMovement.id.desc()).limit(50)).all()
@@ -1170,6 +1187,8 @@ def product_edit(pid: int, request: Request, db: Session = Depends(get_db)):
 async def _save_product(request: Request, db: Session, p: Product):
     form = await request.form()
     is_new = p.id is None
+    if p.company_id is None:
+        p.company_id = current_company(request, db).id
     try:
         p.code = (form.get("code") or "").strip()
         p.name = (form.get("name") or "").strip()
@@ -1214,12 +1233,12 @@ async def product_create(request: Request, db: Session = Depends(get_db)):
 
 @app.post("/produkty/{pid}")
 async def product_update(pid: int, request: Request, db: Session = Depends(get_db)):
-    return await _save_product(request, db, _get_product(db, pid))
+    return await _save_product(request, db, _get_product(db, pid, request))
 
 
 @app.post("/produkty/{pid}/usun")
 def product_delete(pid: int, request: Request, db: Session = Depends(get_db)):
-    p = _get_product(db, pid)
+    p = _get_product(db, pid, request)
     label = p.label
     # Pozycje faktur zachowuja nazwe i cene; traca tylko powiazanie z katalogiem.
     db.execute(update(InvoiceItem).where(InvoiceItem.product_id == pid).values(product_id=None))
@@ -1233,7 +1252,7 @@ def product_delete(pid: int, request: Request, db: Session = Depends(get_db)):
 
 @app.post("/produkty/{pid}/zdjecie/{photo_id}/usun")
 def product_photo_delete(pid: int, photo_id: int, request: Request, db: Session = Depends(get_db)):
-    p = _get_product(db, pid)
+    p = _get_product(db, pid, request)
     photo = next((ph for ph in p.photos if ph.id == photo_id), None)
     if photo is None:
         raise HTTPException(404)
@@ -1246,16 +1265,16 @@ def product_photo_delete(pid: int, photo_id: int, request: Request, db: Session 
 
 @app.post("/produkty/{pid}/zdjecie/{photo_id}/glowne")
 def product_photo_main(pid: int, photo_id: int, db: Session = Depends(get_db)):
-    p = _get_product(db, pid)
+    p = _get_product(db, pid, request)
     prod.set_main_photo(p, photo_id)
     db.commit()
     return redirect(f"/produkty/{pid}")
 
 
 @app.get("/zdjecia/{photo_id}")
-def product_photo(photo_id: int, mini: int = 0, db: Session = Depends(get_db)):
+def product_photo(photo_id: int, request: Request, mini: int = 0, db: Session = Depends(get_db)):
     photo = db.get(ProductPhoto, photo_id)
-    if photo is None:
+    if photo is None or _own(db, request, Product, photo.product_id) is None:
         raise HTTPException(404)
     return Response(photo.thumb if mini else photo.data, media_type="image/jpeg",
                     headers={"Cache-Control": "private, max-age=86400"})
@@ -1734,11 +1753,11 @@ def mail_compose(request: Request, faktura: int = 0, odpowiedz: int = 0, kontrah
             draft["subject"] = mail_templates.render(tpl.subject, ctx)
             draft["body"] = mail_templates.render(tpl.body, ctx)
     if kontakt and not draft["to"]:
-        p = db.get(Contact, kontakt)
+        p = _own(db, request, Contact, kontakt)
         if p and p.email:
             draft["to"] = p.email.split(",")[0].strip()
     if kontrahent and not draft["to"]:
-        c = db.get(Contractor, kontrahent)
+        c = _own(db, request, Contractor, kontrahent)
         if c and c.email:
             draft["to"] = c.email.split(",")[0].strip()
     if odpowiedz:
@@ -1951,8 +1970,8 @@ def _get_wz(db: Session, request: Request, wid: int) -> Delivery:
 
 
 def _wz_form(request: Request, db: Session, d: Delivery, error: str | None = None):
-    products = prod.search(db, "", active_only=True)
-    contractors = db.scalars(select(Contractor).order_by(Contractor.name)).all()
+    products = prod.search(db, current_company(request, db).id, "", active_only=True)
+    contractors = _contractors(db, current_company(request, db).id)
     return render(request, db, "wz_form.html", d=d, products=products, products_json=script_json(prod.picker_json(products)),
                   contractors=contractors, error=error)
 
@@ -1979,7 +1998,7 @@ def wz_new(request: Request, faktura: int = 0, rodzaj: str = "wz", kontrahent: i
         d = Delivery(company_id=company.id, kind=rodzaj if rodzaj in DELIVERY_KINDS else "wz", status="draft",
                      issue_date=dt.date.today(), recipient_name="", recipient_address="", notes="", signed_by="",
                      prices_gross=False)
-        c = db.get(Contractor, kontrahent) if kontrahent else None
+        c = _own(db, request, Contractor, kontrahent) if kontrahent else None
         if c is not None:
             d.contractor_id, d.recipient_name, d.recipient_address = c.id, c.name, "\n".join(c.address_lines)
     return _wz_form(request, db, d)
@@ -1994,7 +2013,7 @@ async def _wz_save(request: Request, db: Session, d: Delivery):
         d.kind = form.get("kind")
     d.prices_gross = form.get("prices_gross") == "1"
     cid = form.get("contractor_id") or ""
-    d.contractor_id = int(cid) if cid.isdigit() and db.get(Contractor, int(cid)) else None
+    d.contractor_id = int(cid) if cid.isdigit() and _own(db, request, Contractor, int(cid)) else None
     iid = form.get("invoice_id") or ""
     if iid.isdigit():
         inv = db.get(Invoice, int(iid))
@@ -2118,8 +2137,8 @@ def wz_delete(wid: int, request: Request, db: Session = Depends(get_db)):
 CONTACT_FIELDS = ["first_name", "last_name", "position", "email", "phone", "phone2", "notes"]
 
 
-def _get_contact(db: Session, pid: int) -> Contact:
-    p = db.get(Contact, pid)
+def _get_contact(db: Session, pid: int, request: Request) -> Contact:
+    p = _own(db, request, Contact, pid)
     if p is None:
         raise HTTPException(404)
     return p
@@ -2127,7 +2146,8 @@ def _get_contact(db: Session, pid: int) -> Contact:
 
 @app.get("/kontakty", response_class=HTMLResponse)
 def contact_list(request: Request, q: str = "", db: Session = Depends(get_db)):
-    stmt = select(Contact).outerjoin(Contractor, Contact.contractor_id == Contractor.id)
+    stmt = (select(Contact).outerjoin(Contractor, Contact.contractor_id == Contractor.id)
+            .where(Contact.company_id == current_company(request, db).id))
     if q:
         like = f"%{q}%"
         stmt = stmt.where(or_(Contact.first_name.ilike(like), Contact.last_name.ilike(like), Contact.email.ilike(like),
@@ -2137,7 +2157,7 @@ def contact_list(request: Request, q: str = "", db: Session = Depends(get_db)):
 
 
 def _contact_form(request: Request, db: Session, p: Contact, error: str | None = None):
-    contractors = db.scalars(select(Contractor).order_by(Contractor.name)).all()
+    contractors = _contractors(db, current_company(request, db).id)
     return render(request, db, "contact_form.html", p=p, contractors=contractors, error=error)
 
 
@@ -2153,9 +2173,11 @@ async def _contact_save(request: Request, db: Session, p: Contact):
     p.first_name, p.last_name, p.position = p.first_name[:100], p.last_name[:100], p.position[:150]
     p.email, p.phone, p.phone2 = p.email[:200], p.phone[:40], p.phone2[:40]
     cid = form.get("contractor_id") or ""
-    p.contractor_id = int(cid) if cid.isdigit() and db.get(Contractor, int(cid)) else None
+    p.contractor_id = int(cid) if cid.isdigit() and _own(db, request, Contractor, int(cid)) else None
     if not (p.first_name or p.last_name or p.email):
         return _contact_form(request, db, p, error="Podaj imię, nazwisko albo e-mail.")
+    if p.company_id is None:
+        p.company_id = current_company(request, db).id
     db.add(p)
     db.commit()
     flash(request, f"Zapisano: {p.name}.")
@@ -2170,17 +2192,17 @@ async def contact_create(request: Request, db: Session = Depends(get_db)):
 
 @app.get("/kontakty/{pid}", response_class=HTMLResponse)
 def contact_edit(pid: int, request: Request, db: Session = Depends(get_db)):
-    return _contact_form(request, db, _get_contact(db, pid))
+    return _contact_form(request, db, _get_contact(db, pid, request))
 
 
 @app.post("/kontakty/{pid}")
 async def contact_update(pid: int, request: Request, db: Session = Depends(get_db)):
-    return await _contact_save(request, db, _get_contact(db, pid))
+    return await _contact_save(request, db, _get_contact(db, pid, request))
 
 
 @app.post("/kontakty/{pid}/usun")
 def contact_delete(pid: int, request: Request, db: Session = Depends(get_db)):
-    p = _get_contact(db, pid)
+    p = _get_contact(db, pid, request)
     back = f"/kontrahenci/{p.contractor_id}" if p.contractor_id else "/kontakty"
     db.delete(p)
     db.commit()
@@ -2237,12 +2259,12 @@ def equipment_list(request: Request, q: str = "", widok: str = "", kategoria: st
 
 def _equipment_form(request: Request, db: Session, e: Equipment, error: str | None = None):
     company = current_company(request, db)
-    contractors = db.scalars(select(Contractor).order_by(Contractor.name)).all()
+    contractors = _contractors(db, current_company(request, db).id)
     contacts = db.scalars(select(Contact).where(Contact.contractor_id == e.contractor_id)
                           .order_by(Contact.last_name)).all() if e.contractor_id else []
     categories = [c for c in db.scalars(select(Equipment.category).where(Equipment.company_id == company.id,
                                                                           Equipment.category != "").distinct())]
-    products = prod.search(db, "", active_only=True)
+    products = prod.search(db, current_company(request, db).id, "", active_only=True)
     deliveries = db.scalars(select(Delivery).where(Delivery.company_id == company.id,
                                                    Delivery.contractor_id == e.contractor_id)
                             .order_by(Delivery.issue_date.desc()).limit(30)).all() if e.contractor_id else []
@@ -2260,7 +2282,7 @@ def equipment_new(request: Request, kontrahent: int = 0, db: Session = Depends(g
                   location="", notes="", active=True, warranty_remind_days=30, service_interval_months=0,
                   contractor_id=kontrahent or None, source_ref="")
     if kontrahent:
-        c = db.get(Contractor, kontrahent)
+        c = _own(db, request, Contractor, kontrahent)
         e.location = ", ".join(c.address_lines) if c else ""
     return _equipment_form(request, db, e)
 
@@ -2271,12 +2293,12 @@ async def _equipment_save(request: Request, db: Session, e: Equipment):
         setattr(e, f, (form.get(f) or "").strip()[:n])
     e.notes = (form.get("notes") or "").strip()
     cid = form.get("contractor_id") or ""
-    e.contractor_id = int(cid) if cid.isdigit() and db.get(Contractor, int(cid)) else None
+    e.contractor_id = int(cid) if cid.isdigit() and _own(db, request, Contractor, int(cid)) else None
     pid = form.get("contact_id") or ""
-    contact = db.get(Contact, int(pid)) if pid.isdigit() else None
+    contact = _own(db, request, Contact, int(pid)) if pid.isdigit() else None
     e.contact_id = contact.id if contact and contact.contractor_id == e.contractor_id else None
     label = (form.get("product") or "").strip()
-    product = next((p for p in prod.search(db, label, active_only=False) if p.label == label), None) if label else None
+    product = next((p for p in prod.search(db, current_company(request, db).id, label, active_only=False) if p.label == label), None) if label else None
     e.product_id = product.id if product else None
     if product and not e.name:
         e.name = product.name[:300]
@@ -2412,7 +2434,7 @@ def task_list(request: Request, widok: str = "dzis", q: str = "", db: Session = 
 
 def _task_form(request: Request, db: Session, t: Task, error: str | None = None):
     company = current_company(request, db)
-    contractors = db.scalars(select(Contractor).order_by(Contractor.name)).all()
+    contractors = _contractors(db, current_company(request, db).id)
     contacts = db.scalars(select(Contact).where(Contact.contractor_id == t.contractor_id)
                           .order_by(Contact.last_name)).all() if t.contractor_id else []
     equipment = db.scalars(select(Equipment).where(Equipment.company_id == company.id, Equipment.active,
@@ -2437,8 +2459,8 @@ def task_new(request: Request, kontrahent: int = 0, sprzet: int = 0, data: str =
     if e is not None and e.company_id == company.id:
         t.equipment_id, t.contractor_id, t.address = e.id, e.contractor_id, e.location
         t.title, t.category = f"Serwis: {e.name}"[:300], "serwis"
-    elif kontrahent and db.get(Contractor, kontrahent):
-        c = db.get(Contractor, kontrahent)
+    elif kontrahent and _own(db, request, Contractor, kontrahent):
+        c = _own(db, request, Contractor, kontrahent)
         t.contractor_id, t.address = c.id, ", ".join(c.address_lines)
     parent = db.get(Task, nadrzedne) if nadrzedne else None
     if parent is not None and parent.company_id == company.id:
@@ -2573,8 +2595,8 @@ def _get_offer(db: Session, request: Request, oid: int) -> Offer:
 
 
 def _offer_form(request: Request, db: Session, o: Offer, error: str | None = None):
-    products = prod.search(db, "", active_only=True)
-    contractors = db.scalars(select(Contractor).order_by(Contractor.name)).all()
+    products = prod.search(db, current_company(request, db).id, "", active_only=True)
+    contractors = _contractors(db, current_company(request, db).id)
     return render(request, db, "offer_form.html", o=o, products=products, STATUSES=OFFER_STATUSES,
                   products_json=script_json(prod.picker_json(products)), contractors=contractors, error=error)
 
@@ -2606,7 +2628,7 @@ def offer_new(request: Request, kontrahent: int = 0, kopia: int = 0, wzor: int =
     else:
         o = offers.from_template(t, web_actor(request)) if t and t.company_id == company.id \
             else offers.new(company.id, web_actor(request))
-        c = db.get(Contractor, kontrahent) if kontrahent else None
+        c = _own(db, request, Contractor, kontrahent) if kontrahent else None
         if c is not None:
             o.contractor_id, o.recipient_name = c.id, c.name
             o.recipient_address = "\n".join(c.address_lines)
@@ -2657,7 +2679,7 @@ async def _offer_save(request: Request, db: Session, o: Offer):
     o.internal_notes = (form.get("internal_notes") or "").strip()
     o.prices_gross = form.get("prices_gross") == "1"
     cid = form.get("contractor_id") or ""
-    o.contractor_id = int(cid) if cid.isdigit() and db.get(Contractor, int(cid)) else None
+    o.contractor_id = int(cid) if cid.isdigit() and _own(db, request, Contractor, int(cid)) else None
     prob = (form.get("probability") or "").strip().rstrip("%")
     error = None
     try:
@@ -2812,11 +2834,14 @@ def offer_delete(oid: int, request: Request, db: Session = Depends(get_db)):
 
 @app.get("/import/firmao", response_class=HTMLResponse)
 def firmao_import_page(request: Request, db: Session = Depends(get_db)):
-    counts = {"contractors": db.scalar(select(func.count(Contractor.id))),
-              "contractors_firmao": db.scalar(select(func.count(Contractor.id)).where(Contractor.source_ref.like("firmao:%"))),
-              "products": db.scalar(select(func.count(Product.id))),
-              "contacts": db.scalar(select(func.count(Contact.id))),
-              "products_firmao": db.scalar(select(func.count(Product.id)).where(Product.source_ref.like("firmao:%")))}
+    cid = current_company(request, db).id
+    counts = {"contractors": db.scalar(select(func.count(Contractor.id)).where(Contractor.company_id == cid)),
+              "contractors_firmao": db.scalar(select(func.count(Contractor.id)).where(
+                  Contractor.company_id == cid, Contractor.source_ref.like("firmao:%"))),
+              "products": db.scalar(select(func.count(Product.id)).where(Product.company_id == cid)),
+              "contacts": db.scalar(select(func.count(Contact.id)).where(Contact.company_id == cid)),
+              "products_firmao": db.scalar(select(func.count(Product.id)).where(
+                  Product.company_id == cid, Product.source_ref.like("firmao:%")))}
     return render(request, db, "firmao_import.html", counts=counts, result=request.session.pop("firmao_result", None))
 
 
@@ -2832,7 +2857,7 @@ async def firmao_import_run(request: Request, db: Session = Depends(get_db)):
             if not getattr(f, "filename", None):
                 continue
             rows = firmao_import.load(await f.read())
-            result[label] = fn(db, rows)
+            result[label] = fn(db, rows, current_company(request, db).id)
         if not result:
             raise ValueError("Wybierz co najmniej jeden plik.")
         audit(db, web_actor(request), "import.firmao",
@@ -3085,8 +3110,8 @@ def recurring_list(request: Request, q: str = "", status: str = "", db: Session 
 
 def _recurring_form(request: Request, db: Session, r: RecurringInvoice, error: str | None = None):
     company = current_company(request, db)
-    products = prod.search(db, "", active_only=True)
-    contractors = db.scalars(select(Contractor).order_by(Contractor.name)).all()
+    products = prod.search(db, current_company(request, db).id, "", active_only=True)
+    contractors = _contractors(db, current_company(request, db).id)
     mail_templates.ensure_defaults(db, company)
     tpls = db.scalars(select(EmailTemplate).where(EmailTemplate.company_id == company.id,
                                                   EmailTemplate.kind.in_(("recurring", "invoice")))).all()
@@ -3114,7 +3139,7 @@ def recurring_new(request: Request, faktura: int = 0, kontrahent: int = 0, db: S
                              interval_months=1, day_of_month=1, next_date=recurring.first_date(dt.date.today(), 1),
                              mode="send", email_to="", notes="", active=True, last_error="", start_date=dt.date.today())
     r.invoicing, r.number, r.contract_notes = True, "", ""
-    c = db.get(Contractor, kontrahent) if kontrahent and not faktura else None
+    c = _own(db, request, Contractor, kontrahent) if kontrahent and not faktura else None
     if c is not None:
         r.contractor_id, r.buyer_name, r.buyer_nip = c.id, c.name, c.nip
         r.buyer_address, r.email_to = "\n".join(c.address_lines), (c.email or "").split(",")[0].strip()
@@ -3130,7 +3155,7 @@ async def _recurring_save(request: Request, db: Session, r: RecurringInvoice):
     form = await request.form()
     r.name = (form.get("name") or "").strip()[:200]
     cid = form.get("contractor_id") or ""
-    c = db.get(Contractor, int(cid)) if cid.isdigit() else None
+    c = _own(db, request, Contractor, int(cid)) if cid.isdigit() else None
     r.contractor_id = c.id if c else None
     r.buyer_name = (form.get("recipient_name") or (c.name if c else "")).strip()[:300]
     r.buyer_address = (form.get("recipient_address") or "").strip()

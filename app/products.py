@@ -78,8 +78,9 @@ def set_main_photo(product: Product, photo_id: int) -> None:
         p.position = i
 
 
-def search(db: Session, query: str = "", active_only: bool = False, limit: int | None = None) -> list[Product]:
-    stmt = select(Product)
+def search(db: Session, company_id: int, query: str = "", active_only: bool = False,
+           limit: int | None = None) -> list[Product]:
+    stmt = select(Product).where(Product.company_id == company_id)
     if active_only:
         stmt = stmt.where(Product.active.is_(True))
     for word in (query or "").split():

@@ -44,7 +44,7 @@ def _store(db: Session, company: Company, m: dict, xml: bytes) -> PurchaseInvoic
         log.exception("Nie mozna odczytac XML %s", m.get("ksefNumber"))
         data = {}
     nip = (seller.get("nip") or data.get("seller_nip") or "").strip()
-    contractor = db.scalar(select(Contractor).where(Contractor.nip == nip).limit(1)) if nip else None
+    contractor = db.scalar(select(Contractor).where(Contractor.company_id == company.id, Contractor.nip == nip).limit(1)) if nip else None
     issue = m.get("issueDate") or ""
     p = PurchaseInvoice(
         company_id=company.id, ksef_env=company.ksef_env, ksef_number=m["ksefNumber"],

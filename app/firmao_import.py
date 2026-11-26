@@ -85,9 +85,10 @@ def _vat(v) -> str:
     return s if s in VAT_RATES else "23"
 
 
-def import_customers(db: Session, rows: list[dict]) -> dict:
-    by_ref = {c.source_ref: c for c in db.scalars(select(Contractor).where(Contractor.source_ref != ""))}
-    by_nip = {c.nip: c for c in db.scalars(select(Contractor).where(Contractor.nip != ""))}
+def import_customers(db: Session, rows: list[dict], company_id: int) -> dict:
+    mine = select(Contractor).where(Contractor.company_id == company_id)
+    by_ref = {c.source_ref: c for c in db.scalars(mine.where(Contractor.source_ref != ""))}
+    by_nip = {c.nip: c for c in db.scalars(mine.where(Contractor.nip != ""))}
     out = {"added": 0, "updated": 0, "skipped": 0}
     for r in rows:
         if r.get("deleted") or not r.get("id"):
@@ -101,7 +102,7 @@ def import_customers(db: Session, rows: list[dict]) -> dict:
         nip = re.sub(r"[^0-9A-Za-z]", "", str(r.get("nipNumber") or ""))[:20]
         c = by_ref.get(ref) or (by_nip.get(nip) if nip else None)
         if c is None:
-            c = Contractor(name=name, notes="")
+            c = Contractor(company_id=company_id, name=name, notes="")
             db.add(c)
             out["added"] += 1
         else:
@@ -134,9 +135,10 @@ def _price_group(r: dict) -> dict:
     return {}
 
 
-def import_products(db: Session, rows: list[dict]) -> dict:
-    by_ref = {p.source_ref: p for p in db.scalars(select(Product).where(Product.source_ref != ""))}
-    by_code = {p.code: p for p in db.scalars(select(Product).where(Product.code != ""))}
+def import_products(db: Session, rows: list[dict], company_id: int) -> dict:
+    mine = select(Product).where(Product.company_id == company_id)
+    by_ref = {p.source_ref: p for p in db.scalars(mine.where(Product.source_ref != ""))}
+    by_code = {p.code: p for p in db.scalars(mine.where(Product.code != ""))}
     out = {"added": 0, "updated": 0, "skipped": 0}
     for r in rows:
         if r.get("deleted") or r.get("isGroup") or not r.get("id") or not (r.get("name") or "").strip():
@@ -146,7 +148,7 @@ def import_products(db: Session, rows: list[dict]) -> dict:
         code = (r.get("productCode") or "").strip()[:60]
         p = by_ref.get(ref) or (by_code.get(code) if code else None)
         if p is None:
-            p = Product(name="", description="")
+            p = Product(company_id=company_id, name="", description="")
             db.add(p)
             out["added"] += 1
         else:
@@ -171,10 +173,12 @@ def import_products(db: Session, rows: list[dict]) -> dict:
     return out
 
 
-def import_contacts(db: Session, rows: list[dict]) -> dict:
+def import_contacts(db: Session, rows: list[dict], company_id: int) -> dict:
     """Osoby kontaktowe; firme wskazuje customer.id z Firmao (klientow importuj wczesniej albo razem)."""
-    by_ref = {p.source_ref: p for p in db.scalars(select(Contact).where(Contact.source_ref != ""))}
-    firms = {c.source_ref: c.id for c in db.scalars(select(Contractor).where(Contractor.source_ref.like("firmao:%")))}
+    by_ref = {p.source_ref: p for p in db.scalars(select(Contact).where(Contact.company_id == company_id,
+                                                                     Contact.source_ref != ""))}
+    firms = {c.source_ref: c.id for c in db.scalars(select(Contractor).where(Contractor.company_id == company_id,
+                                                                            Contractor.source_ref.like("firmao:%")))}
     out = {"added": 0, "updated": 0, "skipped": 0}
     for r in rows:
         if r.get("deleted") or not r.get("id"):
@@ -188,7 +192,7 @@ def import_contacts(db: Session, rows: list[dict]) -> dict:
         ref = f"firmao:{r['id']}"
         p = by_ref.get(ref)
         if p is None:
-            p = Contact(notes="")
+            p = Contact(company_id=company_id, notes="")
             db.add(p)
             out["added"] += 1
         else:

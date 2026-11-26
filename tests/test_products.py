@@ -79,7 +79,7 @@ def test_product_via_mcp(client):
     pid = int(r.headers["location"].rsplit("/", 1)[1])
     _, tok = connect(client, scopes=("read", "write"))
     at = tok["access_token"]
-    found = call(client, at, "search_products", query="keystone")["structuredContent"]["products"]
+    found = call(client, at, "search_products", company="Margot", query="keystone")["structuredContent"]["products"]
     assert found[0]["id"] == pid and found[0]["price_gross"] == "18.45" and found[0]["photos"]
     draft = call(client, at, "create_invoice_draft", company="Margot", buyer={"name": "Y"},
                  items=[{"product_id": pid, "quantity": 4}])

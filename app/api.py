@@ -45,9 +45,9 @@ def companies(p: Principal = Depends(principal), db: Session = Depends(get_db)):
 
 
 @router.get("/contractors")
-def contractors(q: str = "", limit: int = 20, p: Principal = Depends(principal), db: Session = Depends(get_db)):
+def contractors(company: str = "", q: str = "", limit: int = 20, p: Principal = Depends(principal), db: Session = Depends(get_db)):
     need(p, "read")
-    return {"contractors": svc.search_contractors(db, q, limit)}
+    return {"contractors": run(lambda: svc.search_contractors(db, company, q, limit))}
 
 
 @router.post("/contractors", status_code=201)
@@ -72,10 +72,10 @@ async def car_create(request: Request, p: Principal = Depends(principal), db: Se
 
 
 @router.get("/products")
-def products(request: Request, q: str = "", include_inactive: bool = False, limit: int = 50,
+def products(request: Request, company: str = "", q: str = "", include_inactive: bool = False, limit: int = 50,
              p: Principal = Depends(principal), db: Session = Depends(get_db)):
     need(p, "read")
-    rows = prod.search(db, q, active_only=not include_inactive, limit=limit)
+    rows = run(lambda: prod.search(db, svc.resolve_company(db, company).id, q, active_only=not include_inactive, limit=limit))
     return {"products": [prod.product_dict(x, base_url(request)) for x in rows]}
 
 

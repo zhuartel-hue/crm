@@ -58,7 +58,7 @@ def _t_companies(db, p, a, base):
 
 
 def _t_search_contractors(db, p, a, base):
-    return {"contractors": svc.search_contractors(db, a.get("query", ""), a.get("limit", 20))}
+    return {"contractors": svc.search_contractors(db, a.get("company"), a.get("query", ""), a.get("limit", 20))}
 
 
 def _t_create_contractor(db, p, a, base):
@@ -70,7 +70,7 @@ def _t_search_cars(db, p, a, base):
 
 
 def _t_search_products(db, p, a, base):
-    rows = prod.search(db, a.get("query", ""), active_only=not a.get("include_inactive"), limit=a.get("limit", 20))
+    rows = prod.search(db, svc.resolve_company(db, a.get("company")).id, a.get("query", ""), active_only=not a.get("include_inactive"), limit=a.get("limit", 20))
     return {"products": [prod.product_dict(x, base, with_description=bool(a.get("with_description"))) for x in rows]}
 
 
@@ -138,12 +138,13 @@ ITEM = _obj({
 TOOLS = [
     Tool("list_companies", "Firmy", "Lista firm, w imieniu których wystawiamy faktury.", "read", _obj({}), _t_companies),
     Tool("search_contractors", "Szukaj kontrahentów",
-         "Szuka kontrahentów (wspólnych dla obu firm) po nazwie, NIP, mieście, telefonie lub e-mailu.", "read",
-         _obj({"query": {"type": "string"}, "limit": {"type": "integer", "default": 20}}), _t_search_contractors),
-    Tool("create_contractor", "Nowy kontrahent", "Dodaje kontrahenta. Dla osoby prywatnej bez NIP.", "write",
-         _obj({"name": {"type": "string"}, "nip": {"type": "string"}, "is_company": {"type": "boolean"},
+         "Szuka kontrahentów podanej firmy (każda firma ma swoich) po nazwie, NIP, mieście, telefonie lub e-mailu.", "read",
+         _obj({"company": COMPANY, "query": {"type": "string"}, "limit": {"type": "integer", "default": 20}}, ["company"]),
+         _t_search_contractors),
+    Tool("create_contractor", "Nowy kontrahent", "Dodaje kontrahenta do podanej firmy. Dla osoby prywatnej bez NIP.", "write",
+         _obj({"company": COMPANY, "name": {"type": "string"}, "nip": {"type": "string"}, "is_company": {"type": "boolean"},
                "street": {"type": "string"}, "postal_code": {"type": "string"}, "city": {"type": "string"},
-               "email": {"type": "string"}, "phone": {"type": "string"}, "notes": {"type": "string"}}, ["name"]),
+               "email": {"type": "string"}, "phone": {"type": "string"}, "notes": {"type": "string"}}, ["company", "name"]),
          _t_create_contractor, read_only=False),
     Tool("search_cars", "Szukaj aut",
          "Szuka aut po marce, modelu, VIN lub numerze rejestracyjnym (kilka słów = wszystkie muszą pasować).", "read",
@@ -157,11 +158,11 @@ TOOLS = [
                "purchase_document": {"type": "string"}, "asking_price": MONEY, "notes": {"type": "string"}},
               ["company", "make"]), _t_create_car, read_only=False),
     Tool("search_products", "Szukaj produktów",
-         "Katalog produktów (wspólny dla obu firm) po kodzie, nazwie lub EAN: ceny netto/brutto, VAT, linki do zdjęć.",
+         "Katalog produktów podanej firmy po kodzie, nazwie lub EAN: ceny netto/brutto, VAT, linki do zdjęć.",
          "read",
-         _obj({"query": {"type": "string"}, "with_description": {"type": "boolean", "default": False},
+         _obj({"company": COMPANY, "query": {"type": "string"}, "with_description": {"type": "boolean", "default": False},
                "include_inactive": {"type": "boolean", "default": False},
-               "limit": {"type": "integer", "default": 20}}), _t_search_products),
+               "limit": {"type": "integer", "default": 20}}, ["company"]), _t_search_products),
     Tool("list_invoices", "Lista faktur", "Faktury z filtrami. Bez pozycji; szczegóły w get_invoice.", "read",
          _obj({"company": COMPANY,
                "month": {"type": "string", "description": "RRRR-MM"},
