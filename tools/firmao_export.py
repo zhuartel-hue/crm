@@ -43,7 +43,14 @@ OBJECTS = [
     ("documents", "id"),           # lista zalacznikow (bez tresci)
     ("invoicenumbers", "id"),
     ("mails", "id"),               # naglowki maili (API nie podaje tresci)
+    ("agreements", "id"),          # umowy / faktury cykliczne (okres, dzien, nastepna faktura)
+    # sprzet: nazwa obiektu w API nie jest pewna, probujemy kolejno (blad 404 = 1 zapytanie)
+    ("equipments", "id"),
+    ("equipment", "id"),
+    ("devices", "id"),
 ]
+# obiekty spoza domyslnego przebiegu (pobierane tylko przez --tylko)
+EXTRA = {"agreements", "equipments", "equipment", "devices"}
 
 
 def read_credentials(path: Path) -> dict:
@@ -132,9 +139,10 @@ def main() -> None:
     def progress(ep, n, total):
         print(f"\r{ep}: {n}" + (f" / {total}" if isinstance(total, int) and total >= 0 else ""), end="", flush=True)
 
-    summary = {}
+    old = out / "podsumowanie.json"
+    summary = json.loads(old.read_text(encoding="utf-8")) if only and old.is_file() else {}
     for ep, sort in OBJECTS:
-        if only and ep not in only:
+        if (only and ep not in only) or (not only and ep in EXTRA):
             continue
         try:
             rows = api.all(ep, sort, a.limit, progress)
