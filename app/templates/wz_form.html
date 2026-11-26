@@ -10,7 +10,7 @@
   <div><label>{{ 'Data przyjęcia' if is_pz else 'Data wydania' }}</label><input type="date" name="issue_date" value="{{ d.issue_date.isoformat() if d.issue_date }}"></div>
   <div><label>Kontrahent z bazy</label><select name="contractor_id" id="contractor">
     <option value="">—</option>
-    {% for c in contractors %}<option value="{{ c.id }}" data-name="{{ c.name }}" data-address="{{ c.address_lines|join('\n') }}" {{ 'selected' if c.id == d.contractor_id }}>{{ c.name }}</option>{% endfor %}
+    {% for c in contractors %}<option value="{{ c.id }}" data-search="{{ c.nip }} {{ c.city }}" data-name="{{ c.name }}" data-address="{{ c.address_lines|join('\n') }}" {{ 'selected' if c.id == d.contractor_id }}>{{ c.name }}</option>{% endfor %}
   </select></div>
   <div style="grid-column:1/-1"><label>{{ 'Dostawca' if is_pz else 'Odbiorca' }}</label><input name="recipient_name" id="recipient_name" value="{{ d.recipient_name }}" required></div>
   <div style="grid-column:1/-1"><label>{{ 'Adres dostawcy' if is_pz else 'Adres odbiorcy' }}</label><textarea name="recipient_address" id="recipient_address" rows="2">{{ d.recipient_address }}</textarea></div>

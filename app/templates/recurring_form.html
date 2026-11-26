@@ -12,7 +12,7 @@
   <div class="grid">
     <div style="grid-column:1/-1"><label>Nazwa (dla Ciebie)</label><input name="name" value="{{ r.name }}" required placeholder="np. Abonament serwisowy – Firma X"></div>
     <div><label>Kontrahent z bazy</label><select name="contractor_id" id="contractor"><option value="">— wpisz ręcznie —</option>
-      {% for c in contractors %}<option value="{{ c.id }}" data-name="{{ c.name }}" data-address="{{ c.address_lines|join('\n') }}" data-email="{{ (c.email or '').split(',')[0] }}" {{ 'selected' if c.id == r.contractor_id }}>{{ c.name }}</option>{% endfor %}</select></div>
+      {% for c in contractors %}<option value="{{ c.id }}" data-search="{{ c.nip }} {{ c.city }}" data-name="{{ c.name }}" data-address="{{ c.address_lines|join('\n') }}" data-email="{{ (c.email or '').split(',')[0] }}" {{ 'selected' if c.id == r.contractor_id }}>{{ c.name }}</option>{% endfor %}</select></div>
     <div><label>NIP</label><input name="buyer_nip" value="{{ r.buyer_nip }}" inputmode="numeric"></div>
     <div style="grid-column:1/-1"><label>Nabywca</label><input name="recipient_name" id="recipient_name" value="{{ r.buyer_name }}"></div>
     <div style="grid-column:1/-1"><label>Adres</label><textarea name="recipient_address" id="recipient_address" rows="2">{{ r.buyer_address }}</textarea></div>

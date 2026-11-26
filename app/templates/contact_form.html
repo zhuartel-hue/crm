@@ -8,7 +8,7 @@
   <div><label>Imię</label><input name="first_name" value="{{ p.first_name or '' }}"></div>
   <div><label>Nazwisko</label><input name="last_name" value="{{ p.last_name or '' }}"></div>
   <div style="grid-column:1/-1"><label>Firma</label><select name="contractor_id"><option value="">—</option>
-    {% for c in contractors %}<option value="{{ c.id }}" {{ 'selected' if c.id == p.contractor_id }}>{{ c.name }}</option>{% endfor %}</select></div>
+    {% for c in contractors %}<option value="{{ c.id }}" data-search="{{ c.nip }} {{ c.city }}" {{ 'selected' if c.id == p.contractor_id }}>{{ c.name }}</option>{% endfor %}</select></div>
   <div><label>Stanowisko</label><input name="position" value="{{ p.position or '' }}"></div>
   <div><label>E-mail</label><input name="email" type="email" value="{{ p.email or '' }}"></div>
   <div><label>Telefon</label><input name="phone" type="tel" value="{{ p.phone or '' }}"></div>

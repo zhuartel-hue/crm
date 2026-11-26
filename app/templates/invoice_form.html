@@ -39,9 +39,9 @@
 <div class="card">
   <h2 style="margin-top:0">Nabywca</h2>
   <div class="grid">
-    <div><label>Wybierz z listy</label><select name="contractor_id" id="contractor">
+    <div><label>Kontrahent z bazy (szukaj)</label><select name="contractor_id" id="contractor">
       <option value="">— nowy / wpisz ręcznie —</option>
-      {% for c in contractors %}<option value="{{ c.id }}" {{ 'selected' if inv.contractor_id == c.id }}>{{ c.name }}{% if c.nip %} ({{ c.nip }}){% endif %}</option>{% endfor %}
+      {% for c in contractors %}<option value="{{ c.id }}" data-search="{{ c.nip }} {{ c.city }}" {{ 'selected' if inv.contractor_id == c.id }}>{{ c.name }}{% if c.nip %} ({{ c.nip }}){% endif %}</option>{% endfor %}
     </select></div>
     <div><label>NIP (pusty dla osoby prywatnej)</label><div class="row" style="flex-wrap:nowrap"><input name="buyer_nip" id="buyer_nip" value="{{ inv.buyer_nip }}" inputmode="numeric">
       <button type="button" class="btn small" data-nip-lookup='{"nip":"buyer_nip","name":"buyer_name","address":"buyer_address","info":"buyer_nip_info"}'>Pobierz po NIP</button></div></div>

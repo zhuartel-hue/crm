@@ -11,7 +11,7 @@
   <div><label>Szansa (%)</label><input name="probability" inputmode="numeric" value="{{ o.probability if o.probability is not none else '' }}" placeholder="np. 50"></div>
   <div style="grid-column:1/-1"><label>Kontrahent z bazy</label><select name="contractor_id" id="contractor">
     <option value="">—</option>
-    {% for c in contractors %}<option value="{{ c.id }}" data-name="{{ c.name }}" data-address="{{ c.address_lines|join('\n') }}" data-email="{{ (c.email or '').split(',')[0]|trim }}" {{ 'selected' if c.id == o.contractor_id }}>{{ c.name }}</option>{% endfor %}
+    {% for c in contractors %}<option value="{{ c.id }}" data-search="{{ c.nip }} {{ c.city }}" data-name="{{ c.name }}" data-address="{{ c.address_lines|join('\n') }}" data-email="{{ (c.email or '').split(',')[0]|trim }}" {{ 'selected' if c.id == o.contractor_id }}>{{ c.name }}</option>{% endfor %}
   </select></div>
   <div style="grid-column:1/-1"><label>Klient</label><input name="recipient_name" id="recipient_name" value="{{ o.recipient_name }}" required></div>
   <div style="grid-column:1/-1"><label>Adres klienta</label><textarea name="recipient_address" id="recipient_address" rows="2">{{ o.recipient_address }}</textarea></div>
