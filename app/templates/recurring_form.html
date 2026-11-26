@@ -13,6 +13,7 @@
 <div class="card">
   <div class="grid">
     <div><label>Numer umowy (drukowany na fakturach)</label><input name="number" value="{{ r.number or '' }}" placeholder="np. 12/2026"></div>
+    <div><label>Status umowy <a class="muted" href="/ustawienia/statusy-umow" style="font-weight:400">(edytuj listę)</a></label><select name="contract_status" class="searchable" data-placeholder="szukaj statusu">{% for k, v in CSTATUSES.items() %}<option value="{{ k }}" {{ 'selected' if (r.contract_status or 'active') == k }}>{{ v }}</option>{% endfor %}</select></div>
     <div><label>Nazwa (dla Ciebie)</label><input name="name" value="{{ r.name }}" placeholder="np. Abonament serwisowy – Firma X"></div>
     <div><label>Data zawarcia</label><input type="date" name="signed_date" value="{{ r.signed_date.isoformat() if r.signed_date }}"></div>
     <div><label>Obowiązuje od</label><input type="date" name="start_date" value="{{ r.start_date.isoformat() if r.start_date }}"></div>

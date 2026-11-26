@@ -657,6 +657,12 @@ def import_agreements(db: Session, company: Company, agreements: list[dict], ent
             r.end_date = None
         r.active = not ended
         r.invoicing = not ended and bool(rows)
+        # Status 1:1 z Firmao; "Nowa" z biezacymi fakturami to umowa podpisana i trwajaca, wiec "aktywna".
+        # Status wybrany juz w Sygnavo zostaje, chyba ze umowa sie zakonczyla albo wznowila.
+        firmao = "expired" if ended else {"NEW": "active" if recent else "new", "SENT": "sent",
+                                          "ACCEPTED": "accepted", "EXPIRED": "active"}.get(status, "active")
+        if r.id is None or ended or r.contract_status in (None, "", "expired"):
+            r.contract_status = firmao
         upcoming = recurring.first_date(max(today + dt.timedelta(days=1), r.start_date or today), r.day_of_month)
         nxt = recurring.add_months(last, r.interval_months, r.day_of_month) if last else upcoming
         r.next_date = max(nxt, upcoming)

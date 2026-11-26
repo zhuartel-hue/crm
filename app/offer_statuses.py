@@ -1,4 +1,4 @@
-"""Statusy ofert ustawiane przez firme: nazwa, kolor, grupa (otwarta / wygrana / przegrana), kolejnosc, ukrycie.
+"""Statusy ofert i umow ustawiane przez firme: nazwa, kolor, grupa (otwarta / wygrana / przegrana), kolejnosc, ukrycie.
 Wbudowane statusy (1:1 jak w Firmao) mozna przemianowac, przestawic i ukryc, ale nie usunac, bo opiera sie
 na nich logika (np. "wysłana" po mailu, "zaakceptowana" po fakturze z oferty). Wlasne statusy mozna usuwac,
 gdy zadna oferta ich nie uzywa. Zapis w app_settings, osobno dla kazdej firmy."""
@@ -9,19 +9,36 @@ import json
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from .models import OFFER_LEGACY, OFFER_OPEN, OFFER_STATUSES, OFFER_WON, AppSetting, Offer
+from .models import OFFER_LEGACY, OFFER_OPEN, OFFER_STATUSES, OFFER_WON, AppSetting, Offer, RecurringInvoice
 
 GROUPS = {"open": "otwarta", "won": "wygrana", "lost": "przegrana"}
+# Umowy: status jest informacja dla zespolu; fakturowanie wlacza sie osobno w umowie.
+CONTRACT_STATUSES = {"new": "nowa", "sent": "wysłana", "accepted": "zaakceptowana", "active": "aktywna",
+                     "expired": "wygasła"}  # klucze 1:1 z Firmao (NEW, SENT, ACCEPTED, ACTIVE, EXPIRED)
+CONTRACT_GROUPS = {"run": "trwa", "end": "zakończona"}
+KINDS = {"offer": {"title": "Statusy ofert", "groups": GROUPS, "back": "/oferty", "what": "ofert"},
+         "contract": {"title": "Statusy umów", "groups": CONTRACT_GROUPS, "back": "/umowy", "what": "umów"}}
+
+
+def _col(kind: str):
+    return (RecurringInvoice.contract_status, RecurringInvoice.company_id) if kind == "contract" \
+        else (Offer.status, Offer.company_id)
 COLORS = {"": "szary", "m": "niebieski", "ok": "zielony", "warn": "żółty", "due": "czerwony"}
 MAX = 40
 
 
-def _key(company_id: int) -> str:
-    return f"offer_statuses:{company_id}"
+def _key(company_id: int, kind: str = "offer") -> str:
+    return f"{kind}_statuses:{company_id}"
 
 
-def defaults() -> list[dict]:
+def defaults(kind: str = "offer") -> list[dict]:
     out = []
+    if kind == "contract":
+        for k, label in CONTRACT_STATUSES.items():
+            group = "end" if k == "expired" else "run"
+            color = {"active": "ok", "new": "m", "sent": "m", "accepted": "warn", "expired": ""}.get(k, "")
+            out.append({"k": k, "label": label, "group": group, "color": color, "hidden": False, "builtin": True})
+        return out
     for k, label in OFFER_STATUSES.items():
         group = "open" if k in OFFER_OPEN else ("won" if k in OFFER_WON else "lost")
         color = "ok" if group == "won" else ("due" if group == "lost" else ("m" if k == "sent" else ""))
@@ -29,12 +46,14 @@ def defaults() -> list[dict]:
     return out
 
 
-def config(db: Session, company_id: int) -> list[dict]:
-    cache = db.info.setdefault("offer_statuses", {})
+def config(db: Session, company_id: int, kind: str = "offer") -> list[dict]:
+    cache = db.info.setdefault(f"{kind}_statuses", {})
     if company_id in cache:
         return cache[company_id]
-    rows = defaults()
-    saved = db.get(AppSetting, _key(company_id))
+    groups = KINDS[kind]["groups"]
+    first_group = next(iter(groups))
+    rows = defaults(kind)
+    saved = db.get(AppSetting, _key(company_id, kind))
     if saved is not None:
         try:
             data = json.loads(saved.value)
@@ -47,7 +66,7 @@ def config(db: Session, company_id: int) -> list[dict]:
                     continue
                 r = dict(base or {"k": k, "builtin": False})
                 r["label"] = (str(it.get("label") or "").strip() or (base or {}).get("label") or k)[:60]
-                r["group"] = it.get("group") if it.get("group") in GROUPS else (base or {}).get("group", "open")
+                r["group"] = it.get("group") if it.get("group") in groups else (base or {}).get("group", first_group)
                 r["color"] = it.get("color") if it.get("color") in COLORS else ""
                 r["hidden"] = bool(it.get("hidden"))
                 out.append(r)
@@ -58,33 +77,34 @@ def config(db: Session, company_id: int) -> list[dict]:
     return rows
 
 
-def find(db: Session, company_id: int, key: str) -> dict | None:
-    return next((r for r in config(db, company_id) if r["k"] == key), None)
+def find(db: Session, company_id: int, key: str, kind: str = "offer") -> dict | None:
+    return next((r for r in config(db, company_id, kind) if r["k"] == key), None)
 
 
-def label(db: Session, company_id: int, key: str) -> str:
-    r = find(db, company_id, key)
+def label(db: Session, company_id: int, key: str, kind: str = "offer") -> str:
+    r = find(db, company_id, key, kind)
     return r["label"] if r else OFFER_LEGACY.get(key, key)
 
 
-def keys(db: Session, company_id: int, group: str) -> list[str]:
-    return [r["k"] for r in config(db, company_id) if r["group"] == group]
+def keys(db: Session, company_id: int, group: str, kind: str = "offer") -> list[str]:
+    return [r["k"] for r in config(db, company_id, kind) if r["group"] == group]
 
 
-def visible(db: Session, company_id: int, current: str | None = None) -> dict[str, str]:
+def visible(db: Session, company_id: int, current: str | None = None, kind: str = "offer") -> dict[str, str]:
     """Statusy do wyboru (bez ukrytych; aktualny status oferty zawsze widoczny)."""
-    return {r["k"]: r["label"] for r in config(db, company_id) if not r["hidden"] or r["k"] == current}
+    return {r["k"]: r["label"] for r in config(db, company_id, kind) if not r["hidden"] or r["k"] == current}
 
 
-def usage(db: Session, company_id: int) -> dict[str, int]:
-    return dict(db.execute(select(Offer.status, func.count()).where(Offer.company_id == company_id)
-                           .group_by(Offer.status)).all())
+def usage(db: Session, company_id: int, kind: str = "offer") -> dict[str, int]:
+    col, comp = _col(kind)
+    return dict(db.execute(select(col, func.count()).where(comp == company_id).group_by(col)).all())
 
 
-def save(db: Session, company_id: int, rows: list[dict]) -> None:
+def save(db: Session, company_id: int, rows: list[dict], kind: str = "offer") -> None:
     """rows: kolejnosc docelowa; pozycje z delete=True usuwane (tylko wlasne i nieuzywane)."""
-    used = usage(db, company_id)
-    current = {r["k"]: r for r in config(db, company_id)}
+    used = usage(db, company_id, kind)
+    groups = KINDS[kind]["groups"]
+    current = {r["k"]: r for r in config(db, company_id, kind)}
     out, n_custom = [], max([int(k[1:]) for k in current if k.startswith("c") and k[1:].isdigit()] or [0])
     for it in rows:
         k = it.get("k") or ""
@@ -96,7 +116,7 @@ def save(db: Session, company_id: int, rows: list[dict]) -> None:
             if current[k].get("builtin"):
                 raise ValueError(f"Status „{current[k]['label']}” jest wbudowany. Możesz go ukryć, ale nie usunąć.")
             if used.get(k):
-                raise ValueError(f"Status „{current[k]['label']}” ma {used[k]} ofert. Zmień im status, potem usuń.")
+                raise ValueError(f"Status „{current[k]['label']}” ma {used[k]} {KINDS[kind]['what']}. Zmień im status, potem usuń.")
             continue
         name = (it.get("label") or "").strip()[:60]
         if not k:
@@ -106,24 +126,24 @@ def save(db: Session, company_id: int, rows: list[dict]) -> None:
             k = f"c{n_custom}"
         if not name:
             raise ValueError("Każdy status musi mieć nazwę.")
-        out.append({"k": k, "label": name, "group": it.get("group") if it.get("group") in GROUPS else "open",
+        out.append({"k": k, "label": name, "group": it.get("group") if it.get("group") in groups else next(iter(groups)),
                     "color": it.get("color") if it.get("color") in COLORS else "", "hidden": bool(it.get("hidden"))})
     if len(out) > MAX:
         raise ValueError(f"Najwyżej {MAX} statusów.")
     if not any(not r["hidden"] for r in out):
         raise ValueError("Zostaw przynajmniej jeden widoczny status.")
-    row = db.get(AppSetting, _key(company_id)) or AppSetting(key=_key(company_id))
+    row = db.get(AppSetting, _key(company_id, kind)) or AppSetting(key=_key(company_id, kind))
     row.value = json.dumps(out, ensure_ascii=False)
     db.add(row)
-    db.info.get("offer_statuses", {}).pop(company_id, None)
+    db.info.get(f"{kind}_statuses", {}).pop(company_id, None)
 
 
-def reset(db: Session, company_id: int) -> None:
-    used = usage(db, company_id)
-    busy = [r["label"] for r in config(db, company_id) if not r.get("builtin") and used.get(r["k"])]
+def reset(db: Session, company_id: int, kind: str = "offer") -> None:
+    used = usage(db, company_id, kind)
+    busy = [r["label"] for r in config(db, company_id, kind) if not r.get("builtin") and used.get(r["k"])]
     if busy:
         raise ValueError("Własne statusy mają jeszcze oferty: " + ", ".join(busy) + ". Najpierw zmień im status.")
-    row = db.get(AppSetting, _key(company_id))
+    row = db.get(AppSetting, _key(company_id, kind))
     if row is not None:
         db.delete(row)
-    db.info.get("offer_statuses", {}).pop(company_id, None)
+    db.info.get(f"{kind}_statuses", {}).pop(company_id, None)

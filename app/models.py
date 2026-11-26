@@ -997,6 +997,8 @@ class RecurringInvoice(Base):
     next_date: Mapped[dt.date] = mapped_column(Date)
     end_date: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
     mode: Mapped[str] = mapped_column(String(10), default="draft")  # RECURRING_MODES
+    # status umowy (nowa / aktywna / wygasla, wlasne w ustawieniach); tylko informacja, fakturowanie osobno
+    contract_status: Mapped[str] = mapped_column(String(12), default="active", server_default="active")
     email_to: Mapped[str] = mapped_column(String(300), default="")
     template_id: Mapped[int | None] = mapped_column(ForeignKey("email_templates.id", ondelete="SET NULL"), nullable=True)
     notes: Mapped[str] = mapped_column(Text, default="")
@@ -1033,6 +1035,26 @@ class RecurringInvoice(Base):
     def status_label(self) -> str:
         return {"ended": "zakończona", "future": "od " + (f"{self.start_date:%d.%m.%Y}" if self.start_date else ""),
                 "active": "aktywna", "no_invoices": "faktury wstrzymane"}[self.status]
+
+    @property
+    def contract_status_cfg(self) -> dict | None:
+        from sqlalchemy.orm import object_session
+
+        from . import offer_statuses
+
+        db = object_session(self)
+        return offer_statuses.find(db, self.company_id, self.contract_status, "contract") \
+            if db is not None and self.company_id else None
+
+    @property
+    def contract_status_label(self) -> str:
+        st = self.contract_status_cfg
+        return st["label"] if st else self.contract_status
+
+    @property
+    def contract_status_class(self) -> str:
+        st = self.contract_status_cfg
+        return st["color"] if st else ""
 
     @property
     def status_hint(self) -> str:

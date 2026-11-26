@@ -100,10 +100,22 @@ def test_contract_number_end_and_template(client):
         assert not c.active and c.end_date == dt.date.today()
         assert recurring.run_due(db, today=dt.date(2027, 5, 1)) == 0
     assert "7/2026" not in client.get("/umowy").text and "7/2026" in client.get("/umowy?status=zakonczone").text
+    with SessionLocal() as db:
+        assert db.get(RecurringInvoice, rid).contract_status == "expired"
+    assert "7/2026" in client.get("/umowy?status=s:expired").text
     client.post(f"/umowy/{rid}/wznow")
     with SessionLocal() as db:
         c = db.get(RecurringInvoice, rid)
-        assert c.active and c.end_date is None and c.next_date >= dt.date.today()
+        assert c.active and c.end_date is None and c.next_date >= dt.date.today() and c.contract_status == "active"
+    # status z listy i wlasny status w ustawieniach
+    client.post(f"/umowy/{rid}/status", data={"status": "accepted", "back": "/umowy"})
+    with SessionLocal() as db:
+        assert db.get(RecurringInvoice, rid).contract_status == "accepted"
+    assert client.post(f"/umowy/{rid}/status", data={"status": "nieznany"}).status_code == 400
+    page = client.get("/ustawienia/statusy-umow").text
+    assert "zaakceptowana" in page and "wygasła" in page
+    page = client.get("/umowy").text
+    assert "szukaj statusu" in page and "zaakceptowana" in page
     # umowa bez faktur cyklicznych: bez pozycji, nic nie tworzy
     r = client.post("/umowy/nowa", data=_form(number="8/2026", invoicing="", item_name=[""], item_price=[""]),
                     follow_redirects=False)

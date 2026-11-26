@@ -135,6 +135,7 @@ def end_contract(r: RecurringInvoice, today: dt.date | None = None) -> None:
     if r.end_date is None or r.end_date > today:
         r.end_date = today
     r.active = False
+    r.contract_status = "expired"
 
 
 def generate(db: Session, actor: str, r: RecurringInvoice, advance: bool = True) -> Invoice:

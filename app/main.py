@@ -2706,20 +2706,32 @@ def _offer_form(request: Request, db: Session, o: Offer, error: str | None = Non
                   products_json=script_json(prod.picker_json(products)), contractors=contractors, error=error)
 
 
-@app.get("/ustawienia/statusy-ofert", response_class=HTMLResponse)
-def offer_statuses_page(request: Request, db: Session = Depends(get_db), error: str | None = None):
+STATUS_KINDS = {"statusy-ofert": "offer", "statusy-umow": "contract"}
+
+
+@app.get("/ustawienia/statusy-{what}", response_class=HTMLResponse)
+def offer_statuses_page(what: str, request: Request, db: Session = Depends(get_db), error: str | None = None):
+    slug = f"statusy-{what}"
+    kind = STATUS_KINDS.get(slug)
+    if kind is None:
+        raise HTTPException(404)
     company = current_company(request, db)
-    return render(request, db, "offer_statuses.html", company=company, rows=ost.config(db, company.id),
-                  used=ost.usage(db, company.id), GROUPS=ost.GROUPS, COLORS=ost.COLORS, error=error)
+    return render(request, db, "offer_statuses.html", company=company, rows=ost.config(db, company.id, kind),
+                  used=ost.usage(db, company.id, kind), GROUPS=ost.KINDS[kind]["groups"], COLORS=ost.COLORS,
+                  error=error, kind=kind, K=ost.KINDS[kind])
 
 
-@app.post("/ustawienia/statusy-ofert")
-async def offer_statuses_save(request: Request, db: Session = Depends(get_db)):
+@app.post("/ustawienia/statusy-{what}")
+async def offer_statuses_save(what: str, request: Request, db: Session = Depends(get_db)):
+    slug = f"statusy-{what}"
+    kind = STATUS_KINDS.get(slug)
+    if kind is None:
+        raise HTTPException(404)
     company = current_company(request, db)
     form = await request.form()
     try:
         if form.get("reset"):
-            ost.reset(db, company.id)
+            ost.reset(db, company.id, kind)
         else:
             cols = {f: form.getlist(f) for f in ("k", "label", "group", "color", "hidden", "delete")}
             rows = [{"k": cols["k"][i], "label": cols["label"][i] if i < len(cols["label"]) else "",
@@ -2728,14 +2740,14 @@ async def offer_statuses_save(request: Request, db: Session = Depends(get_db)):
                      "hidden": (cols["hidden"][i] if i < len(cols["hidden"]) else "0") == "1",
                      "delete": (cols["delete"][i] if i < len(cols["delete"]) else "0") == "1"}
                     for i in range(len(cols["k"]))]
-            ost.save(db, company.id, rows)
+            ost.save(db, company.id, rows, kind)
     except ValueError as e:
         db.rollback()
-        return offer_statuses_page(request, db, error=str(e))
-    audit(db, web_actor(request), "offer.statuses", "Zmieniono statusy ofert", company_id=company.id)
+        return offer_statuses_page(what, request, db, error=str(e))
+    audit(db, web_actor(request), f"{kind}.statuses", f"Zmieniono: {ost.KINDS[kind]['title']}", company_id=company.id)
     db.commit()
-    flash(request, "Zapisano statusy ofert.")
-    return redirect("/ustawienia/statusy-ofert")
+    flash(request, f"Zapisano: {ost.KINDS[kind]['title'].lower()}.")
+    return redirect(f"/ustawienia/{slug}")
 
 
 @app.get("/oferty", response_class=HTMLResponse)
@@ -3235,6 +3247,8 @@ def recurring_list(request: Request, q: str = "", status: str = "", db: Session 
     cond = []
     if status == "zakonczone":
         cond.append(RecurringInvoice.active.is_(False))
+    elif status.startswith("s:"):
+        cond.append(RecurringInvoice.contract_status == status[2:])
     elif status != "wszystkie":
         cond.append(RecurringInvoice.active)
     if q:
@@ -3245,7 +3259,8 @@ def recurring_list(request: Request, q: str = "", status: str = "", db: Session 
                                                  RecurringInvoice.name)).all()
     monthly = sum((recurring.totals(r)["gross"] / r.interval_months for r in every if r.invoicing), Decimal("0"))
     return render(request, db, "recurring_list.html", rows=rows, totals={r.id: recurring.totals(r) for r in rows},
-                  monthly=calc.money(monthly), active_count=len(every), q=q, status=status)
+                  monthly=calc.money(monthly), active_count=len(every), q=q, status=status,
+                  CSTATUSES=ost.visible(db, company.id, kind="contract"))
 
 
 def _recurring_form(request: Request, db: Session, r: RecurringInvoice, error: str | None = None):
@@ -3265,6 +3280,7 @@ def _recurring_form(request: Request, db: Session, r: RecurringInvoice, error: s
                   products_json=script_json(prod.picker_json(products)), contractors=contractors, tpls=tpls,
                   INTERVALS=RECURRING_INTERVALS, MODES=RECURRING_MODES, schedule=recurring.schedule(r) if r.next_date else [],
                   totals=recurring.totals(r), history=history, has_mail=has_mail, error=error,
+                  CSTATUSES=ost.visible(db, company.id, r.contract_status, kind="contract"),
                   period=recurring.period_ctx(r.next_date or dt.date.today()))
 
 
@@ -3310,6 +3326,9 @@ async def _recurring_save(request: Request, db: Session, r: RecurringInvoice):
     r.number = (form.get("number") or "").strip()[:60]
     r.contract_notes = (form.get("contract_notes") or "").strip()
     r.invoicing = form.get("invoicing") == "1"
+    st = form.get("contract_status") or ""
+    if st and ost.find(db, r.company_id or current_company(request, db).id, st, "contract") is not None:
+        r.contract_status = st
     if r.active is None:
         r.active = True
     aid = form.get("mail_account_id") or ""
@@ -3402,10 +3421,29 @@ def recurring_end(rid: int, request: Request, db: Session = Depends(get_db)):
     return redirect(f"/umowy/{rid}")
 
 
+@app.post("/umowy/{rid}/status")
+async def recurring_status(rid: int, request: Request, db: Session = Depends(get_db)):
+    """Status umowy (informacja dla zespolu), zmieniany tez prosto z listy."""
+    r = _get_recurring(db, request, rid)
+    form = await request.form()
+    st = form.get("status") or ""
+    if ost.find(db, r.company_id, st, "contract") is None:
+        raise HTTPException(400)
+    if st != r.contract_status:
+        r.contract_status = st
+        audit(db, web_actor(request), "recurring.status", f"Umowa „{r.name}”: status {r.contract_status_label}",
+              company_id=r.company_id, entity="recurring", entity_id=r.id)
+        db.commit()
+    back = form.get("back") or ""
+    return redirect(back if back.startswith("/umowy") else f"/umowy/{rid}")
+
+
 @app.post("/umowy/{rid}/wznow")
 def recurring_resume(rid: int, request: Request, db: Session = Depends(get_db)):
     r = _get_recurring(db, request, rid)
     r.active, r.end_date = True, None
+    if r.contract_status == "expired":
+        r.contract_status = "active"
     today = dt.date.today()
     if r.next_date < today:
         r.next_date = recurring.first_date(today, r.day_of_month)

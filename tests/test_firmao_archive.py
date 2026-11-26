@@ -271,6 +271,9 @@ def test_agreements_equipment_tasks(client):
         assert new.active and new.invoicing and new.mode == "draft" and new.status_label == "aktywna"
         still = db.query(RecurringInvoice).filter_by(source_ref="firmao:403").one()
         assert still.active and still.invoicing and still.end_date is None and "31.12.2025" in still.contract_notes
+        assert (r.contract_status, old.contract_status, new.contract_status, still.contract_status) == \
+            ("active", "expired", "active", "active")
+        assert old.contract_status_label == "wygasła" and new.contract_status_label == "aktywna"
         e = db.query(Equipment).one()
         assert e.category == "Narzędzia" and e.location == "AUTO Citroen Jumper" and e.serial_no == "H-77"
         assert str(e.price) == "1299.99" and "akumulatorowa" in e.notes and e.contractor_id is None
