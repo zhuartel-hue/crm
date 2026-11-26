@@ -24,3 +24,6 @@ RECURRING_CHECK_MINUTES = int(os.environ.get("RECURRING_CHECK_MINUTES", "60"))
 # Pobieranie operacji z podlaczonych bankow (Enable Banking) co tyle godzin (0 = tylko przyciskiem).
 # Banki zwykle pozwalaja na ok. 4 pobrania w tle dziennie.
 BANK_SYNC_HOURS = float(os.environ.get("BANK_SYNC_HOURS", "6"))
+
+# Zadania w tle: "app" - watki w procesie aplikacji (jeden proces), "off" - osobny proces app.worker.
+BACKGROUND_JOBS = os.environ.get("BACKGROUND_JOBS", "app").strip().lower()

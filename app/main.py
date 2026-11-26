@@ -21,7 +21,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from . import dashboard as dash
 from . import offer_statuses as ost
-from . import tenancy
+from . import jobs, tenancy
 from . import users as users_mod
 from . import api, auth, calc, config, firmao_import, mail_templates, mcp_server, migrate, nip_lookup, numbering, offers, password, payments, pdf, recurring, secretbox, wz
 from . import products as prod
@@ -114,105 +114,11 @@ async def lifespan(_app: FastAPI):
     with SessionLocal() as db:
         seed(db)
         users_mod.ensure_default_org(db)
-    stops = [_start_mail_sync(), _start_purchase_sync(), _start_recurring(), _start_bank_sync()]
+    # Zadania w tle w tym procesie (BACKGROUND_JOBS=app) albo w osobnym workerze (off), app/jobs.py.
+    stop = jobs.start() if config.BACKGROUND_JOBS == "app" else None
     yield
-    for stop in stops:
-        if stop is not None:
-            stop.set()
-
-
-def _start_mail_sync():
-    """Pobieranie poczty w tle co MAIL_SYNC_MINUTES minut (jeden proces uvicorn)."""
-    import logging
-    import threading
-
-    minutes = config.MAIL_SYNC_MINUTES
-    if minutes <= 0:
-        return None
-    stop = threading.Event()
-
-    def loop():
-        while not stop.wait(minutes * 60):
-            try:
-                with SessionLocal() as db:
-                    mail.sync_all(db)
-            except Exception:  # noqa: BLE001
-                logging.getLogger("sygnavo.mail").exception("Pobieranie poczty nie powiodło się")
-
-    threading.Thread(target=loop, name="mail-sync", daemon=True).start()
-    return stop
-
-
-def _start_recurring():
-    """Faktury cykliczne: co RECURRING_CHECK_MINUTES minut tworzy faktury, ktorych termin nadszedl."""
-    import logging
-    import threading
-
-    minutes = config.RECURRING_CHECK_MINUTES
-    if minutes <= 0:
-        return None
-    stop = threading.Event()
-
-    def loop():
-        while True:
-            try:
-                with SessionLocal() as db:
-                    recurring.run_due(db)
-            except Exception:  # noqa: BLE001
-                logging.getLogger("sygnavo.recurring").exception("Faktury cykliczne nie powiodły się")
-            if stop.wait(minutes * 60):
-                return
-
-    threading.Thread(target=loop, name="recurring", daemon=True).start()
-    return stop
-
-
-def _start_purchase_sync():
-    """Faktury kosztowe z KSeF w tle co KSEF_PURCHASE_SYNC_HOURS godzin (dla firm z wlaczonym KSeF)."""
-    import logging
-    import threading
-
-    hours = config.KSEF_PURCHASE_SYNC_HOURS
-    if hours <= 0:
-        return None
-    stop = threading.Event()
-
-    def loop():
-        while not stop.wait(hours * 3600):
-            try:
-                with SessionLocal() as db:
-                    purchases.fetch_all(db)
-            except Exception:  # noqa: BLE001
-                logging.getLogger("sygnavo.ksef").exception("Pobieranie faktur kosztowych nie powiodło się")
-
-    threading.Thread(target=loop, name="ksef-purchases", daemon=True).start()
-    return stop
-
-
-def _start_bank_sync():
-    """Operacje z podlaczonych bankow (Enable Banking) co BANK_SYNC_HOURS godzin, od razu po starcie tez."""
-    import logging
-    import threading
-
-    hours = config.BANK_SYNC_HOURS
-    if hours <= 0:
-        return None
-    stop = threading.Event()
-
-    def loop():
-        if stop.wait(120):  # krotko po starcie, zeby nie spowalniac uruchamiania
-            return
-        while True:
-            try:
-                with SessionLocal() as db:
-                    bank_connect.sync_all(db)
-            except Exception:  # noqa: BLE001
-                logging.getLogger("sygnavo.bank").exception("Pobieranie operacji z banku nie powiodło się")
-            if stop.wait(hours * 3600):
-                return
-
-    threading.Thread(target=loop, name="bank-sync", daemon=True).start()
-    return stop
+    if stop is not None:
+        stop.set()
 
 
 app = FastAPI(title="Sygnavo", docs_url=None, redoc_url=None, lifespan=lifespan)

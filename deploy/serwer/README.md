@@ -82,6 +82,15 @@ przestanie działać, dopóki DNS nie wskazuje nowego serwera.
 3. Sprawdzić `https://<domena>/health` i logowanie. Jeśli źle: Rescale z powrotem.
 4. Po zmianie RAM dopasować `mem_limit` i `shared_buffers` w `docker-compose.yml` (PR) i `zainstaluj.sh`.
 
+### Osobny proces zadań w tle (przed kilkoma procesami aplikacji)
+
+1. Kopia: `bash /opt/sygnavo-serwer/kopia.sh przed-workerem`.
+2. W `/opt/crm/.env` dopisać `BACKGROUND_JOBS=off`.
+3. `docker compose --profile worker up -d` (z katalogu `/opt/sygnavo-serwer`, przez `dc` z `wspolne.sh`).
+4. Sprawdzić `docker compose logs worker`: „Worker działa”.
+Powrót: usunąć `BACKGROUND_JOBS=off`, `docker compose stop worker`, restart aplikacji. Nawet gdyby
+zadania chwilowo działały w obu procesach, blokada w bazie nie pozwoli wykonać ich dwa razy naraz.
+
 ### Więcej miejsca na bazę (bez wyłączania)
 1. `bash kopia.sh przed-volume`.
 2. Konsola: Volumes → `sygnavo-db` → Resize (np. +20 GB; zmniejszyć się nie da).

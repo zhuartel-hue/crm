@@ -81,7 +81,9 @@ Do zrobienia w etapie B (kolejność):
 2. `organisation_id` bezpośrednio w tabelach podrzędnych (pozycje faktur, załączniki, zdjęcia) i
    przegląd tras pobierających je po samym id.
 3. Dziennik zmian: wpisy bez firmy (np. dodanie użytkownika) przypisane do organizacji.
-4. Zadania w tle w kolejce (worker), potem kilka procesów aplikacji.
+4. ~~Zadania w tle w osobnym procesie~~ zrobione: `app/jobs.py` + `app/worker.py`, blokada w bazie
+   (`pg_try_advisory_lock`); domyślnie nadal w procesie aplikacji, przełączenie według README serwera.
+   Później: kolejka zadań na żądanie (np. wysyłka do KSeF) w tabeli bazy.
 5. 2FA (TOTP) dla właściciela i księgowości, zaproszenia mailem zamiast hasła startowego.
 6. Koniec danych Margot/ARI w `app/seed.py`: nowa organizacja startuje pusta (rejestracja po NIP).
 7. Szyfrowanie sekretów kluczem organizacji (envelope encryption, sekcja 3).

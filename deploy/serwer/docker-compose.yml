@@ -32,9 +32,23 @@ services:
     depends_on:
       db:
         condition: service_healthy
-    # Na razie jeden proces: zadania w tle (poczta, KSeF, bank, umowy) dzialaja jako watki w aplikacji
-    # i przy kilku procesach uruchomilyby sie kilka razy. Osobny worker = etap B (docs/ARCHITEKTURA-SAAS.md).
+    # Domyslnie zadania w tle (poczta, KSeF, bank, umowy) dzialaja w tym procesie (BACKGROUND_JOBS=app).
+    # Przejscie na osobny worker: BACKGROUND_JOBS=off w .env i `docker compose --profile worker up -d`
+    # (README, sekcja Rozbudowa). Dopiero wtedy wolno uruchomic kilka procesow aplikacji.
     mem_limit: 1536m
+
+  worker:
+    image: crm:latest
+    profiles: ["worker"]
+    restart: unless-stopped
+    command: ["python", "-m", "app.worker"]
+    env_file: ${APP_DIR:-/opt/crm}/.env
+    environment:
+      DATABASE_URL: postgresql+psycopg://crm:${DB_PASSWORD}@db/crm
+    depends_on:
+      db:
+        condition: service_healthy
+    mem_limit: 768m
 
   db:
     image: postgres:16-alpine
