@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Kalendarz{% endblock %}
 {% block content %}
-{% macro chip(t) %}<a class="cal-chip {{ 'done' if not t.is_open }} {{ 'late' if t.overdue(now) }} {{ 'hi' if t.priority in ('high', 'urgent') }}" href="/zadania/{{ t.id }}" title="{{ t.title }}">{% if not t.all_day and t.when %}<b>{{ t.when.strftime('%H:%M') }}</b> {% endif %}{{ t.title }}</a>{% endmacro %}
+{% macro chip(t) %}<a class="cal-chip {{ 'done' if not t.is_open }} {{ 'late' if t.overdue(now) }} {{ 'hi' if t.priority in ('high', 'urgent') }}" href="/zadania/{{ t.id }}" title="{{ t.title }}">{% if t.when and t.when.strftime('%H:%M') != '00:00' %}<b>{{ t.when.strftime('%H:%M') }}</b> {% endif %}{{ t.title }}</a>{% endmacro %}
 <div class="row"><h1 style="text-transform:capitalize">{{ cal.title }}</h1><span class="spacer"></span>
   <a class="btn" href="?widok={{ cal.view }}&dzien={{ cal.prev.isoformat() }}" aria-label="Wcześniej">‹</a>
   <a class="btn" href="?widok={{ cal.view }}">Dziś</a>

@@ -17,9 +17,9 @@
   <div style="grid-column:1/-1"><label>Co jest do zrobienia</label><input name="title" value="{{ t.title or '' }}" required placeholder="np. Przegląd monitoringu u klienta"></div>
   <div style="grid-column:1/-1"><label>Opis</label><textarea name="description" rows="4">{{ t.description or '' }}</textarea></div>
   <div><label>Początek</label><input type="date" name="start_date" value="{{ t.start_at.date().isoformat() if t.start_at }}"></div>
-  <div><label>Godzina</label><input type="time" name="start_time" value="{{ t.start_at.strftime('%H:%M') if t.start_at and not t.all_day }}"></div>
+  <div><label>Godzina</label><input type="time" name="start_time" value="{{ t.start_at.strftime('%H:%M') if t.start_at and t.start_at.strftime('%H:%M') != '00:00' }}"></div>
   <div><label>Termin</label><input type="date" name="due_date" value="{{ t.due_at.date().isoformat() if t.due_at }}"></div>
-  <div><label>Godzina</label><input type="time" name="due_time" value="{{ t.due_at.strftime('%H:%M') if t.due_at and not t.all_day }}"></div>
+  <div><label>Godzina</label><input type="time" name="due_time" value="{{ t.due_at.strftime('%H:%M') if t.due_at and t.due_at.strftime('%H:%M') != '00:00' }}"></div>
   <div><label>Priorytet</label><select name="priority">{% for k, v in PRIORITIES.items() %}<option value="{{ k }}" {{ 'selected' if t.priority == k }}>{{ v }}</option>{% endfor %}</select></div>
   <div><label>Status</label><select name="status">{% for k, v in STATUSES.items() %}<option value="{{ k }}" {{ 'selected' if t.status == k }}>{{ v }}</option>{% endfor %}</select></div>
   <div><label>Kategoria</label><input name="category" list="cat-list" value="{{ t.category or '' }}" placeholder="np. serwis, montaż, telefon"></div>

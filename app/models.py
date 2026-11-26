@@ -1151,7 +1151,8 @@ class Task(Base):
         if not self.is_open or not self.due_at:
             return False
         now = now or dt.datetime.now()
-        return self.due_at.date() < now.date() if self.all_day else self.due_at < now
+        date_only = self.all_day or self.due_at.time() == dt.time(0, 0)
+        return self.due_at.date() < now.date() if date_only else self.due_at < now
 
     @property
     def status_label(self) -> str:

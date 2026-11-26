@@ -55,7 +55,8 @@ def apply_form(db: Session, t: Task, form) -> None:
         raise ValueError("Sprawdź daty i godziny.") from None
     if not t.title:
         raise ValueError("Wpisz, co jest do zrobienia.")
-    if t.start_at and t.due_at and t.due_at < t.start_at:
+    no_time = not form.get("due_time") or not form.get("start_time")
+    if t.start_at and t.due_at and (t.due_at.date() < t.start_at.date() if no_time else t.due_at < t.start_at):
         raise ValueError("Termin jest przed początkiem.")
 
 

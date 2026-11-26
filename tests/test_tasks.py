@@ -44,6 +44,12 @@ def test_tasks_flow(client):
         t = db.get(Task, tid)
         assert t.status == "done" and t.timer_started_at is None and t.minutes_spent >= 95 and t.done_at
     assert "Montaż kamer" in client.get("/zadania?widok=zrobione").text
+    # sam dzien terminu przy godzinie poczatku jest w porzadku
+    r = client.post("/zadania/nowe", data={"title": "Serwis bramy", "start_date": today.isoformat(), "start_time": "12:00",
+                                           "due_date": today.isoformat()}, follow_redirects=False)
+    assert r.status_code == 303, r.text
+    assert "przed początkiem" in client.post("/zadania/nowe", data={"title": "X", "start_date": today.isoformat(),
+                                                                    "due_date": (today - dt.timedelta(days=1)).isoformat()}).text
     assert "Wpisz, co jest do zrobienia" in client.post("/zadania/nowe", data={"title": ""}).text
     client.post(f"/zadania/{tid}/usun")
     with SessionLocal() as db:
