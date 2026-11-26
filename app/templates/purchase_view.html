@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}{{ pi.invoice_number }}{% endblock %}
+{% block content %}
+<div class="row"><h1>Koszt {{ pi.invoice_number or pi.ksef_number }}</h1>
+<span class="badge {{ 'warn' if pi.status == 'new' else ('ok' if pi.status == 'accepted' else '') }}">{{ pi.status_label }}</span>
+{% if pi.paid_at %}<span class="badge ok">zapłacona {{ pi.paid_at|date }}</span>{% endif %}</div>
+<form method="post" action="/koszty/{{ pi.id }}" class="row" style="margin-bottom:16px">
+  {% if pi.status != 'accepted' %}<button class="btn primary" name="action" value="accepted">Zatwierdź</button>{% endif %}
+  {% if pi.status != 'rejected' %}<button class="btn" name="action" value="rejected">Odrzuć</button>{% endif %}
+  {% if pi.status != 'new' %}<button class="btn" name="action" value="new">Do weryfikacji</button>{% endif %}
+  <a class="btn" href="/koszty/{{ pi.id }}/xml">Pobierz XML</a>
+  <a class="btn" href="/koszty">Wróć</a>
+</form>
+<div class="grid">
+  <div class="card"><div class="muted">Sprzedawca</div><b>{{ pi.seller_name }}</b><br>NIP {{ pi.seller_nip }}
+    {% for l in data.get('seller_address', []) %}<br>{{ l }}{% endfor %}
+    {% if pi.contractor %}<br><a href="/kontrahenci/{{ pi.contractor_id }}">Karta kontrahenta</a>{% endif %}</div>
+  <div class="card">Wystawiona {{ pi.issue_date|date if pi.issue_date }}{% if data.get('sale_date') %}, sprzedaż {{ data.sale_date|date }}{% endif %}
+    {% if pi.due_date %}<br>Termin płatności <b>{{ pi.due_date|date }}</b>{% endif %}
+    {% if pi.bank_account %}<br>Konto <b>{{ pi.bank_account }}</b>{% endif %}
+    <br><span class="muted">Nr KSeF {{ pi.ksef_number }}{% if pi.ksef_env != 'prod' %} ({{ pi.ksef_env }}){% endif %}</span></div>
+</div>
+{% if data.get('items') %}
+<div class="card tbl"><table>
+<tr><th>Lp.</th><th>Nazwa</th><th class="n">Ilość</th><th>J.m.</th><th class="n hide-sm">Cena</th><th class="n hide-sm">VAT</th><th class="n">Wartość</th></tr>
+{% for it in data['items'] %}<tr><td>{{ loop.index }}</td><td>{{ it.name }}</td><td class="n">{% if it.quantity is not none %}{{ it.quantity|qty }}{% endif %}</td><td>{{ it.unit }}</td>
+<td class="n hide-sm">{% if it.unit_price is not none %}{{ it.unit_price|money }}{% endif %}</td><td class="n hide-sm">{{ it.rate }}{{ '%' if it.rate.isdigit() }}</td>
+<td class="n">{% if it.value is not none %}{{ it.value|money }}{% endif %}</td></tr>{% endfor %}
+</table></div>
+{% endif %}
+<div class="card tbl"><table>
+<tr><td>Netto</td><td class="n">{{ pi.net|money }}</td></tr>
+<tr><td>VAT</td><td class="n">{{ pi.vat|money }}</td></tr>
+<tr><td><b>Brutto</b></td><td class="n"><b>{{ pi.gross|money }} {{ 'zł' if pi.currency == 'PLN' else pi.currency }}</b></td></tr>
+</table></div>
+<div class="card">
+<form method="post" action="/koszty/{{ pi.id }}" class="grid">
+  <div style="grid-column:1/-1"><label>Uwagi</label><textarea name="notes" rows="2">{{ pi.notes }}</textarea></div>
+  {% if pi.paid_at %}
+  <div><label>&nbsp;</label><button class="btn" name="action" value="unpaid">Cofnij „zapłacona”</button></div>
+  {% else %}
+  <div><label>Data zapłaty</label><input type="date" name="paid_at" value="{{ today_iso }}"></div>
+  <div><label>&nbsp;</label><button class="btn primary" name="action" value="paid">Oznacz jako zapłaconą</button></div>
+  {% endif %}
+  <div><label>&nbsp;</label><button class="btn" name="action" value="notes">Zapisz uwagi</button></div>
+</form>
+</div>
+{% endblock %}

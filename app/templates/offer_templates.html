@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Wzory ofert{% endblock %}
+{% block content %}
+<div class="row"><h1>Wzory ofert</h1><span class="spacer"></span><a class="btn" href="/oferty">← Oferty</a></div>
+<p class="muted">Wzór to gotowy tytuł, treść i pozycje. Zapiszesz go przyciskiem „Zapisz jako wzór” na dowolnej ofercie, a nową ofertę zaczniesz od niego w Ofertach → „Nowa ze wzoru”.</p>
+<div class="card tbl"><table>
+<tr><th>Nazwa</th><th class="hide-sm">Tytuł</th><th class="n">Pozycji</th><th></th></tr>
+{% for t in rows %}<tr><td><b>{{ t.name }}</b></td><td class="hide-sm">{{ t.title }}</td><td class="n">{{ counts[t.id] }}</td>
+<td class="row" style="justify-content:flex-end"><a class="btn small primary" href="/oferty/nowa?wzor={{ t.id }}">Nowa oferta</a>
+<form method="post" action="/oferty/wzory/{{ t.id }}/usun" onsubmit="return confirm('Usunąć wzór {{ t.name }}?')"><button class="btn small danger">Usuń</button></form></td></tr>
+{% else %}<tr><td colspan="4" class="muted">Brak wzorów. Otwórz ofertę i kliknij „Zapisz jako wzór”.</td></tr>{% endfor %}
+</table></div>
+{% endblock %}

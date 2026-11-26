@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Poczta – ustawienia{% endblock %}
+{% block content %}
+<h1>Skrzynki pocztowe · {{ company.short_name }}</h1>
+<p class="muted">Każda skrzynka należy do jednej firmy (przełącznik u góry). Sygnavo pobiera pocztę co kilka minut i niczego nie usuwa ani nie zmienia na serwerze poczty.
+Hasło jest zapisane w bazie w postaci zaszyfrowanej i nigdzie się nie wyświetla. Dla Gmaila potrzebne jest „hasło aplikacji” (imap.gmail.com 993, smtp.gmail.com 465).</p>
+{% if accounts %}<div class="card tbl"><table>
+<tr><th>Skrzynka</th><th>Ostatnie pobranie</th><th></th></tr>
+{% for a in accounts %}<tr>
+<td><b>{{ a.email }}</b>{% if not a.active %} <span class="badge">wyłączona</span>{% endif %}<br><span class="muted">IMAP {{ a.imap_host }}:{{ a.imap_port }} · SMTP {{ a.smtp_host }}:{{ a.smtp_port }}</span>
+{% if a.last_error %}<br><span class="error" style="display:inline-block">{{ a.last_error }}</span>{% endif %}</td>
+<td>{{ a.last_sync.strftime('%d.%m %H:%M') if a.last_sync else '—' }}</td>
+<td style="white-space:nowrap">
+  <form method="post" action="/ustawienia/poczta/{{ a.id }}/test" style="display:inline"><button class="btn small">Test</button></form>
+  <a class="btn small" href="/ustawienia/poczta?edytuj={{ a.id }}">Edytuj</a>
+  <form method="post" action="/ustawienia/poczta/{{ a.id }}/usun" style="display:inline" onsubmit="return confirm('Usunąć skrzynkę z Sygnavo? Poczta na serwerze zostaje.')"><button class="btn small danger">Usuń</button></form>
+</td></tr>{% endfor %}
+</table></div>{% endif %}
+<form method="post" action="/ustawienia/poczta" class="card" autocomplete="off">
+<h2 style="margin-top:0">{{ 'Edycja ' ~ acc.email if acc.id else 'Nowa skrzynka' }}</h2>
+<input type="hidden" name="id" value="{{ acc.id or '' }}">
+<div class="grid">
+  <div><label>Adres e-mail</label><input name="email" value="{{ acc.email }}" required inputmode="email"></div>
+  <div><label>Nazwa nadawcy</label><input name="display_name" value="{{ acc.display_name }}"></div>
+  <div><label>Login (zwykle adres e-mail)</label><input name="username" value="{{ acc.username }}" autocomplete="off"></div>
+  <div><label>Hasło {% if acc.password_enc %}(zapisane; wpisz nowe, żeby zmienić){% endif %}</label>
+    <input type="password" name="password" value="" autocomplete="new-password" placeholder="{{ '••••••••' if acc.password_enc else '' }}"></div>
+  <div><label>Serwer IMAP</label><input name="imap_host" value="{{ acc.imap_host }}" required></div>
+  <div><label>Port IMAP (SSL)</label><input name="imap_port" value="{{ acc.imap_port }}" inputmode="numeric"></div>
+  <div><label>Serwer SMTP</label><input name="smtp_host" value="{{ acc.smtp_host }}" required></div>
+  <div><label>Port SMTP</label><input name="smtp_port" value="{{ acc.smtp_port }}" inputmode="numeric"></div>
+  <div><label>Szyfrowanie SMTP</label><select name="smtp_security">
+    <option value="ssl" {{ 'selected' if acc.smtp_security != 'starttls' }}>SSL/TLS (zwykle port 465)</option>
+    <option value="starttls" {{ 'selected' if acc.smtp_security == 'starttls' }}>STARTTLS (zwykle port 587)</option></select></div>
+  <div><label><input type="checkbox" name="active" value="1" {{ 'checked' if acc.active }} style="width:auto"> Aktywna</label></div>
+  <div style="grid-column:1/-1"><label>Podpis</label><textarea name="signature" rows="4">{{ acc.signature }}</textarea></div>
+</div>
+<p><button class="btn primary">Zapisz skrzynkę</button>{% if acc.id %} <a class="btn" href="/ustawienia/poczta">Anuluj</a>{% endif %}</p>
+</form>
+{% endblock %}

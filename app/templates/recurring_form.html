@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+{% block title %}{{ r.name or 'Nowa umowa' }}{% endblock %}
+{% block content %}
+<div class="row"><h1>{{ r.name if r.id else 'Nowa umowa' }}</h1>
+{% if r.id %}<span class="badge {{ 'm' if r.status == 'active' }}">{{ r.status_label }}</span><span class="muted" style="font-size:13px">{{ r.status_hint }}</span>{% endif %}<span class="spacer"></span>
+{% if r.id and r.active and r.invoicing %}<form method="post" action="/umowy/{{ r.id }}/teraz" onsubmit="return confirm('Utworzyć teraz fakturę za {{ r.next_date|date }}?')"><button class="btn">Utwórz teraz</button></form>{% endif %}
+{% if r.id and r.active %}<form method="post" action="/umowy/{{ r.id }}/zakoncz" onsubmit="return confirm('Zakończyć umowę z dniem dzisiejszym? Kolejne faktury nie będą tworzone.')"><button class="btn">Zakończ umowę</button></form>{% endif %}
+{% if r.id and not r.active %}<form method="post" action="/umowy/{{ r.id }}/wznow"><button class="btn">Wznów umowę</button></form>{% endif %}
+<a class="btn" href="/umowy">Wróć</a></div>
+{% if r.last_error %}<div class="error">Ostatnia próba się nie udała: {{ r.last_error }}</div>{% endif %}
+<div class="split">
+<form method="post" action="{{ '/umowy/%d' % r.id if r.id else '/umowy/nowa' }}">
+<div class="card">
+  <div class="grid">
+    <div><label>Numer umowy (drukowany na fakturach)</label><input name="number" value="{{ r.number or '' }}" placeholder="np. 12/2026"></div>
+    <div><label>Status umowy <a class="muted" href="/ustawienia/statusy-umow" style="font-weight:400">(edytuj listę)</a></label><select name="contract_status" class="searchable" data-placeholder="szukaj statusu">{% for k, v in CSTATUSES.items() %}<option value="{{ k }}" {{ 'selected' if (r.contract_status or 'active') == k }}>{{ v }}</option>{% endfor %}</select></div>
+    <div><label>Nazwa (dla Ciebie)</label><input name="name" value="{{ r.name }}" placeholder="np. Abonament serwisowy – Firma X"></div>
+    <div><label>Data zawarcia</label><input type="date" name="signed_date" value="{{ r.signed_date.isoformat() if r.signed_date }}"></div>
+    <div><label>Obowiązuje od</label><input type="date" name="start_date" value="{{ r.start_date.isoformat() if r.start_date }}"></div>
+    <div><label>Obowiązuje do</label><input type="date" name="end_date" value="{{ r.end_date.isoformat() if r.end_date }}">
+      <div class="muted" style="font-size:12px">Puste = bezterminowo: faktury idą, dopóki nie zakończysz umowy.</div></div>
+    <div><label>Kontrahent z bazy</label><select name="contractor_id" id="contractor"><option value="">— wpisz ręcznie —</option>
+      {% for c in contractors %}<option value="{{ c.id }}" data-search="{{ c.nip }} {{ c.city }}" data-name="{{ c.name }}" data-address="{{ c.address_lines|join('\n') }}" data-email="{{ (c.email or '').split(',')[0] }}" {{ 'selected' if c.id == r.contractor_id }}>{{ c.name }}</option>{% endfor %}</select></div>
+    <div><label>NIP</label><input name="buyer_nip" value="{{ r.buyer_nip }}" inputmode="numeric"></div>
+    <div style="grid-column:1/-1"><label>Nabywca</label><input name="recipient_name" id="recipient_name" value="{{ r.buyer_name }}"></div>
+    <div style="grid-column:1/-1"><label>Adres</label><textarea name="recipient_address" id="recipient_address" rows="2">{{ r.buyer_address }}</textarea></div>
+    <div style="grid-column:1/-1"><label>Adnotacje do umowy (tylko w programie)</label><textarea name="contract_notes" rows="2" placeholder="np. warunki, zakres serwisu, aneksy">{{ r.contract_notes or '' }}</textarea></div>
+  </div>
+</div>
+<div class="card">
+  <h2 style="margin-top:0">Faktury cykliczne</h2>
+  <p><label><input type="checkbox" name="invoicing" value="1" id="invoicing" {{ 'checked' if r.invoicing }}> Wystawiaj faktury cykliczne z tej umowy</label></p>
+  <div id="inv-opts">
+  <div class="grid">
+    <div><label>Co ile</label><select name="interval_months">{% for k, v in INTERVALS.items() %}<option value="{{ k }}" {{ 'selected' if r.interval_months == k }}>{{ v }}</option>{% endfor %}</select></div>
+    <div><label>Dzień miesiąca (0 = ostatni)</label><input name="day_of_month" type="number" min="0" max="28" value="{{ r.day_of_month }}"></div>
+    <div><label>Najbliższa faktura</label><input type="date" name="next_date" value="{{ r.next_date.isoformat() if r.next_date }}" required></div>
+    <div><label>Termin płatności (dni)</label><input name="due_days" type="number" min="0" value="{{ r.due_days }}"></div>
+    <div><label>Płatność</label><select name="payment_method">{% for k, v in PAYMENT_METHODS.items() %}<option value="{{ k }}" {{ 'selected' if r.payment_method == k }}>{{ v }}</option>{% endfor %}</select></div>
+  </div>
+  <h2>Co program ma zrobić w tym dniu</h2>
+  <div class="grid">
+    {% for k, v in MODES.items() %}<label class="choice"><input type="radio" name="mode" value="{{ k }}" {{ 'checked' if r.mode == k }}> {{ v[:1]|upper }}{{ v[1:] }}</label>{% endfor %}
+  </div>
+  <div class="grid" id="send-opts" style="margin-top:12px">
+    <div><label>E-mail klienta</label><input name="email_to" id="email_to" value="{{ r.email_to }}" inputmode="email"></div>
+    <div><label>Wysyłaj z adresu</label><select name="mail_account_id"><option value="">pierwsza skrzynka firmy</option>
+      {% for a in accounts %}<option value="{{ a.id }}" {{ 'selected' if a.id == r.mail_account_id }}>{{ a.email }}</option>{% endfor %}</select></div>
+    <div style="grid-column:1/-1"><label>Szablon maila</label><select name="template_id" id="tpl">
+      {% for t in tpls %}<option value="{{ t.id }}" data-subject="{{ t.subject }}" data-body="{{ t.body }}" {{ 'selected' if t.id == (r.template_id or default_tpl_id) }}>{{ t.name }}{{ ' (domyślny)' if t.id == default_tpl_id }}</option>{% endfor %}</select></div>
+    <div style="grid-column:1/-1"><label>Temat maila</label><input name="mail_subject" id="mail_subject"></div>
+    <div style="grid-column:1/-1"><label>Treść maila</label><textarea name="mail_body" id="mail_body" rows="6"></textarea>
+      <div class="muted" style="font-size:12px">Program wstawi: <code>{numer}</code> faktury, <code>{kwota}</code>, <code>{termin}</code> płatności, <code>{konto}</code>, <code>{nabywca}</code>, <code>{firma}</code>, <code>{miesiac}</code> ({{ period.miesiac }}), <code>{okres}</code> ({{ period.okres }}). Faktura w PDF idzie w załączniku.</div></div>
+    <div style="grid-column:1/-1"><label class="choice"><input type="radio" name="tpl_save" value="update" checked> Zmiany zapisz w tym szablonie (dotyczy wszystkich umów z tym szablonem)</label>
+      <label class="choice"><input type="radio" name="tpl_save" value="new"> Zapisz jako nowy szablon o nazwie:</label>
+      <input name="tpl_name" placeholder="np. Rozliczenie usługi – klienci prywatni"></div>
+  </div>
+  {% if not has_mail %}<p class="muted">Wysyłka mailem wymaga skrzynki w <a href="/ustawienia/poczta">Ustawieniach poczty</a>.</p>{% endif %}
+  </div>
+</div>
+<div class="card">
+  <div class="row"><h2 style="margin:0">Pozycje</h2><span class="spacer"></span>
+    <label style="margin:0"><input type="checkbox" name="prices_gross" value="1" id="prices_gross" {{ 'checked' if r.prices_gross }}> Ceny brutto</label></div>
+  <p class="muted">W nazwie pozycji i w uwagach możesz wpisać <code>{okres}</code> ({{ period.okres }}), <code>{miesiac}</code> ({{ period.miesiac }}) albo <code>{rok}</code>; program wstawi okres faktury.</p>
+  <div id="items">
+  {% for it in rows %}
+    <div class="item grid">
+      <div class="name" style="grid-column:1/-1"><label>Nazwa</label>
+        <input name="item_name" list="product-list" autocomplete="off" value="{{ it.name if it else '' }}" placeholder="np. Abonament serwisowy za {miesiac}">
+        <input type="hidden" name="item_product" value="{{ (it.product_id or '') if it else '' }}"></div>
+      <div><label>Ilość</label><input name="item_qty" inputmode="decimal" value="{{ it.quantity if it else '1' }}"></div>
+      <div><label>Jedn.</label><input name="item_unit" value="{{ it.unit if it else 'szt.' }}"></div>
+      <div><label>Cena</label><input name="item_price" inputmode="decimal" value="{{ it.unit_price|replace('.', ',') if it else '' }}"></div>
+      <div><label>VAT</label><select name="item_rate">{% for v in VAT_RATES %}<option value="{{ v }}" {{ 'selected' if (it.vat_rate if it else '23') == v }}>{{ v }}{{ '%' if v.isdigit() }}</option>{% endfor %}</select></div>
+      <div><label>&nbsp;</label><button type="button" class="btn small remove">Usuń</button></div>
+    </div>
+  {% endfor %}
+  </div>
+  <datalist id="product-list">{% for pr in products %}<option value="{{ pr.label }}"></option>{% endfor %}</datalist>
+  <p class="row"><button type="button" class="btn" id="add">+ Pozycja</button><span class="spacer"></span><b id="total"></b></p>
+  <p class="muted" style="margin-bottom:4px">Na fakturze program sam dopisze: „Na podstawie umowy nr …{{ ' z dnia …' }}”.</p>
+  <div><label>Uwagi na fakturze</label><textarea name="notes" rows="2" placeholder="np. Okres rozliczeniowy: {okres}">{{ r.notes }}</textarea></div>
+</div>
+<div class="row" style="margin-bottom:16px"><button class="btn primary">Zapisz</button><a class="btn" href="/umowy">Anuluj</a></div>
+</form>
+<div>
+  <div class="card preview">
+    <div class="muted" style="font-size:12px;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Podgląd</div>
+    <div style="font-size:22px;font-weight:700">{{ totals.gross|money }} zł <span class="muted" style="font-size:14px;font-weight:400">brutto · netto {{ totals.net|money }}</span></div>
+    <p>{{ r.interval_label|capitalize }}{% if r.day_of_month %}, {{ r.day_of_month }}. dnia miesiąca{% else %}, ostatniego dnia miesiąca{% endif %}. {{ r.mode_label|capitalize }}.</p>
+    {% if schedule %}<div class="muted" style="font-size:13px">Najbliższe terminy</div>
+    <ul style="margin:6px 0 0;padding-left:18px">{% for d in schedule %}<li>{{ d|date }}</li>{% endfor %}</ul>{% endif %}
+  </div>
+  {% if r.id %}<div class="card" id="pliki">
+    <div class="row"><h2 style="margin:0">Dokumenty umowy</h2><span class="spacer"></span><span class="muted" style="font-size:12px">{{ files|length }}</span></div>
+    {% for f in files %}<div class="row" style="gap:6px;padding:5px 0;border-bottom:1px solid var(--line)">
+      <div style="flex:1;min-width:0"><a href="/umowy/{{ r.id }}/pliki/{{ f.id }}" target="_blank" rel="noopener">{{ f.title }}</a>
+      <br><span class="muted" style="font-size:12px">{{ f.kind_label }}{% if f.doc_date %} z {{ f.doc_date|date }}{% endif %} · {{ (f.size / 1024)|round|int }} KB{% if f.added_by %} · dodał {{ f.added_by }}{% endif %} · {{ f.created_at|date }}</span></div>
+      <a class="btn small" href="/umowy/{{ r.id }}/pliki/{{ f.id }}?pobierz=1">Pobierz</a>
+      <form method="post" action="/umowy/{{ r.id }}/pliki/{{ f.id }}/usun" style="margin:0" onsubmit="return confirm('Usunąć plik {{ f.title|e }}?')"><button class="btn small danger" aria-label="Usuń plik">×</button></form>
+    </div>{% else %}<p class="muted" style="font-size:13px">Brak plików. Dodaj skan podpisanej umowy, aneksy, wypowiedzenie.</p>{% endfor %}
+    <form method="post" action="/umowy/{{ r.id }}/pliki" enctype="multipart/form-data" style="margin-top:8px">
+      <div class="row" style="gap:6px"><select name="kind" style="width:auto">{% for k, v in FILE_KINDS.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select>
+      <input type="date" name="doc_date" style="width:auto" title="data dokumentu (np. podpisania aneksu)"></div>
+      <input name="title" placeholder="opis, np. Aneks nr 1: zmiana ceny" style="margin-top:6px">
+      <input type="file" name="files" multiple accept=".pdf,image/*,.doc,.docx,.odt" style="margin-top:6px" required>
+      <button class="btn primary small" style="margin-top:6px">Dodaj plik</button>
+    </form></div>{% endif %}
+  {% if history %}<div class="card"><div class="muted" style="font-size:13px;margin-bottom:6px">Wystawione z tej umowy</div>
+  {% for i in history %}<div><a href="/faktury/{{ i.id }}">{{ i.display_number }}</a> · {{ i.issue_date|date }} · {{ i.total_gross|money }} zł</div>{% endfor %}</div>{% endif %}
+  {% if r.id %}<form method="post" action="/umowy/{{ r.id }}/usun" onsubmit="return confirm('Usunąć umowę? Wystawione faktury zostaną.')"><button class="btn danger small">Usuń</button></form>{% endif %}
+</div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>const PRODUCTS = {{ products_json|safe }};</script>
+<script src="/static/wz.js"></script>
+<script>
+(function () {
+  const sel = document.getElementById('contractor'), mail = document.getElementById('email_to');
+  sel.addEventListener('change', () => { const o = sel.selectedOptions[0]; if (o && o.dataset.email && !mail.value) mail.value = o.dataset.email; });
+  const opts = document.getElementById('send-opts');
+  const upd = () => { const m = document.querySelector('[name=mode]:checked'); opts.style.display = m && m.value === 'send' ? '' : 'none'; };
+  document.querySelectorAll('[name=mode]').forEach((x) => x.addEventListener('change', upd)); upd();
+  const inv = document.getElementById('invoicing'), io = document.getElementById('inv-opts');
+  const upd2 = () => { io.style.display = inv.checked ? '' : 'none'; };
+  inv.addEventListener('change', upd2); upd2();
+  const tpl = document.getElementById('tpl'), subj = document.getElementById('mail_subject'), body = document.getElementById('mail_body');
+  const fillTpl = () => { const o = tpl.selectedOptions[0]; if (o) { subj.value = o.dataset.subject || ''; body.value = o.dataset.body || ''; } };
+  tpl.addEventListener('change', fillTpl); fillTpl();
+})();
+</script>
+{% endblock %}

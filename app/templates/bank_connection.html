@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block title %}Połączenie z bankiem{% endblock %}
+{% block content %}
+<div class="row"><h1>Połączenie z bankiem · {{ company.short_name }}</h1><span class="spacer"></span>
+<a class="btn" href="/bank">← Bank</a></div>
+{% for w in warnings %}<div class="flash warn">{{ w }}</div>{% endfor %}
+
+<div class="card">
+<h2 style="margin-top:0">Podłączone banki</h2>
+{% for c in conns %}
+<div class="row" style="padding:8px 0;border-bottom:1px solid var(--line2)">
+  <div><b>{{ c.aspsp_name }}</b>
+  {% if c.state == 'active' %}<span class="badge ok">działa</span>
+  {% elif c.state == 'pending' %}<span class="badge">czeka na zgodę w banku</span>
+  {% elif c.state == 'expired' %}<span class="badge warn">zgoda wygasła</span>
+  {% else %}<span class="badge warn">błąd</span>{% endif %}
+  <br><span class="muted">
+  {% if c.valid_until %}Zgoda do {{ c.valid_until|date }}{% if c.days_left is not none and c.state == 'active' %} (zostało {{ c.days_left }} dni){% endif %} · {% endif %}
+  Ostatnie pobranie: {{ c.last_sync|date if c.last_sync else 'jeszcze nie' }}
+  {% for a in c.accounts %}<br>{{ a.name or 'Rachunek' }} {{ a.iban }} {{ a.currency }}{% endfor %}
+  {% if c.last_error %}<br><span style="color:var(--warn)">{{ c.last_error }}</span>{% endif %}</span></div>
+  <span class="spacer"></span>
+  {% if c.state == 'active' %}<form method="post" action="/bank/polaczenie/{{ c.id }}/pobierz"><button class="btn small">Pobierz teraz</button></form>{% endif %}
+  <form method="post" action="/bank/polaczenie/{{ c.id }}/odlacz" onsubmit="return confirm('Odłączyć {{ c.aspsp_name }}? Pobrane operacje zostaną w Banku.')"><button class="btn small">Odłącz</button></form>
+</div>
+{% else %}<p class="muted">Żaden bank nie jest jeszcze podłączony do {{ company.short_name }}.</p>{% endfor %}
+<p class="muted" style="margin-bottom:0">Program pobiera operacje sam, co kilka godzin, i od razu łączy wpłaty z fakturami (tak jak przy MT940).
+Zgodę w banku trzeba odnowić co kilka miesięcy: na 14 dni przed końcem zobaczysz przypomnienie na Start i tutaj.
+Odnowienie = ponowne „Podłącz” tego samego banku.</p>
+</div>
+
+{% if configured %}
+<div class="card">
+<h2 style="margin-top:0">Podłącz bank</h2>
+<div class="row" style="margin-bottom:8px">
+  <a class="btn small {{ 'primary' if psu == 'business' }}" href="/bank/polaczenie?psu=business">Konto firmowe</a>
+  <a class="btn small {{ 'primary' if psu == 'personal' }}" href="/bank/polaczenie?psu=personal">Konto osobiste (JDG)</a>
+</div>
+{% if banks_error %}<div class="flash warn">{{ banks_error }}</div>{% endif %}
+<form method="post" action="/bank/polaczenie/nowe">
+  <input type="hidden" name="psu_type" value="{{ psu }}">
+  <input type="search" placeholder="Szukaj banku…" oninput="var q=this.value.toLowerCase();document.querySelectorAll('.bank-opt').forEach(function(e){e.style.display=e.dataset.n.indexOf(q)<0?'none':''})" style="max-width:320px;margin-bottom:8px">
+  <div class="bank-list">
+  {% for b in banks %}
+    <label class="bank-opt" data-n="{{ b.name|lower }}"><input type="radio" name="aspsp" value="{{ b.name }}" required {{ 'checked' if 'pko' in b.name|lower and 'bank polski' in b.name|lower }}>
+    {% if b.logo %}<img src="{{ b.logo }}" alt="">{% endif %}<span>{{ b.name }}{% if b.beta %} <span class="muted">(beta)</span>{% endif %}</span></label>
+  {% else %}<p class="muted">Brak listy banków{% if not banks_error %} dla tego rodzaju konta{% endif %}.</p>{% endfor %}
+  </div>
+  <p><button class="btn primary">Podłącz wybrany bank</button></p>
+  <p class="muted" style="margin:0">Przeniesiemy Cię na stronę banku. Zaloguj się jak zwykle i zatwierdź dostęp do odczytu rachunków
+  (np. w aplikacji IKO). Sygnavo widzi tylko saldo i operacje, nie może robić przelewów.</p>
+</form>
+</div>
+{% endif %}
+
+<details class="card" {{ 'open' if not configured }}>
+<summary><b>{{ 'Konfiguracja Enable Banking' if configured else 'Pierwsze uruchomienie: konto w Enable Banking' }}</b></summary>
+<ol style="line-height:1.7">
+  <li>Załóż konto i zaloguj się: <a href="https://enablebanking.com/cp/applications" target="_blank" rel="noopener">enablebanking.com/cp/applications</a></li>
+  <li>Kliknij <b>Add a new application</b>, środowisko <b>Production</b>, nazwa <b>Sygnavo</b>. Klucz zostaw „generate in the browser”.</li>
+  <li>W polu <b>Redirect URLs</b> wklej:
+    <div class="copy"><code id="cp-redirect">{{ redirect_url }}</code><button type="button" class="btn small" onclick="navigator.clipboard.writeText(document.getElementById('cp-redirect').textContent)">Kopiuj</button></div></li>
+  <li>Polityka prywatności i regulamin:
+    <div class="copy"><code id="cp-privacy">{{ redirect_url|replace('/bank/powrot', '/polityka-prywatnosci') }}</code><button type="button" class="btn small" onclick="navigator.clipboard.writeText(document.getElementById('cp-privacy').textContent)">Kopiuj</button></div>
+    <div class="copy" style="margin-top:4px"><code id="cp-terms">{{ redirect_url|replace('/bank/powrot', '/regulamin') }}</code><button type="button" class="btn small" onclick="navigator.clipboard.writeText(document.getElementById('cp-terms').textContent)">Kopiuj</button></div></li>
+  <li>Po <b>Register</b> przeglądarka pobierze plik <code>….pem</code> (to klucz, nie wysyłaj go nikomu). Nazwa pliku to identyfikator aplikacji.</li>
+  <li>W Enable Banking przy aplikacji kliknij <b>Activate by linking accounts</b> i podłącz swoje rachunki w PKO BP (bez umowy działa tylko na Twoich rachunkach).</li>
+  <li>Wgraj plik .pem tutaj:</li>
+</ol>
+<form method="post" action="/bank/polaczenie/konfiguracja" enctype="multipart/form-data" class="grid" style="max-width:520px;gap:8px">
+  <label>Identyfikator aplikacji (Application ID)<input name="app_id" value="{{ app_id }}" placeholder="np. 3f2b…-…" required></label>
+  <label>Plik klucza .pem {% if configured %}<span class="muted">(zostaw puste, żeby nie zmieniać)</span>{% endif %}<input type="file" name="key_file" accept=".pem,.key,text/plain" {{ '' if configured else 'required' }}></label>
+  <p class="muted" style="margin:0">Klucz zapisujemy zaszyfrowany. Jedna aplikacja obsługuje obie firmy, każdą podłączasz osobno.
+  Identyfikator program wpisze sam z nazwy pliku .pem.</p>
+  <button class="btn primary">Zapisz</button>
+</form>
+</details>
+<script>
+document.querySelector('input[name=key_file]')?.addEventListener('change', function () {
+  var f = this.files[0], id = document.querySelector('input[name=app_id]');
+  if (f && !id.value) id.value = f.name.replace(/\.(pem|key)$/i, '');
+});
+</script>
+{% endblock %}

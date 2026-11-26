@@ -13,16 +13,18 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse, Response
 from sqlalchemy.orm import Session
 
+from . import products as prod
 from . import services as svc
 from .auth import Principal, authenticate, base_url, unauthorized
 from .db import get_db
 from .models import CAR_STATUSES, PAYMENT_METHODS, VAT_RATES
 
 PROTOCOL_VERSIONS = ["2025-11-25", "2025-06-18", "2025-03-26"]
-SERVER_INFO = {"name": "sygnavo", "title": "Sygnavo: faktury i CRM (Margot, ARI ERDMANN WORLDS)", "version": "0.2.1"}
+SERVER_INFO = {"name": "sygnavo", "title": "Sygnavo: faktury i CRM (Margot, ARI ERDMANN WORLDS)", "version": "0.3.0"}
 INSTRUCTIONS = (
     "Sygnavo: program do faktur i CRM autokomisu, dwie firmy: Margot (JDG) i ARI ERDMANN WORLDS (spółka). "
-    "Kwoty w PLN jako tekst z kropką (np. \"36150.00\"). Program wystawia tylko faktury VAT. "
+    "Kwoty w PLN jako tekst z kropką (np. \"36150.00\"). Rodzaje: faktura VAT, proforma, zaliczkowa, "
+    "końcowa (rozlicza zaliczki) i korygująca. "
     "Zasady: najpierw create_invoice_draft, pokaż użytkownikowi nabywcę, pozycje, kwoty netto, VAT i brutto, "
     "a issue_invoice wywołaj dopiero po wyraźnym potwierdzeniu użytkownika w tej rozmowie. "
     "Gdy nie wiesz, której firmy dotyczy prośba, zapytaj."
@@ -56,7 +58,7 @@ def _t_companies(db, p, a, base):
 
 
 def _t_search_contractors(db, p, a, base):
-    return {"contractors": svc.search_contractors(db, a.get("query", ""), a.get("limit", 20))}
+    return {"contractors": svc.search_contractors(db, a.get("company"), a.get("query", ""), a.get("limit", 20))}
 
 
 def _t_create_contractor(db, p, a, base):
@@ -67,12 +69,17 @@ def _t_search_cars(db, p, a, base):
     return {"cars": svc.search_cars(db, a.get("company"), a.get("query", ""), a.get("status", ""), a.get("limit", 20))}
 
 
+def _t_search_products(db, p, a, base):
+    rows = prod.search(db, svc.resolve_company(db, a.get("company")).id, a.get("query", ""), active_only=not a.get("include_inactive"), limit=a.get("limit", 20))
+    return {"products": [prod.product_dict(x, base, with_description=bool(a.get("with_description"))) for x in rows]}
+
+
 def _t_create_car(db, p, a, base):
     return {"car": svc.create_car(db, p.actor, a)}
 
 
 def _t_list_invoices(db, p, a, base):
-    rows = svc.list_invoices(db, a.get("company"), "", a.get("month", ""), a.get("status", ""),
+    rows = svc.list_invoices(db, a.get("company"), a.get("kind", ""), a.get("month", ""), a.get("status", ""),
                              bool(a.get("unpaid_only")), a.get("query", ""), a.get("limit", 30))
     return {"invoices": [svc.invoice_dict(i, base, with_items=False) for i in rows]}
 
@@ -85,6 +92,26 @@ def _t_create_draft(db, p, a, base):
     inv = svc.create_invoice_draft(db, p.actor, a)
     return {"invoice": svc.invoice_dict(inv, base),
             "next_step": "Pokaż szkic użytkownikowi. Wystaw (issue_invoice) tylko po jego potwierdzeniu."}
+
+
+def _t_correction(db, p, a, base):
+    inv = svc.start_correction(db, p.actor, a["invoice_id"], a.get("reason", ""), a.get("items"))
+    return {"invoice": svc.invoice_dict(inv, base),
+            "next_step": "Pokaż szkic korekty (przed/po i różnicę). Wystaw tylko po potwierdzeniu użytkownika."}
+
+
+def _t_from_proforma(db, p, a, base):
+    return {"invoice": svc.invoice_dict(svc.start_from_proforma(db, p.actor, a["proforma_id"]), base)}
+
+
+def _t_final(db, p, a, base):
+    return {"invoice": svc.invoice_dict(svc.start_final(db, p.actor, a["advance_id"]), base)}
+
+
+def _t_ksef(db, p, a, base):
+    from .ksef import service as ksef
+
+    return {"invoice": svc.invoice_dict(ksef.send(db, p.actor, a["invoice_id"]), base, with_items=False)}
 
 
 def _t_issue(db, p, a, base):
@@ -100,22 +127,24 @@ def _t_summary(db, p, a, base):
 
 
 ITEM = _obj({
+    "product_id": {"type": "integer", "description": "Produkt z katalogu (search_products): uzupełnia nazwę, jm., cenę i VAT."},
     "name": {"type": "string"},
     "quantity": {"type": ["string", "number"], "description": "Domyślnie 1."},
     "unit": {"type": "string", "description": "Domyślnie szt."},
-    "unit_price": {**MONEY, "description": "Cena jednostkowa: brutto, albo netto gdy prices_gross=false."},
+    "unit_price": {**MONEY, "description": "Cena jednostkowa: brutto, albo netto gdy prices_gross=false. Wymagana, gdy nie ma product_id albo produkt nie ma ceny."},
     "vat_rate": {"type": "string", "enum": VAT_RATES, "description": "Domyślnie 23."},
-}, ["name", "unit_price"])
+})
 
 TOOLS = [
     Tool("list_companies", "Firmy", "Lista firm, w imieniu których wystawiamy faktury.", "read", _obj({}), _t_companies),
     Tool("search_contractors", "Szukaj kontrahentów",
-         "Szuka kontrahentów (wspólnych dla obu firm) po nazwie, NIP, mieście, telefonie lub e-mailu.", "read",
-         _obj({"query": {"type": "string"}, "limit": {"type": "integer", "default": 20}}), _t_search_contractors),
-    Tool("create_contractor", "Nowy kontrahent", "Dodaje kontrahenta. Dla osoby prywatnej bez NIP.", "write",
-         _obj({"name": {"type": "string"}, "nip": {"type": "string"}, "is_company": {"type": "boolean"},
+         "Szuka kontrahentów podanej firmy (każda firma ma swoich) po nazwie, NIP, mieście, telefonie lub e-mailu.", "read",
+         _obj({"company": COMPANY, "query": {"type": "string"}, "limit": {"type": "integer", "default": 20}}, ["company"]),
+         _t_search_contractors),
+    Tool("create_contractor", "Nowy kontrahent", "Dodaje kontrahenta do podanej firmy. Dla osoby prywatnej bez NIP.", "write",
+         _obj({"company": COMPANY, "name": {"type": "string"}, "nip": {"type": "string"}, "is_company": {"type": "boolean"},
                "street": {"type": "string"}, "postal_code": {"type": "string"}, "city": {"type": "string"},
-               "email": {"type": "string"}, "phone": {"type": "string"}, "notes": {"type": "string"}}, ["name"]),
+               "email": {"type": "string"}, "phone": {"type": "string"}, "notes": {"type": "string"}}, ["company", "name"]),
          _t_create_contractor, read_only=False),
     Tool("search_cars", "Szukaj aut",
          "Szuka aut po marce, modelu, VIN lub numerze rejestracyjnym (kilka słów = wszystkie muszą pasować).", "read",
@@ -128,9 +157,16 @@ TOOLS = [
                "purchase_date": {"type": "string", "format": "date"}, "purchase_price": MONEY,
                "purchase_document": {"type": "string"}, "asking_price": MONEY, "notes": {"type": "string"}},
               ["company", "make"]), _t_create_car, read_only=False),
+    Tool("search_products", "Szukaj produktów",
+         "Katalog produktów podanej firmy po kodzie, nazwie lub EAN: ceny netto/brutto, VAT, linki do zdjęć.",
+         "read",
+         _obj({"company": COMPANY, "query": {"type": "string"}, "with_description": {"type": "boolean", "default": False},
+               "include_inactive": {"type": "boolean", "default": False},
+               "limit": {"type": "integer", "default": 20}}, ["company"]), _t_search_products),
     Tool("list_invoices", "Lista faktur", "Faktury z filtrami. Bez pozycji; szczegóły w get_invoice.", "read",
          _obj({"company": COMPANY,
                "month": {"type": "string", "description": "RRRR-MM"},
+               "kind": {"type": "string", "enum": ["vat", "proforma", "advance", "final", "correction"]},
                "status": {"type": "string", "enum": ["draft", "issued"]}, "unpaid_only": {"type": "boolean"},
                "query": {"type": "string", "description": "Numer, nabywca albo NIP."},
                "limit": {"type": "integer", "default": 30}}), _t_list_invoices),
@@ -142,6 +178,9 @@ TOOLS = [
          "cena brutto = price albo cena z karty auta, VAT 23%.", "write",
          _obj({
              "company": COMPANY,
+             "kind": {"type": "string", "enum": ["vat", "proforma", "advance"], "default": "vat",
+                      "description": "vat, proforma albo advance (zaliczkowa: items = całe zamówienie)."},
+             "advance_gross": {**MONEY, "description": "Tylko advance: otrzymana zaliczka brutto."},
              "buyer": _obj({"contractor_id": {"type": "integer"}, "name": {"type": "string"}, "nip": {"type": "string"},
                             "address": {"type": "string", "description": "Ulica, w drugiej linii kod i miasto."},
                             "save_as_contractor": {"type": "boolean"}}),
@@ -155,10 +194,28 @@ TOOLS = [
              "due_days": {"type": "integer"},
              "notes": {"type": "string"},
          }, ["company", "buyer"]), _t_create_draft, read_only=False),
+    Tool("create_correction_draft", "Szkic korekty",
+         "Szkic faktury korygującej do wystawionej faktury VAT/końcowej. items = pozycje PO korekcie "
+         "(bez items: kopia obecnego stanu do zmiany w aplikacji). Wymaga reason.", "write",
+         _obj({"invoice_id": {"type": "integer"}, "reason": {"type": "string"},
+               "items": {"type": "array", "items": ITEM}}, ["invoice_id", "reason"]),
+         _t_correction, read_only=False),
+    Tool("create_invoice_from_proforma", "Faktura VAT z proformy",
+         "Szkic faktury VAT z wystawionej proformy (te same pozycje i nabywca).", "write",
+         _obj({"proforma_id": {"type": "integer"}}, ["proforma_id"]), _t_from_proforma, read_only=False),
+    Tool("create_final_invoice_draft", "Szkic faktury końcowej",
+         "Szkic faktury końcowej z wystawionej zaliczkowej: całe zamówienie minus wszystkie nierozliczone "
+         "zaliczki tego nabywcy.", "write",
+         _obj({"advance_id": {"type": "integer"}}, ["advance_id"]), _t_final, read_only=False),
     Tool("issue_invoice", "Wystaw fakturę",
-         "Wystawia szkic: nadaje kolejny numer i blokuje zmiany; sprzedane auto dostaje status 'sold'. "
+         "Wystawia szkic: nadaje kolejny numer w serii rodzaju i blokuje zmiany; auto: VAT/końcowa = 'sold', "
+         "proforma/zaliczkowa = 'reserved'. "
          "Nieodwracalne. Wywołuj tylko po wyraźnym potwierdzeniu użytkownika.", "issue",
          _obj({"invoice_id": {"type": "integer"}}, ["invoice_id"]), _t_issue, read_only=False, destructive=True),
+    Tool("send_invoice_to_ksef", "Wyślij do KSeF",
+         "Wysyła WYSTAWIONĄ fakturę do KSeF (Krajowy System e-Faktur) i zwraca status oraz numer KSeF. "
+         "Nieodwracalne: zmiany tylko korektą. Wywołuj tylko po wyraźnym potwierdzeniu użytkownika.", "issue",
+         _obj({"invoice_id": {"type": "integer"}}, ["invoice_id"]), _t_ksef, read_only=False, destructive=True),
     Tool("mark_invoice_paid", "Zapisz płatność",
          "Zapisuje zapłaconą kwotę na wystawionej fakturze (bez amount = cała kwota).", "write",
          _obj({"invoice_id": {"type": "integer"}, "amount": MONEY}, ["invoice_id"]), _t_paid, read_only=False),

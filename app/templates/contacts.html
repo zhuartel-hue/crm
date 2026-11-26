@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Osoby kontaktowe{% endblock %}
+{% block content %}
+<div class="row"><h1>Osoby kontaktowe</h1><span class="spacer"></span><a class="btn primary" href="/kontakty/nowy">+ Osoba</a></div>
+<form class="card row" method="get"><div style="flex:1"><input name="q" value="{{ q }}" placeholder="imię, nazwisko, firma, e-mail, telefon"></div><button class="btn">Szukaj</button></form>
+<div class="card tbl"><table>
+<tr><th>Osoba</th><th>Firma</th><th class="hide-sm">Stanowisko</th><th>Telefon</th><th class="hide-sm">E-mail</th></tr>
+{% for p in rows %}
+<tr><td><a href="/kontakty/{{ p.id }}">{{ p.name }}</a></td>
+<td>{% if p.contractor %}<a href="/kontrahenci/{{ p.contractor_id }}">{{ p.contractor.name }}</a>{% endif %}</td>
+<td class="hide-sm">{{ p.position }}</td><td>{% if p.phone %}<a href="tel:{{ p.phone }}">{{ p.phone }}</a>{% endif %}</td>
+<td class="hide-sm">{% if p.email %}<a href="/poczta/nowa?kontakt={{ p.id }}">{{ p.email }}</a>{% endif %}</td></tr>
+{% else %}<tr><td colspan="5" class="muted">Brak osób kontaktowych.</td></tr>{% endfor %}
+</table></div>
+{% endblock %}

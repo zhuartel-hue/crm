@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Należności{% endblock %}
+{% block content %}
+<div class="row"><h1>Należności · {{ company.short_name }}</h1></div>
+<div class="grid">
+  <div class="card"><div class="muted">Nieopłacone</div><b style="font-size:1.3em">{{ total.total|money }} zł</b><br>{{ total.count }} faktur</div>
+  <div class="card"><div class="muted">Po terminie</div><b style="font-size:1.3em;color:#b42318">{{ total.overdue_total|money }} zł</b><br>{{ total.overdue_count }} faktur</div>
+</div>
+<form class="row" style="margin:12px 0" method="get">
+  {% for key, label in FILTERS.items() %}<a class="btn small {{ 'primary' if filtr == key }}" href="/naleznosci?filtr={{ key }}{% if q %}&amp;q={{ q|urlencode }}{% endif %}">{{ label }}</a>{% endfor %}
+  <input type="hidden" name="filtr" value="{{ filtr }}">
+  <input name="q" value="{{ q }}" placeholder="Numer, nabywca albo NIP" style="max-width:280px"><button class="btn">Szukaj</button>
+</form>
+{% if not has_mail %}<p class="muted">Przypomnienia mailem wyślesz po dodaniu skrzynki w <a href="/ustawienia/poczta">Ustawieniach poczty</a>.</p>{% endif %}
+<div class="card tbl"><table>
+<tr><th>Faktura</th><th>Nabywca</th><th>Termin</th><th class="n">Do zapłaty</th><th class="hide-sm">Przypomnienia</th><th></th></tr>
+{% for i in rows %}
+<tr>
+<td><a href="/faktury/{{ i.id }}">{{ i.display_number }}</a><br><span class="muted">{{ i.issue_date|date }}</span></td>
+<td>{{ i.buyer_name }}{% if i.buyer_nip %}<br><span class="muted">NIP {{ i.buyer_nip }}</span>{% endif %}</td>
+<td style="white-space:nowrap">{{ i.due_date|date if i.due_date else '—' }}
+  {% if i.days_overdue %}<br><span class="badge" style="color:#b42318">{{ i.days_overdue }} dni po terminie</span>
+  {% elif i.due_date and i.due_date >= today %}<br><span class="muted">za {{ (i.due_date - today).days }} dni</span>{% endif %}</td>
+<td class="n" style="white-space:nowrap"><b>{{ i.to_pay|money }} zł</b>{% if i.paid %}<br><span class="muted">z {{ i.total_gross|money }}</span>{% endif %}</td>
+<td class="hide-sm">{% if i.reminder_count %}{{ i.reminder_count }} · {{ i.last_reminder_at.strftime('%d.%m.%Y') }}{% else %}<span class="muted">—</span>{% endif %}</td>
+<td style="min-width:200px">
+  <details><summary>Wpłata</summary>
+  <form method="post" action="/faktury/{{ i.id }}/wplata" class="row">
+    <input name="amount" inputmode="decimal" value="{{ i.to_pay|money }}" style="max-width:110px" aria-label="Kwota">
+    <input type="date" name="date" value="{{ today.isoformat() }}" style="max-width:150px" aria-label="Data">
+    <input type="hidden" name="method" value="{{ i.payment_method }}">
+    <button class="btn small primary">Zapisz</button>
+  </form></details>
+  {% if has_mail %}<a class="btn small" href="/poczta/nowa?faktura={{ i.id }}&amp;przypomnienie=1">Przypomnij</a>{% endif %}
+</td>
+</tr>
+{% else %}<tr><td colspan="6" class="muted">Brak nieopłaconych faktur{{ ' w tym widoku' if filtr or q }}.</td></tr>{% endfor %}
+{% if filtr or q %}<tr><td colspan="3" class="muted">Pokazane: {{ shown.count }}</td><td class="n"><b>{{ shown.total|money }} zł</b></td><td colspan="2"></td></tr>{% endif %}
+</table></div>
+{% endblock %}

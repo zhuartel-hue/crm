@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Poczta{% endblock %}
+{% block content %}
+<div class="row"><h1>Poczta · {{ company.short_name }}</h1><span class="spacer"></span>
+  {% if accounts %}<form method="post" action="/poczta/odswiez"><button class="btn">Odśwież</button></form>
+  <a class="btn primary" href="/poczta/nowa">+ Nowa wiadomość</a>{% endif %}
+</div>
+{% if not accounts %}
+<div class="card">Nie ma jeszcze skrzynki dla {{ company.short_name }}. <a href="/ustawienia/poczta">Dodaj skrzynkę →</a></div>
+{% else %}
+<form class="row" style="margin-bottom:12px" method="get">
+  <select name="konto" style="max-width:260px"><option value="0">Wszystkie skrzynki</option>
+    {% for a in accounts %}<option value="{{ a.id }}" {{ 'selected' if a.id == konto }}>{{ a.email }}</option>{% endfor %}</select>
+  <select name="kierunek" style="max-width:160px">
+    <option value="">odebrane i wysłane</option>
+    <option value="in" {{ 'selected' if kierunek == 'in' }}>odebrane</option>
+    <option value="out" {{ 'selected' if kierunek == 'out' }}>wysłane</option></select>
+  <input name="q" value="{{ q }}" placeholder="Temat albo nadawca" style="max-width:240px">
+  <button class="btn">Pokaż</button>
+</form>
+{% for a in accounts %}{% if a.last_error %}<div class="error">{{ a.email }}: {{ a.last_error }}</div>{% endif %}{% endfor %}
+<div class="card tbl"><table>
+<tr><th>Data</th><th>{{ 'Do' if kierunek == 'out' else 'Od / do' }}</th><th>Temat</th></tr>
+{% for m in rows %}
+<tr style="{{ '' if m.seen else 'font-weight:600' }}">
+<td style="white-space:nowrap">{{ m.date.strftime('%d.%m %H:%M') if m.date }}</td>
+<td>{% if m.direction == 'out' %}<span class="muted">do</span> {{ m.to_addrs[:60] }}{% else %}{{ m.from_name or m.from_addr }}{% endif %}
+  {% if m.contractor %}<br><a class="muted" href="/kontrahenci/{{ m.contractor_id }}">{{ m.contractor.name }}</a>{% endif %}</td>
+<td><a href="/poczta/{{ m.id }}">{{ m.subject or '(bez tematu)' }}</a>{% if m.attachments %} 📎{% endif %}
+  {% if m.invoice %} <span class="badge">{{ m.invoice.number }}</span>{% endif %}
+  <br><span class="muted">{{ m.snippet }}</span></td>
+</tr>
+{% else %}<tr><td colspan="3" class="muted">Brak wiadomości. Kliknij „Odśwież”.</td></tr>{% endfor %}
+</table></div>
+{% endif %}
+{% endblock %}

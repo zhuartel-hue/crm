@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Maile · {{ c.name }}{% endblock %}
+{% block content %}
+<div class="row"><h1>Maile · <a href="/kontrahenci/{{ c.id }}">{{ c.name }}</a></h1><span class="spacer"></span>
+  <a class="btn primary" href="/poczta/nowa?{{ 'kontakt=' ~ contact.id if contact else 'kontrahent=' ~ c.id }}">Napisz e-mail</a></div>
+<div class="row" style="gap:6px;flex-wrap:wrap;margin-bottom:10px">
+  <a class="btn small {{ 'primary' if not contact }}" href="/kontrahenci/{{ c.id }}/maile">Cała firma</a>
+  {% for p in c.contacts if p.email %}<a class="btn small {{ 'primary' if contact and contact.id == p.id }}" href="/kontrahenci/{{ c.id }}/maile?osoba={{ p.id }}">{{ p.name or p.email }}</a>{% endfor %}
+</div>
+<form class="row" style="margin-bottom:12px" method="get">
+  {% if contact %}<input type="hidden" name="osoba" value="{{ contact.id }}">{% endif %}
+  <select name="kierunek" style="max-width:180px" onchange="this.form.submit()">
+    <option value="">odebrane i wysłane</option>
+    <option value="in" {{ 'selected' if kierunek == 'in' }}>odebrane</option>
+    <option value="out" {{ 'selected' if kierunek == 'out' }}>wysłane</option></select>
+  <input name="q" value="{{ q }}" placeholder="Temat, treść albo nadawca" style="max-width:280px"><button class="btn">Szukaj</button>
+</form>
+<p class="muted">{% if contact %}Korespondencja z {{ contact.name }} ({{ contact.email }}).{% else %}Korespondencja z firmą: adresy kontrahenta i wszystkich jego osób kontaktowych.{% endif %} {{ rows|length }} wiadomości.</p>
+<div class="card tbl"><table>
+<tr><th>Data</th><th></th><th>Od / do</th><th>Temat</th></tr>
+{% for m in rows %}
+<tr style="{{ '' if m.seen or m.direction == 'out' else 'font-weight:600' }}">
+<td style="white-space:nowrap">{{ m.date.strftime('%d.%m.%Y %H:%M') if m.date }}</td>
+<td>{% if m.direction == 'out' %}<span class="badge m">wysłany</span>{% else %}<span class="badge">odebrany</span>{% endif %}</td>
+<td>{% if m.direction == 'out' %}<span class="muted">do</span> {{ m.to_addrs[:60] }}{% else %}{{ m.from_name or m.from_addr }}{% if m.from_name %}<br><span class="muted">{{ m.from_addr }}</span>{% endif %}{% endif %}</td>
+<td><a href="/poczta/{{ m.id }}">{{ m.subject or '(bez tematu)' }}</a>{% if m.attachments %} 📎{% endif %}
+  {% if m.invoice %} <span class="badge">{{ m.invoice.number }}</span>{% endif %}
+  <br><span class="muted">{{ m.snippet }}</span></td>
+</tr>
+{% else %}<tr><td colspan="4" class="muted">Brak wiadomości{{ ' z tą osobą' if contact else ' z adresów tej firmy' }}. Maile pojawiają się, gdy firma ma skrzynkę w Poczcie.</td></tr>{% endfor %}
+</table></div>
+{% endblock %}

@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Nowa wiadomość{% endblock %}
+{% block content %}
+<h1>Nowa wiadomość</h1>
+{% if not accounts %}
+<div class="card">Brak aktywnej skrzynki dla {{ company.short_name }}. <a href="/ustawienia/poczta">Dodaj skrzynkę →</a></div>
+{% else %}
+<form method="post" action="/poczta/nowa" enctype="multipart/form-data" class="card">
+<input type="hidden" name="in_reply_to" value="{{ draft.in_reply_to }}">
+<input type="hidden" name="invoice_id" value="{{ draft.invoice_id or '' }}">
+<input type="hidden" name="offer_id" value="{{ draft.offer_id or '' }}">
+<input type="hidden" name="reminder" value="{{ draft.reminder or '' }}">
+<div class="grid">
+  {% if tpls %}<div style="grid-column:1/-1"><label>Szablon (<a href="/szablony">zarządzaj</a>)</label>
+    <select id="tpl-pick">{% for t in tpls %}<option value="{{ t.id }}" {{ 'selected' if tpl and t.id == tpl.id }}>{{ t.kind_label }} · {{ t.name }}</option>{% endfor %}</select></div>{% endif %}
+  <div style="grid-column:1/-1"><label>Od</label><select name="account_id">
+    {% for a in accounts %}<option value="{{ a.id }}" {{ 'selected' if a.id == draft.account_id }}>{{ a.label }}</option>{% endfor %}</select></div>
+  <div style="grid-column:1/-1"><label>Do (kilka adresów po przecinku)</label><input name="to" value="{{ draft.to }}" required inputmode="email"></div>
+  <div style="grid-column:1/-1"><label>DW</label><input name="cc" value="{{ draft.cc }}" inputmode="email"></div>
+  <div style="grid-column:1/-1"><label>Temat</label><input name="subject" value="{{ draft.subject }}"></div>
+  <div style="grid-column:1/-1"><label>Treść</label><textarea name="body" rows="12">{{ draft.body }}</textarea></div>
+  {% if inv %}<div style="grid-column:1/-1"><label><input type="checkbox" name="attach_invoice" value="1" checked style="width:auto"> Załącz PDF: {{ inv.kind_label }} {{ inv.display_number }}</label></div>{% endif %}
+  {% if offer %}<div style="grid-column:1/-1"><label><input type="checkbox" name="attach_offer" value="1" checked style="width:auto"> Załącz PDF: oferta {{ offer.display_number }}</label></div>{% endif %}
+  <div style="grid-column:1/-1"><label>Załączniki</label><input type="file" name="files" multiple></div>
+</div>
+<p><button class="btn primary">Wyślij</button></p>
+</form>
+{% endif %}
+{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  const sel = document.getElementById('tpl-pick'); if (!sel) return;
+  sel.addEventListener('change', () => {
+    const q = new URLSearchParams({{ (query or {})|tojson }}); q.set('szablon', sel.value);
+    location.href = '/poczta/nowa?' + q.toString();
+  });
+})();
+</script>
+{% endblock %}

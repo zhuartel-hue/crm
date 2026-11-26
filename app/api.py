@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
+from . import products as prod
 from . import services as svc
 from .auth import Principal, authenticate, base_url, unauthorized
 from .db import get_db
@@ -44,9 +45,9 @@ def companies(p: Principal = Depends(principal), db: Session = Depends(get_db)):
 
 
 @router.get("/contractors")
-def contractors(q: str = "", limit: int = 20, p: Principal = Depends(principal), db: Session = Depends(get_db)):
+def contractors(company: str = "", q: str = "", limit: int = 20, p: Principal = Depends(principal), db: Session = Depends(get_db)):
     need(p, "read")
-    return {"contractors": svc.search_contractors(db, q, limit)}
+    return {"contractors": run(lambda: svc.search_contractors(db, company, q, limit))}
 
 
 @router.post("/contractors", status_code=201)
@@ -70,6 +71,14 @@ async def car_create(request: Request, p: Principal = Depends(principal), db: Se
     return {"car": run(lambda: svc.create_car(db, p.actor, data))}
 
 
+@router.get("/products")
+def products(request: Request, company: str = "", q: str = "", include_inactive: bool = False, limit: int = 50,
+             p: Principal = Depends(principal), db: Session = Depends(get_db)):
+    need(p, "read")
+    rows = run(lambda: prod.search(db, svc.resolve_company(db, company).id, q, active_only=not include_inactive, limit=limit))
+    return {"products": [prod.product_dict(x, base_url(request)) for x in rows]}
+
+
 @router.get("/invoices")
 def invoices(request: Request, company: str = "", kind: str = "", month: str = "", status: str = "",
              unpaid_only: bool = False, q: str = "", limit: int = 30,
@@ -91,6 +100,34 @@ async def invoice_draft(request: Request, p: Principal = Depends(principal), db:
     data = await request.json()
     inv = run(lambda: svc.create_invoice_draft(db, p.actor, data))
     return {"invoice": svc.invoice_dict(inv, base_url(request))}
+
+
+async def _json(request: Request) -> dict:
+    return (await request.json()) if await request.body() else {}
+
+
+@router.post("/invoices/{invoice_id}/correction", status_code=201)
+async def invoice_correction(invoice_id: int, request: Request, p: Principal = Depends(principal),
+                             db: Session = Depends(get_db)):
+    need(p, "write")
+    data = await _json(request)
+    inv = run(lambda: svc.start_correction(db, p.actor, invoice_id, data.get("reason", ""), data.get("items")))
+    return {"invoice": svc.invoice_dict(inv, base_url(request))}
+
+
+@router.post("/invoices/{invoice_id}/from-proforma", status_code=201)
+def invoice_from_proforma(invoice_id: int, request: Request, p: Principal = Depends(principal),
+                          db: Session = Depends(get_db)):
+    need(p, "write")
+    return {"invoice": svc.invoice_dict(run(lambda: svc.start_from_proforma(db, p.actor, invoice_id)),
+                                        base_url(request))}
+
+
+@router.post("/invoices/{invoice_id}/final", status_code=201)
+def invoice_final(invoice_id: int, request: Request, p: Principal = Depends(principal),
+                  db: Session = Depends(get_db)):
+    need(p, "write")
+    return {"invoice": svc.invoice_dict(run(lambda: svc.start_final(db, p.actor, invoice_id)), base_url(request))}
 
 
 @router.post("/invoices/{invoice_id}/issue")

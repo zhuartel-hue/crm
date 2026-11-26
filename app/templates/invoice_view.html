@@ -2,34 +2,106 @@
 {% block title %}{{ inv.display_number }}{% endblock %}
 {% block content %}
 <div class="row"><h1>{{ inv.kind_label }} {{ inv.display_number }}</h1>
-{% if inv.status == 'draft' %}<span class="badge warn">szkic</span>{% elif inv.to_pay <= 0 %}<span class="badge ok">zapłacona</span>{% else %}<span class="badge">do zapłaty {{ inv.to_pay|money }} zł</span>{% endif %}
+{% if inv.status == 'draft' %}<span class="badge warn">szkic</span>
+{% elif inv.kind == 'proforma' %}<span class="badge">proforma</span>
+{% elif inv.to_pay < 0 %}<span class="badge">do zwrotu {{ (-inv.to_pay)|money }} zł</span>
+{% elif inv.to_pay <= 0 %}<span class="badge ok">rozliczona</span>
+{% else %}<span class="badge">do zapłaty {{ inv.to_pay|money }} zł</span>{% endif %}
 </div>
 <div class="row" style="margin-bottom:16px">
   <a class="btn" href="/faktury/{{ inv.id }}/pdf" target="_blank">PDF</a>
-  <a class="btn" href="/faktury/{{ inv.id }}/pdf?pobierz=1">Pobierz PDF</a>
+  {% if inv.status == 'issued' and inv.kind != 'correction' %}<a class="btn" href="/wz/nowa?faktura={{ inv.id }}">Wystaw WZ</a>{% endif %}
+  {% if inv.status == 'issued' and has_mail %}<a class="btn" href="/poczta/nowa?faktura={{ inv.id }}">Wyślij e-mailem</a>{% endif %}
+  {% if inv.status == 'issued' and has_mail and inv.to_pay > 0 and inv.kind in ('vat', 'final', 'advance') %}<a class="btn" href="/poczta/nowa?faktura={{ inv.id }}&amp;przypomnienie=1">Przypomnij o płatności</a>{% endif %}
   {% if inv.status == 'draft' %}
   <a class="btn" href="/faktury/{{ inv.id }}/edytuj">Edytuj</a>
-  <form method="post" action="/faktury/{{ inv.id }}/wystaw"><button class="btn primary">Wystaw fakturę</button></form>
+  <form method="post" action="/faktury/{{ inv.id }}/wystaw"><button class="btn primary">Wystaw</button></form>
   <form method="post" action="/faktury/{{ inv.id }}/usun" onsubmit="return confirm('Usunąć szkic?')"><button class="btn danger">Usuń szkic</button></form>
   {% else %}
-  {% if inv.to_pay > 0 %}<form method="post" action="/faktury/{{ inv.id }}/zaplacona"><button class="btn">Oznacz jako zapłaconą</button></form>{% endif %}
+  {% if inv.to_pay > 0 and inv.kind != 'proforma' %}<form method="post" action="/faktury/{{ inv.id }}/zaplacona"><button class="btn">Oznacz jako zapłaconą</button></form>{% endif %}
+  {% if inv.kind in ('vat', 'final') %}<form method="post" action="/faktury/{{ inv.id }}/korekta"><button class="btn">Wystaw korektę</button></form>{% endif %}
+  {% if inv.kind == 'proforma' %}<form method="post" action="/faktury/{{ inv.id }}/z-proformy"><button class="btn primary">Wystaw fakturę VAT</button></form>{% endif %}
+  {% if inv.kind == 'advance' and not inv.settled_by_id %}<form method="post" action="/faktury/{{ inv.id }}/koncowa"><button class="btn primary">Wystaw fakturę końcową</button></form>{% endif %}
   {% endif %}
-  <form method="post" action="/faktury/{{ inv.id }}/kopiuj"><button class="btn">Kopiuj jako nową</button></form>
+  {% if inv.kind == 'vat' %}<a class="btn" href="/umowy/nowa?faktura={{ inv.id }}">Powtarzaj cyklicznie</a>{% endif %}
+  {% if inv.kind in NEW_KINDS %}<form method="post" action="/faktury/{{ inv.id }}/kopiuj"><button class="btn">Kopiuj jako nową</button></form>{% endif %}
 </div>
 <div class="grid">
   <div class="card"><div class="muted">Nabywca</div><b>{{ inv.buyer_name }}</b>{% if inv.buyer_nip %}<br>NIP {{ inv.buyer_nip }}{% endif %}<br><span style="white-space:pre-line">{{ inv.buyer_address }}</span></div>
   <div class="card">Wystawiona {{ inv.issue_date|date }}, sprzedaż {{ inv.sale_date|date }}<br>{{ inv.payment_label }}{% if inv.due_date %}, termin {{ inv.due_date|date }}{% endif %}
-  {% if inv.car %}<br>Auto: <a href="/auta/{{ inv.car.id }}">{{ inv.car.label }}</a>{% endif %}</div>
+  {% if inv.car %}<br>Auto: <a href="/auta/{{ inv.car.id }}">{{ inv.car.label }}</a>{% endif %}
+  {% if inv.related %}<br>{{ 'Korygowana faktura' if inv.kind == 'correction' else 'Na podstawie' }}: <a href="/faktury/{{ inv.related.id }}">{{ inv.related.kind_label }} {{ inv.related.display_number }}</a>{% endif %}
+  {% if inv.kind == 'advance' %}<br>Zamówienie: {{ inv.order_total|money }} zł, zaliczka: {{ inv.advance_gross|money }} zł
+    {% if inv.settled_by %}<br>Rozliczona w: <a href="/faktury/{{ inv.settled_by.id }}">{{ inv.settled_by.display_number }}</a>{% endif %}{% endif %}
+  {% for d in derived %}<br>{{ d.kind_label }}: <a href="/faktury/{{ d.id }}">{{ d.display_number }}</a>{% endfor %}
+  </div>
 </div>
+{% if inv.kind == 'correction' %}<div class="card"><div class="muted">Przyczyna korekty</div>{{ inv.correction_reason or '—' }}</div>{% endif %}
+
+{% macro rows(items, title) %}
 <div class="card tbl"><table>
-<tr><th>Nazwa</th><th class="n">Ilość</th><th class="n">Cena</th>
-<th class="n">VAT</th><th class="n">Netto</th><th class="n">VAT zł</th><th class="n">Brutto</th></tr>
-{% for it in inv.items %}
+<tr><th>{{ title }}</th><th class="n">Ilość</th><th class="n">Cena</th><th class="n">VAT</th><th class="n">Netto</th><th class="n">VAT zł</th><th class="n">Brutto</th></tr>
+{% for it in items %}
 <tr><td>{{ it.name }}</td><td class="n">{{ it.quantity|qty }} {{ it.unit }}</td><td class="n">{{ it.unit_price|money }}</td>
 <td class="n">{{ it.vat_rate }}{{ '%' if it.vat_rate.isdigit() }}</td><td class="n">{{ it.net|money }}</td><td class="n">{{ it.vat|money }}</td>
 <td class="n">{{ it.gross|money }}</td></tr>
 {% endfor %}
-<tr><td colspan="{{ 6 }}"><b>Razem</b></td><td class="n"><b>{{ inv.total_gross|money }}</b></td></tr>
 </table></div>
+{% endmacro %}
+{% if inv.kind == 'correction' %}
+{{ rows(inv.before_items, 'Przed korektą') }}
+{{ rows(inv.after_items, 'Po korekcie') }}
+{% else %}
+{{ rows(inv.after_items, 'Zamówienie' if inv.kind in ('advance', 'final') else 'Nazwa') }}
+{% endif %}
+{% if inv.kind == 'final' and inv.advances %}
+<div class="card"><div class="muted">Odliczone zaliczki</div>
+{% for a in inv.advances %}<div><a href="/faktury/{{ a.id }}">{{ a.display_number }}</a> z {{ a.issue_date|date }}: {{ a.total_gross|money }} zł</div>{% endfor %}</div>
+{% endif %}
+<div class="card tbl"><table>
+<tr><th>{{ 'Różnica wg stawek' if inv.kind == 'correction' else ('Zaliczka wg stawek' if inv.kind == 'advance' else ('Do zapłaty wg stawek' if inv.kind == 'final' else 'Wg stawek')) }}</th><th class="n">Netto</th><th class="n">VAT</th><th class="n">Brutto</th></tr>
+{% for s in summary %}<tr><td>{{ s.rate }}{{ '%' if s.rate.isdigit() }}</td><td class="n">{{ s.net|money }}</td><td class="n">{{ s.vat|money }}</td><td class="n">{{ s.gross|money }}</td></tr>{% endfor %}
+<tr><td><b>Razem</b></td><td class="n">{{ inv.total_net|money }}</td><td class="n">{{ inv.total_vat|money }}</td><td class="n"><b>{{ inv.total_gross|money }}</b></td></tr>
+</table></div>
+{% if inv.status == 'issued' and inv.kind != 'proforma' %}
+<div class="card"><div class="muted">Wpłaty{% if inv.days_overdue %} · <span style="color:#b42318">{{ inv.days_overdue }} dni po terminie</span>{% endif %}
+{% if inv.reminder_count %} · przypomnienia: {{ inv.reminder_count }} (ostatnie {{ inv.last_reminder_at.strftime('%d.%m.%Y') }}){% endif %}</div>
+{% for pm in inv.payments %}<div class="row">{{ pm.date|date }} · <b>{{ pm.amount|money }} zł</b> · {{ pm.method_label }}{% if pm.note %} · {{ pm.note }}{% endif %}
+<form method="post" action="/faktury/{{ inv.id }}/wplata/{{ pm.id }}/usun" onsubmit="return confirm('Usunąć wpłatę?')"><button class="btn small">Usuń</button></form></div>{% endfor %}
+<p>Zapłacono {{ inv.paid|money }} zł z {{ inv.total_gross|money }} zł{% if inv.to_pay > 0 %}, pozostało <b>{{ inv.to_pay|money }} zł</b>{% endif %}.</p>
+<details{% if not inv.payments and inv.to_pay > 0 %} open{% endif %}><summary>Dodaj wpłatę (także częściową)</summary>
+<form method="post" action="/faktury/{{ inv.id }}/wplata" class="grid">
+  <div><label>Kwota</label><input name="amount" inputmode="decimal" value="{{ inv.to_pay|money if inv.to_pay > 0 else '' }}" required></div>
+  <div><label>Data</label><input type="date" name="date" value="{{ today_iso }}"></div>
+  <div><label>Forma</label><select name="method">{% for k, v in PAYMENT_METHODS.items() %}<option value="{{ k }}" {{ 'selected' if k == inv.payment_method }}>{{ v }}</option>{% endfor %}</select></div>
+  <div><label>Uwagi</label><input name="note"></div>
+  <div><label>&nbsp;</label><button class="btn primary">Zapisz wpłatę</button></div>
+</form></details>
+</div>
+{% endif %}
+{% if bank_payments %}<div class="card"><div class="muted">Wpłaty z banku</div>
+{% for t in bank_payments %}{{ t.booking_date|date }} · <b>{{ t.applied_amount|money }} zł</b> · {{ t.counterparty or '—' }} <span class="muted">({{ 'auto' if t.state == 'auto' else ('ręcznie' if t.state == 'manual' else 'propozycja') }})</span><br>{% endfor %}
+<a href="/bank?pokaz=wszystkie">Bank →</a></div>{% endif %}
+{% if deliveries %}<div class="card"><div class="muted">WZ do tej faktury</div>
+{% for dd in deliveries %}<a href="/wz/{{ dd.id }}">{{ dd.display_number }}</a> · {{ dd.issue_date|date }}{% if dd.signature_png %} · podpisana{% endif %}<br>{% endfor %}</div>{% endif %}
+{% if mails %}<div class="card"><div class="muted">Korespondencja</div>
+{% for mm in mails %}{{ mm.date.strftime('%d.%m.%Y') if mm.date }} · {{ '→' if mm.direction == 'out' else '←' }} <a href="/poczta/{{ mm.id }}">{{ mm.subject or '(bez tematu)' }}</a><br>{% endfor %}</div>{% endif %}
 {% if inv.notes %}<div class="card"><div class="muted">Uwagi</div><span style="white-space:pre-line">{{ inv.notes }}</span></div>{% endif %}
+{% if inv.status == 'issued' and inv.kind != 'proforma' %}
+<div class="card ksef-card">
+  <div class="row"><b>KSeF</b>
+    <span class="badge {{ 'ok' if inv.ksef_status == 'accepted' else ('warn' if inv.ksef_status in ('rejected', 'error') else '') }}">{{ ksef_label }}</span>
+    {% if inv.ksef_env and inv.ksef_env != 'prod' %}<span class="badge">środowisko {{ inv.ksef_env }}</span>{% endif %}
+    <span class="spacer"></span>
+    {% if ksef_enabled and ksef_can_send %}<form method="post" action="/faktury/{{ inv.id }}/ksef" onsubmit="return confirm('Wysłać fakturę {{ inv.number }} do KSeF? Tego nie da się cofnąć, zmiany robi się korektą.')"><button class="btn primary">Wyślij do KSeF</button></form>{% endif %}
+    {% if inv.ksef_status == 'sent' or (inv.ksef_status == 'accepted' and not inv.ksef_upo) %}<form method="post" action="/faktury/{{ inv.id }}/ksef/status"><button class="btn">Sprawdź status</button></form>{% endif %}
+    <a class="btn small" href="/faktury/{{ inv.id }}/ksef/xml" target="_blank">XML</a>
+    {% if inv.ksef_upo %}<a class="btn small" href="/faktury/{{ inv.id }}/ksef/upo">UPO</a>{% endif %}
+  </div>
+  {% if inv.ksef_number %}<p style="margin:8px 0 0">Numer KSeF: <b>{{ inv.ksef_number }}</b></p>{% endif %}
+  {% if inv.ksef_message %}<p class="muted" style="margin:8px 0 0;white-space:pre-line">{{ inv.ksef_message }}</p>{% endif %}
+  {% if not ksef_enabled and not inv.ksef_status %}<p class="muted" style="margin:8px 0 0">KSeF dla tej firmy jest wyłączony. Włączysz go w <a href="/ustawienia">Ustawieniach</a>.</p>{% endif %}
+  {% if ksef_qr %}<div class="row" style="margin-top:8px"><div class="qr-box">{{ ksef_qr|safe }}</div><a href="{{ ksef_url }}" target="_blank" style="word-break:break-all;font-size:13px">{{ ksef_url }}</a></div>{% endif %}
+</div>
+{% endif %}
 {% endblock %}

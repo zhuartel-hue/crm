@@ -1,15 +1,19 @@
 <div class="card tbl"><table>
-<tr><th>Numer</th><th>Data</th><th>Nabywca</th><th class="hide-sm">Termin</th><th class="n">Brutto</th><th>Status</th></tr>
+<tr><th>Numer</th><th>Data</th><th>Nabywca</th><th class="hide-sm">Termin</th><th class="n">Netto</th><th class="n">VAT</th><th class="n">Brutto</th><th>Status</th>{% if ksef_select %}<th style="width:40px" title="Zatwierdzona KSeF"><input type="checkbox" title="zaznacz wszystkie niezatwierdzone" onclick="document.querySelectorAll('input[name=ids]').forEach(x => x.checked = this.checked)"></th><th class="hide-sm">KSeF</th>{% endif %}</tr>
 {% for i in invoices %}
 <tr>
   <td><a href="/faktury/{{ i.id }}">{{ i.display_number }}</a></td>
   <td>{{ i.issue_date|date }}</td>
   <td>{{ i.buyer_name }}</td>
   <td class="hide-sm">{{ i.due_date|date }}</td>
+  <td class="n">{{ i.total_net|money }}</td>
+  <td class="n">{{ i.total_vat|money }}</td>
   <td class="n">{{ i.total_gross|money }}</td>
-  <td>{% if i.status == 'draft' %}<span class="badge warn">szkic</span>{% elif i.to_pay <= 0 %}<span class="badge ok">zapłacona</span>{% else %}<span class="badge">do zapłaty</span>{% endif %}</td>
+  <td>{% if i.status == 'draft' %}<span class="badge warn">szkic</span>{% elif i.to_pay <= 0 %}<span class="badge ok">zapłacona</span>{% else %}<span class="badge due">do zapłaty</span>{% endif %}</td>
+  {% if ksef_select %}<td style="white-space:nowrap">{% if ksef_can_send(i) %}<label title="Niezatwierdzona: zaznacz i kliknij „Wyślij zaznaczone do KSeF”" style="display:inline-flex;align-items:center;gap:4px;margin:0"><input type="checkbox" name="ids" value="{{ i.id }}" form="ksef-form" aria-label="zatwierdź {{ i.number }} do KSeF"><span style="display:inline-block;width:10px;height:10px;background:#d33;border-radius:2px"></span></label>{% elif i.ksef_status == 'accepted' %}<span title="Zatwierdzona, w KSeF {{ i.ksef_number }}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1a9b4b" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12l5 5L20 6"/></svg></span>{% elif i.ksef_status == 'sent' %}<span title="Wysłana, KSeF jeszcze przetwarza" class="muted">…</span>{% elif i.ksef_status == 'external' %}<span title="Wystawiona poza Sygnavo (Firmao)" class="muted">–</span>{% endif %}</td>{% endif %}
+  {% if ksef_select %}<td class="hide-sm">{% if i.status == 'issued' and i.kind != 'proforma' %}{% if i.ksef_status == 'accepted' %}<span class="badge ok">przyjęta</span>{% elif i.ksef_status in ('', 'rejected', 'error') %}<span class="badge warn">{{ 'do wysłania' if not i.ksef_status else ksef_status_label(i) }}</span>{% else %}<span class="muted">{{ ksef_status_label(i) }}</span>{% endif %}{% endif %}</td>{% endif %}
 </tr>
 {% else %}
-<tr><td colspan="6" class="muted">Brak faktur.</td></tr>
+<tr><td colspan="{{ 10 if ksef_select else 8 }}" class="muted">Brak faktur.</td></tr>
 {% endfor %}
 </table></div>
