@@ -165,6 +165,6 @@ def test_migration_from_stage_two_schema(tmp_path, monkeypatch):
     monkeypatch.setattr(migrate, "engine", eng2)
     migrate.upgrade()
     with eng2.connect() as conn:
-        assert conn.execute(sa.text("SELECT version_num FROM alembic_version")).scalar() == "0012"
+        assert conn.execute(sa.text("SELECT version_num FROM alembic_version")).scalar() == "0013"
         cols = [r[1] for r in conn.execute(sa.text("PRAGMA table_info(invoices)"))]
     assert "related_id" in cols and "advance_gross" in cols

@@ -3,6 +3,7 @@
 {% block content %}
 <div class="row"><h1>{{ company.short_name }}</h1><span class="spacer"></span>
 <a class="btn primary only-sm" href="/faktury/nowa">+ Faktura</a><a class="btn only-sm" href="/wz/nowa">+ WZ</a></div>
+{% for o in offers_expiring %}<div class="flash warn"><a href="/oferty/{{ o.id }}">Oferta {{ o.display_number }} dla {{ o.recipient_name }}: {{ 'ważność minęła ' ~ (o.valid_until|date) if o.expired else ('ważna do ' ~ (o.valid_until|date)) }}. Zadzwoń albo zmień status.</a></div>{% endfor %}
 {% for w in bank_warnings %}<div class="flash warn"><a href="/bank/polaczenie">{{ w }}</a></div>{% endfor %}
 <div class="grid stats">
   <div class="card stat"><div class="l">Faktur w tym miesiącu</div><div class="v">{{ stats.month_count }}</div></div>

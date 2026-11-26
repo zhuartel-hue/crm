@@ -127,6 +127,19 @@ Bank → „Podłącz bank (automatycznie)”. Sygnavo łączy się z bankiem pr
 - Publiczne strony `/polityka-prywatnosci` i `/regulamin` (wymagane przy rejestracji aplikacji).
 - Wczytywanie MT940 zostaje jako zapas.
 
+## Oferty
+
+Menu **Oferty** (`/oferty`): oferta z pozycjami jak na WZ (produkty z katalogu, dojazd w km, roboczogodziny), ceny
+netto albo brutto, data ważności, szansa w %, osoba kontaktowa i notatka wewnętrzna. Numer nadaje się przy pierwszym
+zapisie wg wzoru z Ustawień (domyślnie `OF/{nr}/{MM}/{RRRR}`).
+
+- Statusy jak w Firmao: nowa, wysłana, przyjęta, w realizacji, zrealizowana, odrzucona, anulowana.
+- **Wyślij mailem**: szablon „Wysyłka oferty”, PDF w załączniku; po wysłaniu nowa oferta dostaje status „wysłana”.
+- **Faktura z oferty** i **WZ z oferty** tworzą szkice do sprawdzenia; oferta przechodzi w „przyjęta”.
+- **Kopiuj jako nową**: ta sama treść, dzisiejsza data.
+- Na Start przypomnienie o otwartych ofertach, którym za 3 dni lub mniej kończy się ważność (albo już minęła).
+- Na karcie kontrahenta lista jego ofert i przycisk „+ Oferta”.
+
 ## Uruchomienie u siebie
 
 ```bash

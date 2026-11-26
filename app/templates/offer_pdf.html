@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="pl"><head><meta charset="utf-8">
+<style>
+@page { size: A4; margin: 16mm 14mm 18mm; @bottom-right { content: "Strona " counter(page) " z " counter(pages); font-family: "DejaVu Sans", sans-serif; font-size: 7pt; color: #777; } }
+body { font-family: "DejaVu Sans", sans-serif; font-size: 9pt; color: #111; }
+h1 { font-size: 16pt; margin: 0 0 1mm; }
+.top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6mm; }
+.parties { display: flex; gap: 8mm; margin-bottom: 6mm; }
+.party { flex: 1; border-top: 2px solid #111; padding-top: 2mm; }
+.party .h { font-size: 8pt; text-transform: uppercase; color: #555; letter-spacing: .05em; margin-bottom: 1mm; }
+.party b { font-size: 10pt; }
+.title { font-size: 11pt; font-weight: bold; margin-bottom: 4mm; }
+table.items { width: 100%; border-collapse: collapse; margin-bottom: 4mm; }
+table.items th { background: #f0f0f0; font-size: 7.5pt; text-align: left; padding: 2mm 1.5mm; border-bottom: 1px solid #999; }
+table.items td { padding: 2mm 1.5mm; border-bottom: 1px solid #ddd; vertical-align: top; }
+table.items th.n { text-align: right; }
+.n { text-align: right; white-space: nowrap; }
+.sum { margin-left: auto; width: 60%; border-collapse: collapse; }
+.sum td { padding: 1.5mm; }
+.sum .big td { font-size: 11pt; font-weight: bold; border-top: 2px solid #111; }
+.notes { margin-top: 6mm; white-space: pre-line; }
+.valid { margin-top: 6mm; padding: 3mm; background: #f6f6f6; }
+</style></head><body>
+{% set c = o.company %}
+<div class="top">
+  <div><h1>Oferta</h1><b>{{ o.display_number }}</b></div>
+  <div>Data: <b>{{ o.issue_date|date }}</b>{% if o.valid_until %}<br>Ważna do: <b>{{ o.valid_until|date }}</b>{% endif %}</div>
+</div>
+<div class="parties">
+  <div class="party"><div class="h">Oferent</div><b>{{ c.name }}</b><br>{% for l in c.address_lines %}{{ l }}<br>{% endfor %}
+    {% if c.nip %}NIP {{ c.nip }}<br>{% endif %}{% if c.phone %}tel. {{ c.phone }}<br>{% endif %}{% if c.email %}{{ c.email }}{% endif %}</div>
+  <div class="party"><div class="h">Dla</div><b>{{ o.recipient_name }}</b><br><span style="white-space:pre-line">{{ o.recipient_address }}</span>
+    {% if o.contractor and o.contractor.nip %}<br>NIP {{ o.contractor.nip }}{% endif %}
+    {% if o.contact_person %}<br>{{ o.contact_person }}{% endif %}</div>
+</div>
+{% if o.title %}<div class="title">{{ o.title }}</div>{% endif %}
+<table class="items">
+<tr><th>Lp.</th><th>Nazwa</th><th class="n">Ilość</th><th>J.m.</th><th class="n">Cena {{ 'brutto' if o.prices_gross else 'netto' }}</th><th class="n">VAT</th><th class="n">Netto</th><th class="n">Brutto</th></tr>
+{% for it in o.items %}<tr><td>{{ it.position }}</td><td>{{ it.name }}{% if it.code %}<br><span style="color:#777">{{ it.code }}</span>{% endif %}</td>
+<td class="n">{{ it.quantity|qty }}</td><td>{{ it.unit }}</td><td class="n">{{ it.unit_price|money if it.unit_price is not none }}</td>
+<td class="n">{{ it.vat_rate }}{{ '%' if it.vat_rate.isdigit() }}</td><td class="n">{{ it.net|money }}</td><td class="n">{{ it.gross|money }}</td></tr>{% endfor %}
+</table>
+<table class="sum">
+<tr><td>Razem netto</td><td class="n">{{ o.total_net|money }} zł</td></tr>
+<tr><td>VAT</td><td class="n">{{ o.total_vat|money }} zł</td></tr>
+<tr class="big"><td>Razem brutto</td><td class="n">{{ o.total_gross|money }} zł</td></tr>
+</table>
+{% if o.notes %}<div class="notes">{{ o.notes }}</div>{% endif %}
+{% if o.valid_until %}<div class="valid">Oferta jest ważna do {{ o.valid_until|date }}.</div>{% endif %}
+</body></html>

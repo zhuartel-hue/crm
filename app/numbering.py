@@ -24,7 +24,7 @@ def format_number(pattern: str, seq: int, date: dt.date) -> str:
 
 
 PATTERNS = {"vat": "pattern_vat", "proforma": "pattern_proforma", "advance": "pattern_advance",
-            "correction": "pattern_correction", "wz": "pattern_wz", "pz": "pattern_pz"}
+            "correction": "pattern_correction", "wz": "pattern_wz", "pz": "pattern_pz", "offer": "pattern_offer"}
 
 
 def next_number(db: Session, company: Company, kind: str, issue_date: dt.date) -> tuple[int, str]:

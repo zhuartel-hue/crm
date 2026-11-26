@@ -23,7 +23,11 @@
 {% if c.id and not (invoices|selectattr('status', 'equalto', 'issued')|list) %}
 <form method="post" action="/kontrahenci/{{ c.id }}/usun" onsubmit="return confirm('Usunąć tego kontrahenta?')" style="margin-top:12px"><button class="btn danger">Usuń kontrahenta</button></form>{% endif %}
 {% if invoices %}<h2>Faktury</h2>{% include "_invoice_rows.html" %}{% endif %}
-{% if c.id %}<h2>Korespondencja</h2>
+{% if c.id %}<div class="row"><h2>Oferty</h2><span class="spacer"></span><a class="btn small" href="/oferty/nowa?kontrahent={{ c.id }}">+ Oferta</a></div>
+{% if offers %}<div class="card tbl"><table>{% for o in offers %}<tr><td><a href="/oferty/{{ o.id }}">{{ o.display_number }}</a></td><td>{{ o.issue_date|date }}</td>
+<td class="n">{{ o.total_gross|money }}</td><td>{{ o.status_label }}</td></tr>{% endfor %}</table></div>
+{% else %}<p class="muted">Brak ofert dla tego kontrahenta.</p>{% endif %}
+<h2>Korespondencja</h2>
 <p><a class="btn" href="/poczta/nowa?kontrahent={{ c.id }}">Napisz e-mail</a></p>
 {% if mails %}<div class="card tbl"><table>{% for mm in mails %}<tr><td style="white-space:nowrap">{{ mm.date.strftime('%d.%m.%Y') if mm.date }}</td>
 <td>{{ '→' if mm.direction == 'out' else '←' }} <a href="/poczta/{{ mm.id }}">{{ mm.subject or '(bez tematu)' }}</a></td></tr>{% endfor %}</table></div>

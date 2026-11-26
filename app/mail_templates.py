@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from . import calc
-from .models import Company, Delivery, EmailTemplate, Invoice
+from .models import Company, Delivery, EmailTemplate, Invoice, Offer
 
 PLACEHOLDERS = {
     "firma": "nazwa Twojej firmy",
@@ -19,7 +19,7 @@ PLACEHOLDERS = {
     "data_wystawienia": "data wystawienia",
     "kwota": "kwota brutto",
     "do_zaplaty": "pozostało do zapłaty",
-    "termin": "termin płatności",
+    "termin": "termin płatności (w ofercie: ważna do)",
     "dni_po_terminie": "ile dni po terminie",
 }
 
@@ -34,6 +34,9 @@ DEFAULTS = [
      "Jeśli płatność została już wysłana, prosimy potraktować tę wiadomość jako nieaktualną.\n\nPozdrawiam\n{firma}"),
     ("wz", "Wysyłka WZ", "{rodzaj} {numer} – {firma}",
      "Dzień dobry,\n\nw załączniku przesyłam dokument {rodzaj} {numer} z dnia {data_wystawienia}.\n\nPozdrawiam\n{firma}"),
+    ("offer", "Wysyłka oferty", "Oferta {numer} – {firma}",
+     "Dzień dobry,\n\nw załączniku przesyłam ofertę {numer} na kwotę {kwota} zł brutto.\n"
+     "Oferta jest ważna do {termin}. Chętnie odpowiem na pytania.\n\nPozdrawiam\n{firma}"),
     ("recurring", "Faktura cykliczna", "{rodzaj} {numer} – {firma}",
      "Dzień dobry,\n\nw załączniku przesyłam {rodzaj} {numer} za bieżący okres na kwotę {kwota} zł brutto.\n"
      "Termin płatności: {termin}, konto: {konto}.\n\nPozdrawiam\n{firma}"),
@@ -65,7 +68,8 @@ def default_for(db: Session, company: Company, kind: str) -> EmailTemplate | Non
     return rows[0] if rows else None
 
 
-def context(company: Company, inv: Invoice | None = None, delivery: Delivery | None = None) -> dict:
+def context(company: Company, inv: Invoice | None = None, delivery: Delivery | None = None,
+            offer: Offer | None = None) -> dict:
     ctx = {"firma": company.name, "konto": company.bank_account or "", "nabywca": "", "numer": "", "rodzaj": "",
            "data_wystawienia": "", "kwota": "", "do_zaplaty": "", "termin": "", "dni_po_terminie": "0"}
     if inv is not None:
@@ -77,6 +81,10 @@ def context(company: Company, inv: Invoice | None = None, delivery: Delivery | N
     if delivery is not None:
         ctx.update(nabywca=delivery.recipient_name, numer=delivery.display_number, rodzaj=delivery.kind_short,
                    data_wystawienia=f"{delivery.issue_date:%d.%m.%Y}", kwota=calc.format_money(delivery.total_gross))
+    if offer is not None:
+        ctx.update(nabywca=offer.recipient_name, numer=offer.display_number, rodzaj="oferta",
+                   data_wystawienia=f"{offer.issue_date:%d.%m.%Y}", kwota=calc.format_money(offer.total_gross),
+                   termin=f"{offer.valid_until:%d.%m.%Y}" if offer.valid_until else "")
     return ctx
 
 

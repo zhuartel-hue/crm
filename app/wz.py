@@ -36,7 +36,8 @@ def _at(values, k, default=""):
     return values[k] if values is not None and k < len(values) else default
 
 
-def set_items(db: Session, d: Delivery, names, qtys, units, product_ids, prices=None, rates=None) -> None:
+def set_items(db: Session, d, names, qtys, units, product_ids, prices=None, rates=None, item_cls=DeliveryItem,
+              require_price: bool = False) -> None:
     """Pozycje z formularza. Cena jest opcjonalna (WZ bez cen tez jest poprawna), VAT domyslnie z produktu albo 23."""
     d.items.clear()
     pos = 0
@@ -56,18 +57,20 @@ def set_items(db: Session, d: Delivery, names, qtys, units, product_ids, prices=
             price = calc.parse_decimal(_at(prices, k), None)
         except ValueError:
             raise ValueError(f"Pozycja {pos}: niepoprawna cena.") from None
+        if price is None and require_price:
+            raise ValueError(f"Pozycja {pos}: podaj cenę.")
         if price is not None and price < 0:
             raise ValueError(f"Pozycja {pos}: cena nie może być ujemna.")
         rate = _at(rates, k) or (product.vat_rate if product else "23")
         if rate not in VAT_RATES:
             raise ValueError(f"Pozycja {pos}: stawka VAT jedna z {', '.join(VAT_RATES)}.")
-        d.items.append(DeliveryItem(position=pos, product_id=product.id if product else None,
-                                    code=product.code if product else "", name=name[:500], quantity=qty,
-                                    unit=(_at(units, k) or "szt.")[:10], unit_price=price, vat_rate=rate))
+        d.items.append(item_cls(position=pos, product_id=product.id if product else None,
+                                code=product.code if product else "", name=name[:500], quantity=qty,
+                                unit=(_at(units, k) or "szt.")[:10], unit_price=price, vat_rate=rate))
     recalculate(d)
 
 
-def recalculate(d: Delivery) -> None:
+def recalculate(d) -> None:
     net = vat = gross = Decimal("0")
     for it in d.items:
         if it.unit_price is None:

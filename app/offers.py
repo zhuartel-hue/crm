@@ -1,0 +1,141 @@
+"""Oferty dla klientow: pozycje z cenami, waznosc i status, PDF, wysylka mailem.
+
+Numer oferta dostaje przy pierwszym zapisie (wzor firmy pattern_offer). Z oferty jednym kliknieciem powstaje
+szkic faktury VAT albo szkic WZ; mozna tez skopiowac oferte jako nowa.
+"""
+from __future__ import annotations
+
+import datetime as dt
+
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from . import numbering, wz
+from .models import OFFER_OPEN, OFFER_STATUSES, Delivery, DeliveryItem, Invoice, Offer, OfferItem
+
+DEFAULT_VALID_DAYS = 14
+EXPIRY_WARN_DAYS = 3
+
+
+def new(company_id: int, actor: str = "") -> Offer:
+    today = dt.date.today()
+    return Offer(company_id=company_id, status="new", issue_date=today,
+                 valid_until=today + dt.timedelta(days=DEFAULT_VALID_DAYS), title="", recipient_name="",
+                 recipient_address="", contact_person="", email="", prices_gross=False, notes="", internal_notes="",
+                 created_by=actor[:100])
+
+
+def set_items(db: Session, o: Offer, names, qtys, units, product_ids, prices, rates) -> None:
+    wz.set_items(db, o, names, qtys, units, product_ids, prices, rates, item_cls=OfferItem, require_price=True)
+
+
+def save(db: Session, o: Offer) -> None:
+    """Sprawdza oferte i nadaje numer przy pierwszym zapisie."""
+    if not o.items:
+        raise ValueError("Oferta nie ma pozycji.")
+    if not o.recipient_name.strip():
+        raise ValueError("Podaj klienta.")
+    if o.valid_until is not None and o.valid_until < o.issue_date:
+        raise ValueError("Data ważności nie może być wcześniejsza niż data oferty.")
+    if o.probability is not None and not 0 <= o.probability <= 100:
+        raise ValueError("Szansa to liczba od 0 do 100.")
+    if o.number is None:
+        db.flush()
+        o.seq, o.number = numbering.next_number(db, o.company, "offer", o.issue_date)
+
+
+def set_status(o: Offer, status: str) -> None:
+    if status not in OFFER_STATUSES:
+        raise ValueError("Nieznany status oferty.")
+    o.status = status
+
+
+def mark_sent(o: Offer) -> None:
+    o.sent_at = dt.datetime.now().replace(microsecond=0)
+    if o.status == "new":
+        o.status = "sent"
+
+
+def _accept(o: Offer) -> None:
+    if o.status in OFFER_OPEN:
+        o.status = "accepted"
+
+
+def to_invoice(db: Session, actor: str, o: Offer) -> Invoice:
+    """Szkic faktury VAT z pozycji oferty. Oferta przechodzi w status 'przyjęta'."""
+    from .services import ServiceError, create_invoice_draft
+
+    if o.invoice_id:
+        raise ValueError("Z tej oferty jest już faktura.")
+    items = []
+    for it in o.items:
+        row = dict(name=it.name, quantity=str(it.quantity), unit=it.unit, vat_rate=it.vat_rate,
+                   unit_price=str(it.unit_price or 0))
+        if it.product_id:
+            row["product_id"] = it.product_id
+        items.append(row)
+    buyer = {"contractor_id": o.contractor_id} if o.contractor_id else \
+        {"name": o.recipient_name, "address": o.recipient_address}
+    try:
+        inv = create_invoice_draft(db, actor, dict(company=o.company_id, kind="vat", buyer=buyer, items=items,
+                                                   prices_gross=bool(o.prices_gross),
+                                                   notes=f"Do oferty {o.number}"))
+    except ServiceError as e:
+        raise ValueError(str(e)) from None
+    o.invoice_id = inv.id
+    _accept(o)
+    db.commit()
+    return inv
+
+
+def to_wz(db: Session, o: Offer) -> Delivery:
+    """Szkic WZ z pozycji oferty (z cenami, zeby potem z WZ tez dalo sie wystawic fakture)."""
+    if o.delivery_id:
+        raise ValueError("Z tej oferty jest już WZ.")
+    d = Delivery(company_id=o.company_id, kind="wz", status="draft", issue_date=dt.date.today(),
+                 contractor_id=o.contractor_id, recipient_name=o.recipient_name,
+                 recipient_address=o.recipient_address, notes=f"Do oferty {o.number}", signed_by="",
+                 prices_gross=o.prices_gross)
+    for it in o.items:
+        d.items.append(DeliveryItem(position=it.position, product_id=it.product_id, code=it.code, name=it.name,
+                                    quantity=it.quantity, unit=it.unit, unit_price=it.unit_price,
+                                    vat_rate=it.vat_rate))
+    wz.recalculate(d)
+    db.add(d)
+    db.flush()
+    o.delivery_id = d.id
+    _accept(o)
+    db.commit()
+    return d
+
+
+def duplicate(o: Offer, actor: str = "") -> Offer:
+    """Kopia oferty jako nowa (dzisiejsza data, ta sama dlugosc waznosci, status 'nowa')."""
+    c = new(o.company_id, actor)
+    if o.valid_until:
+        c.valid_until = c.issue_date + (o.valid_until - o.issue_date)
+    for f in ("title", "contractor_id", "recipient_name", "recipient_address", "contact_person", "email",
+              "prices_gross", "notes", "probability"):
+        setattr(c, f, getattr(o, f))
+    for it in o.items:
+        c.items.append(OfferItem(position=it.position, product_id=it.product_id, code=it.code, name=it.name,
+                                 quantity=it.quantity, unit=it.unit, unit_price=it.unit_price, vat_rate=it.vat_rate))
+    wz.recalculate(c)
+    return c
+
+
+def expiring(db: Session, company_id: int, days: int = EXPIRY_WARN_DAYS) -> list[Offer]:
+    """Otwarte oferty, ktorym konczy sie waznosc (albo juz minela) – do przypomnienia na Start."""
+    limit = dt.date.today() + dt.timedelta(days=days)
+    return list(db.scalars(select(Offer).where(Offer.company_id == company_id, Offer.status.in_(OFFER_OPEN),
+                                               Offer.valid_until.is_not(None), Offer.valid_until <= limit)
+                           .order_by(Offer.valid_until)))
+
+
+def render_pdf(o: Offer) -> bytes:
+    from weasyprint import HTML
+
+    from .pdf import HERE, _env
+
+    html = _env.get_template("offer_pdf.html").render(o=o)
+    return HTML(string=html, base_url=str(HERE)).write_pdf()

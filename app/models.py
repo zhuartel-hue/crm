@@ -38,6 +38,7 @@ class Company(Base):
     pattern_advance: Mapped[str] = mapped_column(String(60), default="FZ/{nr}/{MM}/{RRRR}")
     pattern_wz: Mapped[str] = mapped_column(String(60), default="WZ/{nr}/{MM}/{RRRR}")
     pattern_pz: Mapped[str] = mapped_column(String(60), default="PZ/{nr}/{MM}/{RRRR}")
+    pattern_offer: Mapped[str] = mapped_column(String(60), default="OF/{nr}/{MM}/{RRRR}")
     # "month" - numeracja od 1 co miesiac, "year" - co rok.
     numbering_reset: Mapped[str] = mapped_column(String(10), default="month")
     default_payment_days: Mapped[int] = mapped_column(Integer, default=7)
@@ -668,6 +669,93 @@ class DeliveryItem(Base):
     product: Mapped["Product | None"] = relationship()
 
 
+OFFER_STATUSES = {"new": "nowa", "sent": "wysłana", "accepted": "przyjęta", "in_progress": "w realizacji",
+                  "done": "zrealizowana", "rejected": "odrzucona", "cancelled": "anulowana"}
+OFFER_OPEN = ("new", "sent")  # czekaja na decyzje klienta
+
+
+class Offer(Base):
+    """Oferta dla klienta: pozycje z cenami, waznosc, status. Z oferty powstaje faktura albo WZ."""
+
+    __tablename__ = "offers"
+    __table_args__ = (UniqueConstraint("company_id", "number", name="uq_offer_number"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    status: Mapped[str] = mapped_column(String(12), default="new")  # OFFER_STATUSES
+    number: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    seq: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    issue_date: Mapped[dt.date] = mapped_column(Date)
+    valid_until: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
+    probability: Mapped[int | None] = mapped_column(Integer, nullable=True)  # szansa w %
+    title: Mapped[str] = mapped_column(String(300), default="")
+    contractor_id: Mapped[int | None] = mapped_column(ForeignKey("contractors.id", ondelete="SET NULL"), nullable=True)
+    recipient_name: Mapped[str] = mapped_column(String(300), default="")
+    recipient_address: Mapped[str] = mapped_column(Text, default="")
+    contact_person: Mapped[str] = mapped_column(String(200), default="")
+    email: Mapped[str] = mapped_column(String(200), default="")
+    prices_gross: Mapped[bool] = mapped_column(default=False)
+    total_net: Mapped[Decimal] = mapped_column(Money, default=Decimal("0"))
+    total_vat: Mapped[Decimal] = mapped_column(Money, default=Decimal("0"))
+    total_gross: Mapped[Decimal] = mapped_column(Money, default=Decimal("0"))
+    notes: Mapped[str] = mapped_column(Text, default="")  # na PDF dla klienta
+    internal_notes: Mapped[str] = mapped_column(Text, default="")  # tylko w programie
+    invoice_id: Mapped[int | None] = mapped_column(ForeignKey("invoices.id", ondelete="SET NULL"), nullable=True)
+    delivery_id: Mapped[int | None] = mapped_column(ForeignKey("deliveries.id", ondelete="SET NULL"), nullable=True)
+    sent_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+    created_by: Mapped[str] = mapped_column(String(100), default="")
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
+
+    company: Mapped[Company] = relationship()
+    contractor: Mapped[Contractor | None] = relationship()
+    invoice: Mapped[Invoice | None] = relationship()
+    delivery: Mapped[Delivery | None] = relationship()
+    items: Mapped[list[OfferItem]] = relationship(
+        back_populates="offer", cascade="all, delete-orphan", order_by="OfferItem.position"
+    )
+
+    @property
+    def display_number(self) -> str:
+        return self.number or f"Oferta #{self.id}"
+
+    @property
+    def status_label(self) -> str:
+        return OFFER_STATUSES.get(self.status, self.status)
+
+    @property
+    def is_open(self) -> bool:
+        return self.status in OFFER_OPEN
+
+    @property
+    def days_left(self) -> int | None:
+        return (self.valid_until - dt.date.today()).days if self.valid_until else None
+
+    @property
+    def expired(self) -> bool:
+        return self.is_open and self.valid_until is not None and self.valid_until < dt.date.today()
+
+
+class OfferItem(Base):
+    __tablename__ = "offer_items"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    offer_id: Mapped[int] = mapped_column(ForeignKey("offers.id", ondelete="CASCADE"), index=True)
+    position: Mapped[int] = mapped_column(Integer, default=1)
+    product_id: Mapped[int | None] = mapped_column(ForeignKey("products.id", ondelete="SET NULL"), nullable=True)
+    code: Mapped[str] = mapped_column(String(60), default="")
+    name: Mapped[str] = mapped_column(String(500))
+    quantity: Mapped[Decimal] = mapped_column(Numeric(12, 3), default=Decimal("1"))
+    unit: Mapped[str] = mapped_column(String(10), default="szt.")
+    unit_price: Mapped[Decimal | None] = mapped_column(Money, nullable=True)
+    vat_rate: Mapped[str] = mapped_column(String(3), default="23")
+    net: Mapped[Decimal] = mapped_column(Money, default=Decimal("0"))
+    vat: Mapped[Decimal] = mapped_column(Money, default=Decimal("0"))
+    gross: Mapped[Decimal] = mapped_column(Money, default=Decimal("0"))
+
+    offer: Mapped[Offer] = relationship(back_populates="items")
+    product: Mapped["Product | None"] = relationship()
+
+
 class StockMovement(Base):
     """Ruch magazynowy produktu: WZ (minus), PZ (plus), korekta reczna."""
 
@@ -747,7 +835,7 @@ class PurchaseInvoice(Base):
 
 
 TEMPLATE_KINDS = {"invoice": "Wysyłka faktury", "reminder": "Przypomnienie o płatności", "wz": "Wysyłka WZ",
-                  "recurring": "Faktura cykliczna", "general": "Ogólny"}
+                  "offer": "Wysyłka oferty", "recurring": "Faktura cykliczna", "general": "Ogólny"}
 
 
 class EmailTemplate(Base):

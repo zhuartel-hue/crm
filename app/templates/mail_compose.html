@@ -8,6 +8,7 @@
 <form method="post" action="/poczta/nowa" enctype="multipart/form-data" class="card">
 <input type="hidden" name="in_reply_to" value="{{ draft.in_reply_to }}">
 <input type="hidden" name="invoice_id" value="{{ draft.invoice_id or '' }}">
+<input type="hidden" name="offer_id" value="{{ draft.offer_id or '' }}">
 <input type="hidden" name="reminder" value="{{ draft.reminder or '' }}">
 <div class="grid">
   {% if tpls %}<div style="grid-column:1/-1"><label>Szablon (<a href="/szablony">zarządzaj</a>)</label>
@@ -19,6 +20,7 @@
   <div style="grid-column:1/-1"><label>Temat</label><input name="subject" value="{{ draft.subject }}"></div>
   <div style="grid-column:1/-1"><label>Treść</label><textarea name="body" rows="12">{{ draft.body }}</textarea></div>
   {% if inv %}<div style="grid-column:1/-1"><label><input type="checkbox" name="attach_invoice" value="1" checked style="width:auto"> Załącz PDF: {{ inv.kind_label }} {{ inv.display_number }}</label></div>{% endif %}
+  {% if offer %}<div style="grid-column:1/-1"><label><input type="checkbox" name="attach_offer" value="1" checked style="width:auto"> Załącz PDF: oferta {{ offer.display_number }}</label></div>{% endif %}
   <div style="grid-column:1/-1"><label>Załączniki</label><input type="file" name="files" multiple></div>
 </div>
 <p><button class="btn primary">Wyślij</button></p>

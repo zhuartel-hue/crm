@@ -20,7 +20,7 @@
   ('', [('/', 'Start', 'home', p == '/')]),
   ('Sprzedaż', [('/faktury', 'Faktury', 'invoice', p.startswith('/faktury')),
                 ('/naleznosci', 'Należności', 'cash', p.startswith('/naleznosci')),
-                ('', 'Oferty', 'doc', False),
+                ('/oferty', 'Oferty', 'doc', p.startswith('/oferty')),
                 ('/cykliczne', 'Faktury cykliczne', 'repeat', p.startswith('/cykliczne')),
                 ('', 'Zamówienia', 'cart', False)]),
   ('Zakupy i magazyn', [('/koszty', 'Koszty (KSeF)', 'cost', p.startswith('/koszty')),

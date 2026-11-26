@@ -16,7 +16,7 @@ from sqlalchemy import func, or_, select, update
 from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import api, auth, calc, config, mail_templates, mcp_server, migrate, nip_lookup, numbering, password, payments, pdf, recurring, secretbox, wz
+from . import api, auth, calc, config, mail_templates, mcp_server, migrate, nip_lookup, numbering, offers, password, payments, pdf, recurring, secretbox, wz
 from . import products as prod
 from .bank import service as bank
 from .bank import connect as bank_connect
@@ -43,6 +43,8 @@ from .models import (
     MailAccount,
     MailAttachment,
     MailMessage,
+    OFFER_STATUSES,
+    Offer,
     INVOICE_KINDS,
     NEW_KINDS,
     PAYMENT_METHODS,
@@ -347,7 +349,8 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
         unpaid_sum=sum((i.to_pay for i in unpaid), Decimal("0")),
     )
     return render(request, db, "dashboard.html", company=company, recent=recent, stats=stats, cars=cars_on_lot,
-                  bank_warnings=bank_connect.warnings(db, company.id))
+                  bank_warnings=bank_connect.warnings(db, company.id),
+                  offers_expiring=offers.expiring(db, company.id))
 
 
 # --- faktury --------------------------------------------------------------
@@ -834,7 +837,10 @@ def contractor_edit(cid: int, request: Request, db: Session = Depends(get_db)):
     invoices = db.scalars(select(Invoice).where(Invoice.contractor_id == cid).order_by(Invoice.issue_date.desc())).all()
     mails = db.scalars(select(MailMessage).where(MailMessage.contractor_id == cid)
                        .order_by(MailMessage.date.desc()).limit(30)).all()
-    return render(request, db, "contractor_form.html", c=c, invoices=invoices, mails=mails)
+    offer_rows = db.scalars(select(Offer).where(Offer.contractor_id == cid,
+                                                Offer.company_id == current_company(request, db).id)
+                            .order_by(Offer.issue_date.desc()).limit(50)).all()
+    return render(request, db, "contractor_form.html", c=c, invoices=invoices, mails=mails, offers=offer_rows)
 
 
 async def _save_contractor(request: Request, db: Session, c: Contractor):
@@ -1106,7 +1112,7 @@ def product_photo(photo_id: int, mini: int = 0, db: Session = Depends(get_db)):
 
 COMPANY_FIELDS = ["short_name", "name", "nip", "street", "postal_code", "city", "bank_name", "bank_account",
                   "email", "phone", "issue_place", "pattern_vat", "pattern_proforma", "pattern_advance", "pattern_wz",
-                  "pattern_pz", "pattern_correction"]
+                  "pattern_pz", "pattern_correction", "pattern_offer"]
 
 
 @app.get("/ustawienia", response_class=HTMLResponse)
@@ -1148,7 +1154,7 @@ async def settings_save(request: Request, db: Session = Depends(get_db)):
     days = form.get("default_payment_days") or "7"
     company.default_payment_days = int(days) if days.isdigit() else 7
     for p in (company.pattern_vat, company.pattern_correction, company.pattern_advance, company.pattern_proforma, company.pattern_wz,
-              company.pattern_pz):
+              company.pattern_pz, company.pattern_offer):
         if "{nr}" not in p and "{NNN}" not in p:
             db.rollback()
             return render(request, db, "settings.html", KSEF_ENVS=KSEF_ENVS, error="Wzór numeru musi zawierać {nr} albo {NNN}.")
@@ -1486,12 +1492,12 @@ def mail_refresh(request: Request, db: Session = Depends(get_db)):
 
 @app.get("/poczta/nowa", response_class=HTMLResponse)
 def mail_compose(request: Request, faktura: int = 0, odpowiedz: int = 0, kontrahent: int = 0, do: str = "",
-                 przypomnienie: int = 0, szablon: int = 0, db: Session = Depends(get_db)):
+                 przypomnienie: int = 0, szablon: int = 0, oferta: int = 0, db: Session = Depends(get_db)):
     company = current_company(request, db)
     accounts = [a for a in _company_accounts(db, company.id) if a.active]
     draft = {"to": do, "cc": "", "subject": "", "body": "", "in_reply_to": "", "invoice_id": 0, "account_id": 0,
-             "reminder": ""}
-    inv = None
+             "reminder": "", "offer_id": 0}
+    inv = offer = None
     tpl_kind, tpls, tpl = "general", [], None
     if faktura:
         inv = get_invoice(db, request, faktura)
@@ -1501,14 +1507,20 @@ def mail_compose(request: Request, faktura: int = 0, odpowiedz: int = 0, kontrah
         if przypomnienie and inv.status == "issued" and inv.to_pay > 0:
             tpl_kind = "reminder"
             draft["reminder"] = "1"
-    if faktura or szablon:
+    if oferta:
+        offer = _get_offer(db, request, oferta)
+        draft["offer_id"] = offer.id
+        draft["to"] = draft["to"] or offer.email.split(",")[0].strip() or \
+            (offer.contractor.email.split(",")[0].strip() if offer.contractor and offer.contractor.email else "")
+        tpl_kind = "offer"
+    if faktura or szablon or oferta:
         mail_templates.ensure_defaults(db, company)
         tpls = db.scalars(select(EmailTemplate).where(EmailTemplate.company_id == company.id)
                           .order_by(EmailTemplate.kind, EmailTemplate.is_default.desc(), EmailTemplate.name)).all()
         tpl = next((t for t in tpls if t.id == szablon), None) or mail_templates.default_for(db, company, tpl_kind)
         db.commit()
         if tpl is not None:
-            ctx = mail_templates.context(company, inv)
+            ctx = mail_templates.context(company, inv, offer=offer)
             draft["subject"] = mail_templates.render(tpl.subject, ctx)
             draft["body"] = mail_templates.render(tpl.body, ctx)
     if kontrahent and not draft["to"]:
@@ -1527,8 +1539,8 @@ def mail_compose(request: Request, faktura: int = 0, odpowiedz: int = 0, kontrah
         draft["body"] = f"\n\n{when}, {orig.from_name or orig.from_addr} napisał(a):\n{quoted}"
         if orig.invoice_id:
             draft["invoice_id"] = orig.invoice_id
-    return render(request, db, "mail_compose.html", accounts=accounts, draft=draft, inv=inv, tpls=tpls, tpl=tpl,
-                  query=dict(request.query_params))
+    return render(request, db, "mail_compose.html", accounts=accounts, draft=draft, inv=inv, offer=offer, tpls=tpls,
+                  tpl=tpl, query=dict(request.query_params))
 
 
 @app.post("/poczta/nowa")
@@ -1539,9 +1551,14 @@ async def mail_send(request: Request, db: Session = Depends(get_db)):
     draft = {k: (form.get(k) or "") for k in ("to", "cc", "subject", "body", "in_reply_to", "reminder")}
     draft["account_id"] = int(form.get("account_id") or 0)
     draft["invoice_id"] = int(form.get("invoice_id") or 0)
+    draft["offer_id"] = int(form.get("offer_id") or 0)
     acc = accounts.get(draft["account_id"])
     inv = get_invoice(db, request, draft["invoice_id"]) if draft["invoice_id"] else None
+    offer = _get_offer(db, request, draft["offer_id"]) if draft["offer_id"] else None
     files = []
+    if offer is not None and form.get("attach_offer") == "1":
+        files.append(((offer.number or f"oferta-{offer.id}").replace("/", "-") + ".pdf", "application/pdf",
+                      offers.render_pdf(offer)))
     if inv is not None and form.get("attach_invoice") == "1":
         name = (inv.number or f"szkic-{inv.id}").replace("/", "-") + ".pdf"
         files.append((name, "application/pdf", pdf.render_invoice(inv)))
@@ -1552,7 +1569,7 @@ async def mail_send(request: Request, db: Session = Depends(get_db)):
                 files.append((f.filename, f.content_type or "application/octet-stream", data))
     if sum(len(d) for _, _, d in files) > 20 * 1024 * 1024:
         return render(request, db, "mail_compose.html", accounts=list(accounts.values()), draft=draft, inv=inv,
-                      error="Załączniki są za duże (razem ponad 20 MB).")
+                      offer=offer, error="Załączniki są za duże (razem ponad 20 MB).")
     try:
         if acc is None:
             raise MailError("Wybierz skrzynkę, z której wysłać.")
@@ -1560,14 +1577,17 @@ async def mail_send(request: Request, db: Session = Depends(get_db)):
                         in_reply_to=draft["in_reply_to"], invoice_id=inv.id if inv else None)
         if inv is not None and draft["reminder"] == "1":
             payments.record_reminder(inv)
+        if offer is not None:
+            offers.mark_sent(offer)
         audit(db, web_actor(request), "mail.send", f"E-mail z {acc.email} do {draft['to']}: {draft['subject'][:120]}",
               company_id=company.id, entity="invoice" if inv else "mail", entity_id=inv.id if inv else (msg.id if msg else None))
         db.commit()
     except MailError as e:
         db.rollback()
-        return render(request, db, "mail_compose.html", accounts=list(accounts.values()), draft=draft, inv=inv, error=str(e))
+        return render(request, db, "mail_compose.html", accounts=list(accounts.values()), draft=draft, inv=inv,
+                      offer=offer, error=str(e))
     flash(request, f"Wysłano {'przypomnienie ' if inv is not None and draft['reminder'] == '1' else ''}do {draft['to']}.")
-    return redirect(f"/faktury/{inv.id}" if inv else "/poczta?kierunek=out")
+    return redirect(f"/faktury/{inv.id}" if inv else f"/oferty/{offer.id}" if offer else "/poczta?kierunek=out")
 
 
 @app.get("/poczta/{mid}", response_class=HTMLResponse)
@@ -1874,6 +1894,188 @@ def wz_delete(wid: int, request: Request, db: Session = Depends(get_db)):
     db.commit()
     flash(request, f"Usunięto szkic {d.kind_short}.")
     return redirect("/wz")
+
+
+# ---------------------------------------------------------------- Oferty
+
+def _get_offer(db: Session, request: Request, oid: int) -> Offer:
+    o = db.get(Offer, oid)
+    if o is None or o.company_id != current_company(request, db).id:
+        raise HTTPException(404)
+    return o
+
+
+def _offer_form(request: Request, db: Session, o: Offer, error: str | None = None):
+    products = prod.search(db, "", active_only=True)
+    contractors = db.scalars(select(Contractor).order_by(Contractor.name)).all()
+    return render(request, db, "offer_form.html", o=o, products=products, STATUSES=OFFER_STATUSES,
+                  products_json=script_json(prod.picker_json(products)), contractors=contractors, error=error)
+
+
+@app.get("/oferty", response_class=HTMLResponse)
+def offer_list(request: Request, q: str = "", status: str = "", db: Session = Depends(get_db)):
+    company = current_company(request, db)
+    stmt = select(Offer).where(Offer.company_id == company.id)
+    if status == "otwarte":
+        stmt = stmt.where(Offer.status.in_(("new", "sent")))
+    elif status in OFFER_STATUSES:
+        stmt = stmt.where(Offer.status == status)
+    if q:
+        like = f"%{q}%"
+        stmt = stmt.where(or_(Offer.number.ilike(like), Offer.recipient_name.ilike(like), Offer.title.ilike(like)))
+    rows = db.scalars(stmt.order_by(Offer.issue_date.desc(), Offer.id.desc()).limit(300)).all()
+    open_rows = [o for o in rows if o.is_open]
+    stats = dict(open_count=len(open_rows), open_gross=sum((o.total_gross for o in open_rows), Decimal("0")))
+    return render(request, db, "offer_list.html", rows=rows, q=q, status=status, STATUSES=OFFER_STATUSES, stats=stats)
+
+
+@app.get("/oferty/nowa", response_class=HTMLResponse)
+def offer_new(request: Request, kontrahent: int = 0, kopia: int = 0, db: Session = Depends(get_db)):
+    company = current_company(request, db)
+    if kopia:
+        o = offers.duplicate(_get_offer(db, request, kopia), web_actor(request))
+    else:
+        o = offers.new(company.id, web_actor(request))
+        c = db.get(Contractor, kontrahent) if kontrahent else None
+        if c is not None:
+            o.contractor_id, o.recipient_name = c.id, c.name
+            o.recipient_address = "\n".join(c.address_lines)
+            o.email = (c.email or "").split(",")[0].strip()
+    return _offer_form(request, db, o)
+
+
+async def _offer_save(request: Request, db: Session, o: Offer):
+    form = await request.form()
+    o.title = (form.get("title") or "").strip()[:300]
+    o.recipient_name = (form.get("recipient_name") or "").strip()[:300]
+    o.recipient_address = (form.get("recipient_address") or "").strip()
+    o.contact_person = (form.get("contact_person") or "").strip()[:200]
+    o.email = (form.get("email") or "").strip()[:200]
+    o.notes = (form.get("notes") or "").strip()
+    o.internal_notes = (form.get("internal_notes") or "").strip()
+    o.prices_gross = form.get("prices_gross") == "1"
+    cid = form.get("contractor_id") or ""
+    o.contractor_id = int(cid) if cid.isdigit() and db.get(Contractor, int(cid)) else None
+    prob = (form.get("probability") or "").strip().rstrip("%")
+    error = None
+    try:
+        o.probability = int(prob) if prob else None
+    except ValueError:
+        error = "Szansa to liczba od 0 do 100."
+    try:
+        o.issue_date = dt.date.fromisoformat(form.get("issue_date") or "")
+    except ValueError:
+        o.issue_date = dt.date.today()
+    try:
+        o.valid_until = dt.date.fromisoformat(form.get("valid_until") or "")
+    except ValueError:
+        o.valid_until = None
+    if form.get("status") in OFFER_STATUSES:
+        o.status = form.get("status")
+    try:
+        if error:
+            raise ValueError(error)
+        offers.set_items(db, o, form.getlist("item_name"), form.getlist("item_qty"), form.getlist("item_unit"),
+                         form.getlist("item_product"), form.getlist("item_price"), form.getlist("item_rate"))
+        is_new = o.id is None
+        db.add(o)
+        offers.save(db, o)
+        if is_new:
+            audit(db, web_actor(request), "offer.create", f"Oferta {o.number} dla {o.recipient_name}",
+                  company_id=o.company_id, entity="offer", entity_id=o.id)
+        db.commit()
+    except ValueError as e:
+        db.rollback()
+        return _offer_form(request, db, o, error=str(e))
+    flash(request, f"Zapisano ofertę {o.number}.")
+    return redirect(f"/oferty/{o.id}")
+
+
+@app.post("/oferty/nowa")
+async def offer_create(request: Request, db: Session = Depends(get_db)):
+    company = current_company(request, db)
+    return await _offer_save(request, db, offers.new(company.id, web_actor(request)))
+
+
+@app.get("/oferty/{oid}", response_class=HTMLResponse)
+def offer_view(oid: int, request: Request, db: Session = Depends(get_db)):
+    o = _get_offer(db, request, oid)
+    return render(request, db, "offer_view.html", o=o, STATUSES=OFFER_STATUSES)
+
+
+@app.get("/oferty/{oid}/edytuj", response_class=HTMLResponse)
+def offer_edit(oid: int, request: Request, db: Session = Depends(get_db)):
+    return _offer_form(request, db, _get_offer(db, request, oid))
+
+
+@app.post("/oferty/{oid}/edytuj")
+async def offer_update(oid: int, request: Request, db: Session = Depends(get_db)):
+    return await _offer_save(request, db, _get_offer(db, request, oid))
+
+
+@app.post("/oferty/{oid}/status")
+async def offer_status(oid: int, request: Request, db: Session = Depends(get_db)):
+    o = _get_offer(db, request, oid)
+    form = await request.form()
+    try:
+        offers.set_status(o, form.get("status") or "")
+    except ValueError as e:
+        flash(request, str(e))
+        return redirect(f"/oferty/{o.id}")
+    audit(db, web_actor(request), "offer.status", f"{o.number}: status {o.status_label}",
+          company_id=o.company_id, entity="offer", entity_id=o.id)
+    db.commit()
+    flash(request, f"Status oferty: {o.status_label}.")
+    return redirect(f"/oferty/{o.id}")
+
+
+@app.post("/oferty/{oid}/faktura")
+def offer_to_invoice(oid: int, request: Request, db: Session = Depends(get_db)):
+    o = _get_offer(db, request, oid)
+    try:
+        inv = offers.to_invoice(db, web_actor(request), o)
+    except ValueError as e:
+        db.rollback()
+        flash(request, str(e))
+        return redirect(f"/oferty/{o.id}")
+    flash(request, f"Utworzono szkic faktury z oferty {o.number}. Sprawdź i wystaw.")
+    return redirect(f"/faktury/{inv.id}/edytuj")
+
+
+@app.post("/oferty/{oid}/wz")
+def offer_to_wz(oid: int, request: Request, db: Session = Depends(get_db)):
+    o = _get_offer(db, request, oid)
+    try:
+        d = offers.to_wz(db, o)
+    except ValueError as e:
+        db.rollback()
+        flash(request, str(e))
+        return redirect(f"/oferty/{o.id}")
+    flash(request, f"Utworzono szkic WZ z oferty {o.number}. Sprawdź i wystaw.")
+    return redirect(f"/wz/{d.id}/edytuj")
+
+
+@app.get("/oferty/{oid}/pdf")
+def offer_pdf(oid: int, request: Request, db: Session = Depends(get_db), pobierz: int = 0):
+    o = _get_offer(db, request, oid)
+    filename = (o.number or f"oferta-{o.id}").replace("/", "-") + ".pdf"
+    disposition = "attachment" if pobierz else "inline"
+    return Response(offers.render_pdf(o), media_type="application/pdf",
+                    headers={"Content-Disposition": f'{disposition}; filename="{filename}"'})
+
+
+@app.post("/oferty/{oid}/usun")
+def offer_delete(oid: int, request: Request, db: Session = Depends(get_db)):
+    o = _get_offer(db, request, oid)
+    if o.invoice_id or o.delivery_id or o.status not in ("new", "cancelled", "rejected"):
+        flash(request, "Usunąć można tylko nową, odrzuconą albo anulowaną ofertę bez faktury i WZ.")
+        return redirect(f"/oferty/{o.id}")
+    audit(db, web_actor(request), "offer.delete", f"Usunięto ofertę {o.number}", company_id=o.company_id,
+          entity="offer", entity_id=o.id)
+    db.delete(o)
+    db.commit()
+    flash(request, f"Usunięto ofertę {o.number}.")
+    return redirect("/oferty")
 
 
 # ---------------------------------------------------------------- aplikacja na telefon (PWA)

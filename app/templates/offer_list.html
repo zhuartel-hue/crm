@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Oferty{% endblock %}
+{% block content %}
+<div class="row"><h1>Oferty</h1><span class="spacer"></span><a class="btn primary" href="/oferty/nowa">+ Oferta</a></div>
+<div class="grid stats">
+  <div class="card stat"><div class="l">Otwarte oferty</div><div class="v"><a href="/oferty?status=otwarte">{{ stats.open_count }}</a></div></div>
+  <div class="card stat"><div class="l">Wartość otwartych (brutto)</div><div class="v">{{ stats.open_gross|money }} zł</div></div>
+</div>
+<form class="row" style="margin-bottom:12px" method="get">
+  <select name="status" style="max-width:180px" onchange="this.form.submit()"><option value="">wszystkie</option>
+    <option value="otwarte" {{ 'selected' if status == 'otwarte' }}>otwarte (nowe i wysłane)</option>
+    {% for k, v in STATUSES.items() %}<option value="{{ k }}" {{ 'selected' if status == k }}>{{ v }}</option>{% endfor %}</select>
+  <input name="q" value="{{ q }}" placeholder="Numer, klient albo tytuł" style="max-width:320px"><button class="btn">Szukaj</button>
+</form>
+<div class="card tbl"><table>
+<tr><th>Numer</th><th>Data</th><th>Klient</th><th class="hide-sm">Ważna do</th><th class="n">Brutto</th><th>Status</th></tr>
+{% for o in rows %}
+<tr><td><a href="/oferty/{{ o.id }}">{{ o.display_number }}</a>{% if o.title %}<br><span class="muted">{{ o.title }}</span>{% endif %}</td>
+<td>{{ o.issue_date|date }}</td><td>{{ o.recipient_name }}</td>
+<td class="hide-sm">{{ o.valid_until|date }}{% if o.expired %} <span class="badge warn">minęła</span>{% endif %}</td>
+<td class="n">{{ o.total_gross|money }}</td>
+<td><span class="badge {{ 'ok' if o.status in ('accepted', 'in_progress', 'done') else 'warn' if o.status in ('rejected', 'cancelled') }}">{{ o.status_label }}</span></td></tr>
+{% else %}<tr><td colspan="6" class="muted">Brak ofert. <a href="/oferty/nowa">Dodaj pierwszą</a></td></tr>{% endfor %}
+</table></div>
+{% endblock %}
