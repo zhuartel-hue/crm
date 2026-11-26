@@ -153,6 +153,21 @@ Menu System → **Import z Firmao** (`/import/firmao`): wgraj `customers.json`, 
 (`tools/firmao_export.py`, tylko odczyt z API Firmao). Rekordy pamiętają swoje id z Firmao (`source_ref`), więc
 ponowny import aktualizuje zamiast dublować; istniejącego kontrahenta dopasowuje po NIP, produkt po kodzie.
 
+Całe archiwum (faktury sprzedaży z pozycjami, korekty, koszty, WZ/PZ, oferty i powiązania między nimi) idzie z
+wiersza poleceń, bo jest za duże na formularz:
+
+```bash
+python3 tools/firmao_bundle.py                       # na komputerze z eksportem: jeden mały plik .json.gz
+docker compose cp firmao-bundle.json.gz app:/tmp/    # na serwerze
+docker compose run --rm --no-deps -v /tmp/firmao-bundle.json.gz:/tmp/b.json.gz app \
+    python -m app.firmao_cli /tmp/b.json.gz --firma 5551859956 --dry-run   # bez --dry-run zapisuje
+```
+
+Dokumenty zachowują numery i kwoty z Firmao. Faktury nie idą do KSeF: z numerem KSeF z Firmao mają status
+„przyjęta”, bez niego „wystawiona poza Sygnavo”. WZ/PZ nie zmieniają stanów (stany przychodzą z produktów).
+Gdy numery z Firmao mają układ `RRRR/MM/NNN` (+ końcówka jak `/KOR`, `/WZ`, `/O/S`), firma przejmuje ten wzór,
+a liczniki są ustawiane po ostatnim numerze w każdym miesiącu, więc numeracja idzie dalej bez dziur.
+
 ## Uruchomienie u siebie
 
 ```bash

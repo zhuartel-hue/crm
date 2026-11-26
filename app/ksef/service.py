@@ -140,7 +140,7 @@ def _apply(inv: Invoice, res) -> None:
 
 
 STATUS_LABELS = {"": "nie wysłano", "sent": "w trakcie", "accepted": "przyjęta", "rejected": "odrzucona",
-                 "error": "błąd wysyłki"}
+                 "error": "błąd wysyłki", "external": "wystawiona poza Sygnavo"}
 
 
 def status_label(inv: Invoice) -> str:

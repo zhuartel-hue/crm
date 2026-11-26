@@ -232,6 +232,7 @@ class Invoice(Base):
     # Nieuzywane (dawna faktura marza); kolumna zostaje w bazie.
     margin_total: Mapped[Decimal] = mapped_column(Money, default=Decimal("0"))
 
+    source_ref: Mapped[str] = mapped_column(String(120), default="", index=True)  # np. "firmao:123"
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
 
     company: Mapped[Company] = relationship()
@@ -660,6 +661,7 @@ class Delivery(Base):
     signed_by: Mapped[str] = mapped_column(String(200), default="")
     signature_png: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     signed_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+    source_ref: Mapped[str] = mapped_column(String(120), default="", index=True)  # np. "firmao:123"
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
 
     company: Mapped[Company] = relationship()
@@ -734,6 +736,7 @@ class Offer(Base):
     delivery_id: Mapped[int | None] = mapped_column(ForeignKey("deliveries.id", ondelete="SET NULL"), nullable=True)
     sent_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
     created_by: Mapped[str] = mapped_column(String(100), default="")
+    source_ref: Mapped[str] = mapped_column(String(120), default="", index=True)  # np. "firmao:123"
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
 
     company: Mapped[Company] = relationship()
@@ -854,6 +857,7 @@ class PurchaseInvoice(Base):
     status: Mapped[str] = mapped_column(String(10), default="new")  # PURCHASE_STATUSES
     paid_at: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
     notes: Mapped[str] = mapped_column(Text, default="")
+    source_ref: Mapped[str] = mapped_column(String(120), default="", index=True)  # np. "firmao:123"
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
 
     company: Mapped[Company] = relationship()
