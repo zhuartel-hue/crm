@@ -18,6 +18,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from . import api, auth, calc, config, firmao_import, mail_templates, mcp_server, migrate, nip_lookup, numbering, offers, password, payments, pdf, recurring, secretbox, wz
 from . import products as prod
+from . import tasks as tasks_mod
 from .bank import service as bank
 from .bank import connect as bank_connect
 from .bank import enablebanking
@@ -72,8 +73,11 @@ from .models import (
     RECURRING_MODES,
     RecurringInvoice,
     SERVICE_KINDS,
+    TASK_PRIORITIES,
+    TASK_STATUSES,
     Equipment,
     ServiceEntry,
+    Task,
 )
 from .seed import seed
 
@@ -369,7 +373,8 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
             Equipment.warranty_until.between(today, today + dt.timedelta(days=90))))
         .order_by(Equipment.next_service, Equipment.warranty_until).limit(30)).all()
         if e.service_state(today) in ("over", "soon") or e.warranty_state(today) == "soon"][:8]
-    return render(request, db, "dashboard.html", company=company, recent=recent, stats=stats, cars=cars_on_lot, equipment_due=equipment_due,
+    tasks_today = tasks_mod.today_tasks(db, company.id, today, limit=8)
+    return render(request, db, "dashboard.html", company=company, recent=recent, stats=stats, cars=cars_on_lot, equipment_due=equipment_due, tasks_today=tasks_today, now=dt.datetime.now(),
                   bank_warnings=bank_connect.warnings(db, company.id), overdue=overdue, deliveries=deliveries,
                   mails=mails, offers_expiring=offers.expiring(db, company.id), today=today)
 
@@ -927,7 +932,11 @@ def contractor_edit(cid: int, request: Request, db: Session = Depends(get_db)):
                                                           RecurringInvoice.company_id == current_company(request, db).id)
                            .order_by(RecurringInvoice.active.desc(), RecurringInvoice.id.desc())).all()
     return render(request, db, "contractor_form.html", c=c, invoices=invoices, mails=mails, offers=offer_rows,
-                  deliveries=deliveries, equipment=equipment, contracts=contracts, today=dt.date.today())
+                  deliveries=deliveries, equipment=equipment, contracts=contracts, today=dt.date.today(),
+                  task_rows=db.scalars(select(Task).where(Task.contractor_id == cid, Task.parent_id.is_(None),
+                                                          Task.company_id == current_company(request, db).id)
+                                       .order_by(Task.status.in_(("done", "cancelled")), Task.due_at.desc())
+                                       .limit(30)).all(), now=dt.datetime.now())
 
 
 async def _save_contractor(request: Request, db: Session, c: Contractor):
@@ -2222,7 +2231,9 @@ def _equipment_form(request: Request, db: Session, e: Equipment, error: str | No
     deliveries = db.scalars(select(Delivery).where(Delivery.company_id == company.id,
                                                    Delivery.contractor_id == e.contractor_id)
                             .order_by(Delivery.issue_date.desc()).limit(30)).all() if e.contractor_id else []
-    return render(request, db, "equipment_form.html", e=e, contractors=contractors, contacts=contacts,
+    task_rows = db.scalars(select(Task).where(Task.equipment_id == e.id).order_by(Task.due_at.desc())
+                           .limit(30)).all() if e.id else []
+    return render(request, db, "equipment_form.html", e=e, task_rows=task_rows, now=dt.datetime.now(), contractors=contractors, contacts=contacts,
                   categories=categories, products=products, deliveries=deliveries, KINDS=SERVICE_KINDS,
                   today=dt.date.today(), error=error)
 
@@ -2343,6 +2354,198 @@ def equipment_service_delete(eid: int, sid: int, request: Request, db: Session =
     db.commit()
     flash(request, "Usunięto wpis serwisowy.")
     return redirect(f"/sprzet/{eid}#serwis")
+
+
+# ---------------------------------------------------------------- Zadania i kalendarz
+
+def _get_task(db: Session, request: Request, tid: int) -> Task:
+    t = db.get(Task, tid)
+    if t is None or t.company_id != current_company(request, db).id:
+        raise HTTPException(404)
+    return t
+
+
+def _safe_back(back: str, default: str) -> str:
+    return back if back.startswith("/") and not back.startswith("//") else default
+
+
+@app.get("/zadania", response_class=HTMLResponse)
+def task_list(request: Request, widok: str = "dzis", q: str = "", db: Session = Depends(get_db)):
+    company = current_company(request, db)
+    now = dt.datetime.now()
+    if widok == "dzis" and not q:
+        rows = tasks_mod.today_tasks(db, company.id)
+    else:
+        cond = [Task.company_id == company.id, Task.parent_id.is_(None)]
+        if widok == "zrobione":
+            cond.append(Task.status.in_(("done", "cancelled")))
+        elif widok != "wszystkie":
+            cond.append(Task.status.in_(("todo", "doing")))
+        if q:
+            like = f"%{q.strip()}%"
+            cond.append(or_(Task.title.ilike(like), Task.description.ilike(like), Task.address.ilike(like),
+                            Contractor.name.ilike(like)))
+        order = (Task.done_at.desc(),) if widok == "zrobione" else (Task.due_at.is_(None), Task.due_at, Task.start_at, Task.id)
+        rows = db.scalars(select(Task).outerjoin(Contractor, Task.contractor_id == Contractor.id).where(*cond)
+                          .order_by(*order).limit(300)).all()
+    counts = dict(dzis=len(tasks_mod.today_tasks(db, company.id)),
+                  otwarte=db.scalar(select(func.count()).select_from(Task).where(*tasks_mod.open_cond(company.id),
+                                                                                 Task.parent_id.is_(None))))
+    return render(request, db, "task_list.html", rows=rows, widok=widok, q=q, now=now, counts=counts,
+                  today=dt.date.today())
+
+
+def _task_form(request: Request, db: Session, t: Task, error: str | None = None):
+    company = current_company(request, db)
+    contractors = db.scalars(select(Contractor).order_by(Contractor.name)).all()
+    contacts = db.scalars(select(Contact).where(Contact.contractor_id == t.contractor_id)
+                          .order_by(Contact.last_name)).all() if t.contractor_id else []
+    equipment = db.scalars(select(Equipment).where(Equipment.company_id == company.id, Equipment.active,
+                                                   Equipment.contractor_id == t.contractor_id)
+                           .order_by(Equipment.name)).all() if t.contractor_id else []
+    if t.equipment_id and all(e.id != t.equipment_id for e in equipment) and t.equipment:
+        equipment = [t.equipment, *equipment]
+    categories = [c for c in db.scalars(select(Task.category).where(Task.company_id == company.id, Task.category != "")
+                                        .distinct())]
+    return render(request, db, "task_form.html", t=t, contractors=contractors, contacts=contacts, equipment=equipment,
+                  categories=categories, STATUSES=TASK_STATUSES, PRIORITIES=TASK_PRIORITIES, now=dt.datetime.now(),
+                  fmt_minutes=tasks_mod.fmt_minutes, error=error)
+
+
+@app.get("/zadania/nowe", response_class=HTMLResponse)
+def task_new(request: Request, kontrahent: int = 0, sprzet: int = 0, data: str = "", nadrzedne: int = 0,
+             db: Session = Depends(get_db)):
+    company = current_company(request, db)
+    t = Task(company_id=company.id, title="", description="", status="todo", priority="normal", category="",
+             address="", all_day=True, assignee=request.session.get("user", ""), minutes_spent=0, source_ref="")
+    e = db.get(Equipment, sprzet) if sprzet else None
+    if e is not None and e.company_id == company.id:
+        t.equipment_id, t.contractor_id, t.address = e.id, e.contractor_id, e.location
+        t.title, t.category = f"Serwis: {e.name}"[:300], "serwis"
+    elif kontrahent and db.get(Contractor, kontrahent):
+        c = db.get(Contractor, kontrahent)
+        t.contractor_id, t.address = c.id, ", ".join(c.address_lines)
+    parent = db.get(Task, nadrzedne) if nadrzedne else None
+    if parent is not None and parent.company_id == company.id:
+        t.parent_id, t.contractor_id, t.equipment_id = parent.id, parent.contractor_id, parent.equipment_id
+    try:
+        t.due_at = dt.datetime.combine(dt.date.fromisoformat(data), dt.time(0, 0)) if data else None
+    except ValueError:
+        t.due_at = None
+    return _task_form(request, db, t)
+
+
+async def _task_save(request: Request, db: Session, t: Task):
+    form = await request.form()
+    try:
+        tasks_mod.apply_form(db, t, form)
+    except ValueError as e:
+        return _task_form(request, db, t, str(e))
+    is_new = t.id is None
+    db.add(t)
+    db.flush()
+    audit(db, web_actor(request), "task.save", f"{'Nowe' if is_new else 'Zmienione'} zadanie „{t.title}”",
+          company_id=t.company_id, entity="task", entity_id=t.id)
+    db.commit()
+    flash(request, f"Zapisano zadanie: {t.title}.")
+    return redirect(_safe_back(form.get("back") or "", f"/zadania/{t.id}"))
+
+
+@app.post("/zadania/nowe")
+async def task_create(request: Request, db: Session = Depends(get_db)):
+    company = current_company(request, db)
+    form = await request.form()
+    pid = form.get("parent_id") or ""
+    parent = db.get(Task, int(pid)) if pid.isdigit() else None
+    t = Task(company_id=company.id, parent_id=parent.id if parent and parent.company_id == company.id else None,
+             status="todo", minutes_spent=0, source_ref="", assignee=request.session.get("user", ""))
+    return await _task_save(request, db, t)
+
+
+@app.post("/zadania/szybkie")
+async def task_quick(request: Request, db: Session = Depends(get_db)):
+    """Szybkie dodanie z listy, kalendarza albo jako podzadanie: sam tytul i ewentualnie dzien."""
+    company = current_company(request, db)
+    form = await request.form()
+    back = _safe_back(form.get("back") or "", "/zadania")
+    title = (form.get("title") or "").strip()[:300]
+    if not title:
+        flash(request, "Wpisz, co jest do zrobienia.")
+        return redirect(back)
+    t = Task(company_id=company.id, title=title, description="", status="todo", priority="normal", category="",
+             address="", all_day=True, assignee=request.session.get("user", ""), minutes_spent=0, source_ref="")
+    pid = form.get("parent_id") or ""
+    parent = db.get(Task, int(pid)) if pid.isdigit() else None
+    if parent is not None and parent.company_id == company.id:
+        t.parent_id, t.contractor_id, t.equipment_id = parent.id, parent.contractor_id, parent.equipment_id
+    try:
+        if form.get("due_date"):
+            t.due_at = dt.datetime.combine(dt.date.fromisoformat(form["due_date"]), dt.time(0, 0))
+    except ValueError:
+        pass
+    db.add(t)
+    db.commit()
+    flash(request, f"Dodano: {t.title}.")
+    return redirect(back)
+
+
+@app.get("/zadania/{tid}", response_class=HTMLResponse)
+def task_edit(tid: int, request: Request, db: Session = Depends(get_db)):
+    return _task_form(request, db, _get_task(db, request, tid))
+
+
+@app.post("/zadania/{tid}")
+async def task_update(tid: int, request: Request, db: Session = Depends(get_db)):
+    return await _task_save(request, db, _get_task(db, request, tid))
+
+
+@app.post("/zadania/{tid}/status")
+async def task_status(tid: int, request: Request, db: Session = Depends(get_db)):
+    t = _get_task(db, request, tid)
+    form = await request.form()
+    status = form.get("status") if form.get("status") in TASK_STATUSES else "done"
+    tasks_mod.set_status(t, status)
+    audit(db, web_actor(request), "task.status", f"Zadanie „{t.title}”: {t.status_label}",
+          company_id=t.company_id, entity="task", entity_id=t.id)
+    db.commit()
+    return redirect(_safe_back(form.get("back") or "", f"/zadania/{t.id}"))
+
+
+@app.post("/zadania/{tid}/licznik")
+async def task_timer(tid: int, request: Request, db: Session = Depends(get_db)):
+    t = _get_task(db, request, tid)
+    form = await request.form()
+    if t.timer_started_at:
+        tasks_mod.stop_timer(t)
+        flash(request, f"Zatrzymano. Razem: {tasks_mod.fmt_minutes(t.minutes_spent)}.")
+    else:
+        tasks_mod.start_timer(t)
+        flash(request, "Liczę czas pracy.")
+    db.commit()
+    return redirect(_safe_back(form.get("back") or "", f"/zadania/{t.id}"))
+
+
+@app.post("/zadania/{tid}/usun")
+def task_delete(tid: int, request: Request, db: Session = Depends(get_db)):
+    t = _get_task(db, request, tid)
+    back = f"/zadania/{t.parent_id}" if t.parent_id else "/zadania"
+    audit(db, web_actor(request), "task.delete", f"Usunięto zadanie „{t.title}”", company_id=t.company_id,
+          entity="task")
+    db.delete(t)
+    db.commit()
+    flash(request, f"Usunięto: {t.title}.")
+    return redirect(back)
+
+
+@app.get("/kalendarz", response_class=HTMLResponse)
+def task_calendar(request: Request, widok: str = "miesiac", dzien: str = "", db: Session = Depends(get_db)):
+    company = current_company(request, db)
+    try:
+        day = dt.date.fromisoformat(dzien) if dzien else dt.date.today()
+    except ValueError:
+        day = dt.date.today()
+    cal = tasks_mod.calendar_view(db, company.id, widok, day)
+    return render(request, db, "calendar.html", cal=cal, today=dt.date.today(), now=dt.datetime.now())
 
 
 # ---------------------------------------------------------------- Oferty

@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% from "_icons.html" import icon %}
+{% block title %}{{ t.title if t.id else 'Nowe zadanie' }}{% endblock %}
+{% block content %}
+<div class="row"><h1>{{ t.title if t.id else ('Nowe podzadanie' if t.parent_id else 'Nowe zadanie') }}</h1>
+{% if t.id %}<span class="badge {{ 'm' if t.status == 'doing' else ('ok' if t.status == 'done' else '') }}">{{ t.status_label }}</span>{% endif %}
+<span class="spacer"></span>
+{% if t.id and t.is_open %}<form method="post" action="/zadania/{{ t.id }}/licznik"><button class="btn">{{ '■ Zatrzymaj' if t.timer_started_at else '▶ Rozpocznij' }}</button></form>
+<form method="post" action="/zadania/{{ t.id }}/status"><input type="hidden" name="status" value="done"><button class="btn primary">✓ Zrobione</button></form>{% endif %}
+{% if t.id and not t.is_open %}<form method="post" action="/zadania/{{ t.id }}/status"><input type="hidden" name="status" value="todo"><button class="btn">Otwórz ponownie</button></form>{% endif %}
+<a class="btn" href="{{ '/zadania/%d' % t.parent_id if t.parent_id else '/zadania' }}">Wróć</a></div>
+{% if t.parent %}<p class="muted">Podzadanie do: <a href="/zadania/{{ t.parent_id }}">{{ t.parent.title }}</a></p>{% endif %}
+<div class="split">
+<form method="post" action="{{ '/zadania/%d' % t.id if t.id else '/zadania/nowe' }}">
+{% if t.parent_id and not t.id %}<input type="hidden" name="parent_id" value="{{ t.parent_id }}">{% endif %}
+<div class="card"><div class="grid">
+  <div style="grid-column:1/-1"><label>Co jest do zrobienia</label><input name="title" value="{{ t.title or '' }}" required placeholder="np. Przegląd monitoringu u klienta"></div>
+  <div style="grid-column:1/-1"><label>Opis</label><textarea name="description" rows="4">{{ t.description or '' }}</textarea></div>
+  <div><label>Początek</label><input type="date" name="start_date" value="{{ t.start_at.date().isoformat() if t.start_at }}"></div>
+  <div><label>Godzina</label><input type="time" name="start_time" value="{{ t.start_at.strftime('%H:%M') if t.start_at and not t.all_day }}"></div>
+  <div><label>Termin</label><input type="date" name="due_date" value="{{ t.due_at.date().isoformat() if t.due_at }}"></div>
+  <div><label>Godzina</label><input type="time" name="due_time" value="{{ t.due_at.strftime('%H:%M') if t.due_at and not t.all_day }}"></div>
+  <div><label>Priorytet</label><select name="priority">{% for k, v in PRIORITIES.items() %}<option value="{{ k }}" {{ 'selected' if t.priority == k }}>{{ v }}</option>{% endfor %}</select></div>
+  <div><label>Status</label><select name="status">{% for k, v in STATUSES.items() %}<option value="{{ k }}" {{ 'selected' if t.status == k }}>{{ v }}</option>{% endfor %}</select></div>
+  <div><label>Kategoria</label><input name="category" list="cat-list" value="{{ t.category or '' }}" placeholder="np. serwis, montaż, telefon"></div>
+  <div><label>Kto</label><input name="assignee" value="{{ t.assignee or '' }}"></div>
+  <div style="grid-column:1/-1"><label>Klient</label><select name="contractor_id"><option value="">—</option>
+    {% for c in contractors %}<option value="{{ c.id }}" data-search="{{ c.nip }} {{ c.city }}" {{ 'selected' if c.id == t.contractor_id }}>{{ c.name }}</option>{% endfor %}</select></div>
+  {% if contacts %}<div><label>Osoba kontaktowa</label><select name="contact_id"><option value="">—</option>
+    {% for p in contacts %}<option value="{{ p.id }}" {{ 'selected' if p.id == t.contact_id }}>{{ p.name }}{{ ' · ' ~ p.phone if p.phone }}</option>{% endfor %}</select></div>{% endif %}
+  {% if equipment %}<div><label>Sprzęt</label><select name="equipment_id"><option value="">—</option>
+    {% for e in equipment %}<option value="{{ e.id }}" {{ 'selected' if e.id == t.equipment_id }}>{{ e.name }}{{ ' · SN ' ~ e.serial_no if e.serial_no }}</option>{% endfor %}</select></div>
+  {% elif t.equipment_id %}<input type="hidden" name="equipment_id" value="{{ t.equipment_id }}">{% endif %}
+  <div style="grid-column:1/-1"><label>Adres</label><input name="address" value="{{ t.address or '' }}" placeholder="gdzie jechać">
+    {% if t.address %}<a class="muted" style="font-size:13px" href="https://maps.google.com/?q={{ t.address|urlencode }}" target="_blank" rel="noopener">pokaż na mapie</a>{% endif %}</div>
+  {% if t.id %}<div><label>Czas pracy (minuty)</label><input type="number" min="0" name="minutes_spent" value="{{ t.minutes_spent or 0 }}"></div>{% endif %}
+</div></div>
+<datalist id="cat-list">{% for c in categories %}<option value="{{ c }}"></option>{% endfor %}</datalist>
+<div class="row" style="margin-bottom:16px"><button class="btn primary">Zapisz</button></div>
+</form>
+<div>
+{% if t.id %}
+  <div class="card"><div class="muted" style="font-size:12px;text-transform:uppercase;letter-spacing:.05em">Czas pracy</div>
+    <div style="font-size:22px;font-weight:700">{{ fmt_minutes(t.total_minutes(now)) }}</div>
+    {% if t.timer_started_at %}<div class="muted">licznik działa od {{ t.timer_started_at.strftime('%H:%M') }}</div>{% endif %}
+    {% if t.contractor %}<p style="margin-bottom:0"><a href="/kontrahenci/{{ t.contractor_id }}">{{ t.contractor.name }}</a>{% if t.contractor.phone %} · <a href="tel:{{ t.contractor.phone }}">{{ t.contractor.phone }}</a>{% endif %}</p>{% endif %}
+    {% if t.equipment %}<p style="margin-bottom:0">Sprzęt: <a href="/sprzet/{{ t.equipment_id }}">{{ t.equipment.name }}</a></p>{% endif %}
+    {% if t.contractor_id %}<p class="row" style="margin-bottom:0"><a class="btn small" href="/wz/nowa?kontrahent={{ t.contractor_id }}">+ WZ</a><a class="btn small" href="/faktury/nowa?kontrahent={{ t.contractor_id }}">+ Faktura</a></p>{% endif %}
+  </div>
+  {% if not t.parent_id %}<div class="card"><h2 style="margin-top:0">Podzadania</h2>
+    {% for st in t.subtasks %}<div class="row" style="padding:4px 0;border-top:1px solid var(--line2)">
+      <form method="post" action="/zadania/{{ st.id }}/status"><input type="hidden" name="status" value="{{ 'todo' if not st.is_open else 'done' }}"><input type="hidden" name="back" value="/zadania/{{ t.id }}">
+        <button class="icon-btn" title="{{ 'Otwórz' if not st.is_open else 'Zrobione' }}">{{ '✓' if not st.is_open else icon('check') }}</button></form>
+      <a href="/zadania/{{ st.id }}" {% if not st.is_open %}style="text-decoration:line-through" class="muted"{% endif %}>{{ st.title }}</a></div>
+    {% else %}<p class="muted">Rozbij zadanie na kroki, np. „zamówić dysk”, „umówić termin”.</p>{% endfor %}
+    <form method="post" action="/zadania/szybkie" class="row" style="margin-top:8px"><input type="hidden" name="parent_id" value="{{ t.id }}"><input type="hidden" name="back" value="/zadania/{{ t.id }}">
+      <div style="flex:1"><input name="title" placeholder="nowe podzadanie" required></div><button class="btn">Dodaj</button></form></div>{% endif %}
+  <form method="post" action="/zadania/{{ t.id }}/usun" onsubmit="return confirm('Usunąć zadanie{{ ' razem z podzadaniami' if t.subtasks }}?')"><button class="btn danger small">Usuń zadanie</button></form>
+{% endif %}
+</div>
+</div>
+{% endblock %}

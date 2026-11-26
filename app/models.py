@@ -1096,3 +1096,73 @@ class ServiceEntry(Base):
     @property
     def kind_label(self) -> str:
         return SERVICE_KINDS.get(self.kind, self.kind)
+
+
+TASK_STATUSES = {"todo": "Do zrobienia", "doing": "W trakcie", "done": "Zrobione", "cancelled": "Anulowane"}
+TASK_PRIORITIES = {"low": "Niski", "normal": "Normalny", "high": "Wysoki", "urgent": "Pilny"}
+
+
+class Task(Base):
+    """Zadanie (takze zlecenie serwisowe): termin, klient, sprzet, adres, podzadania, licznik czasu."""
+
+    __tablename__ = "tasks"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    parent_id: Mapped[int | None] = mapped_column(ForeignKey("tasks.id", ondelete="CASCADE"), nullable=True, index=True)
+    title: Mapped[str] = mapped_column(String(300))
+    description: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[str] = mapped_column(String(10), default="todo")
+    priority: Mapped[str] = mapped_column(String(10), default="normal")
+    category: Mapped[str] = mapped_column(String(100), default="")
+    contractor_id: Mapped[int | None] = mapped_column(ForeignKey("contractors.id", ondelete="SET NULL"), nullable=True,
+                                                      index=True)
+    contact_id: Mapped[int | None] = mapped_column(ForeignKey("contacts.id", ondelete="SET NULL"), nullable=True)
+    equipment_id: Mapped[int | None] = mapped_column(ForeignKey("equipment.id", ondelete="SET NULL"), nullable=True,
+                                                     index=True)
+    address: Mapped[str] = mapped_column(String(300), default="")
+    start_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    due_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    all_day: Mapped[bool] = mapped_column(default=True)
+    done_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+    assignee: Mapped[str] = mapped_column(String(100), default="")
+    minutes_spent: Mapped[int] = mapped_column(Integer, default=0)
+    timer_started_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+    source_ref: Mapped[str] = mapped_column(String(120), default="", index=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
+
+    contractor: Mapped[Contractor | None] = relationship()
+    contact: Mapped[Contact | None] = relationship()
+    equipment: Mapped[Equipment | None] = relationship()
+    parent: Mapped["Task | None"] = relationship(remote_side=[id], back_populates="subtasks")
+    subtasks: Mapped[list["Task"]] = relationship(back_populates="parent", cascade="all, delete-orphan",
+                                                  order_by="Task.id")
+
+    @property
+    def is_open(self) -> bool:
+        return self.status in ("todo", "doing")
+
+    @property
+    def when(self) -> dt.datetime | None:
+        """Data do kalendarza: poczatek, a jak go nie ma, termin."""
+        return self.start_at or self.due_at
+
+    def overdue(self, now: dt.datetime | None = None) -> bool:
+        if not self.is_open or not self.due_at:
+            return False
+        now = now or dt.datetime.now()
+        return self.due_at.date() < now.date() if self.all_day else self.due_at < now
+
+    @property
+    def status_label(self) -> str:
+        return TASK_STATUSES.get(self.status, self.status)
+
+    @property
+    def priority_label(self) -> str:
+        return TASK_PRIORITIES.get(self.priority, self.priority)
+
+    def total_minutes(self, now: dt.datetime | None = None) -> int:
+        extra = 0
+        if self.timer_started_at:
+            extra = int(((now or dt.datetime.now()) - self.timer_started_at).total_seconds() // 60)
+        return (self.minutes_spent or 0) + max(0, extra)

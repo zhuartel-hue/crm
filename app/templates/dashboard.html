@@ -11,6 +11,10 @@
   {% if stats.ksef_todo is not none %}<a class="card stat" href="/faktury?ksef=do-wyslania"><div class="l">Do zatwierdzenia w KSeF</div><div class="v">{{ stats.ksef_todo }}</div></a>{% endif %}
 </div>
 <div class="tiles">
+  <div class="card tile"><div class="tile-h"><h2>Zadania na dziś</h2><a href="/zadania">zadania</a></div>
+    {% for t in tasks_today %}<a class="tile-row" href="/zadania/{{ t.id }}"><span><b>{{ t.title }}</b>{% if t.contractor %} · {{ t.contractor.name }}{% endif %}</span>
+      <span class="n" {% if t.overdue(now) %}style="color:var(--danger)"{% endif %}>{% if t.due_at %}{{ t.due_at|date if t.due_at.date() != today else ('dziś' if t.all_day else t.due_at.strftime('%H:%M')) }}{% endif %}</span></a>
+    {% else %}<p class="muted">Na dziś nic. <a href="/zadania/nowe?data={{ today.isoformat() }}">Dodaj zadanie</a></p>{% endfor %}</div>
   <div class="card tile"><div class="tile-h"><h2>Ostatnie faktury</h2><a href="/faktury">wszystkie</a></div>
     {% for i in recent %}<a class="tile-row" href="/faktury/{{ i.id }}"><span><b>{{ i.display_number }}</b> · {{ i.buyer_name }}</span>
       <span class="n">{{ i.total_gross|money }}{% if i.status == 'draft' %} <span class="badge warn">szkic</span>{% elif i.to_pay <= 0 %} <span class="badge ok">✓</span>{% endif %}</span></a>

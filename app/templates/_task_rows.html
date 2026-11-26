@@ -1,0 +1,16 @@
+{% from "_icons.html" import icon %}
+{# rows: lista zadan; back: dokad wrocic po odhaczeniu #}
+<div class="card tbl"><table>
+{% for t in rows %}
+<tr class="{{ 'muted' if not t.is_open }}">
+<td style="width:34px">{% if t.is_open %}<form method="post" action="/zadania/{{ t.id }}/status"><input type="hidden" name="status" value="done"><input type="hidden" name="back" value="{{ back }}"><button class="icon-btn" title="Oznacz jako zrobione" aria-label="Zrobione">{{ icon('check') }}</button></form>
+{% else %}<span class="ok-mark" title="{{ t.status_label }}">✓</span>{% endif %}</td>
+<td><a href="/zadania/{{ t.id }}" {% if not t.is_open %}style="text-decoration:line-through"{% endif %}>{{ t.title }}</a>
+{% if t.priority in ('high', 'urgent') %} <span class="badge warn">{{ t.priority_label }}</span>{% endif %}
+{% if t.timer_started_at %} <span class="badge m">trwa</span>{% endif %}
+{% if t.subtasks %} <span class="muted" style="font-size:12px">{{ t.subtasks|selectattr('is_open', 'false')|list|length }}/{{ t.subtasks|length }}</span>{% endif %}
+<br><span class="muted" style="font-size:12px">{% if t.contractor %}{{ t.contractor.name }}{% endif %}{% if t.equipment %} · {{ t.equipment.name }}{% endif %}{% if t.address %} · {{ t.address }}{% endif %}</span></td>
+<td class="n" style="white-space:nowrap">{% if t.due_at %}<span {% if t.overdue(now) %}style="color:var(--danger)"{% endif %}>{{ t.due_at|date }}{% if not t.all_day %} {{ t.due_at.strftime('%H:%M') }}{% endif %}</span>
+{% elif t.start_at %}{{ t.start_at|date }}{% if not t.all_day %} {{ t.start_at.strftime('%H:%M') }}{% endif %}{% endif %}</td></tr>
+{% else %}<tr><td colspan="3" class="muted">{{ empty or 'Brak zadań.' }}</td></tr>{% endfor %}
+</table></div>

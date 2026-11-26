@@ -47,6 +47,8 @@
   {% if e.service_interval_months %}<p class="muted" style="font-size:13px">Przegląd przesunie następny termin o {{ e.service_interval_months }} mies.</p>{% endif %}
   <p class="row"><button class="btn primary">Dodaj wpis</button>
   {% if e.contractor_id %}<a class="btn" href="/wz/nowa?kontrahent={{ e.contractor_id }}">+ WZ dla klienta</a>{% endif %}</p></form></div>
+  <div class="row"><h2>Zlecenia serwisowe</h2><span class="spacer"></span><a class="btn small" href="/zadania/nowe?sprzet={{ e.id }}">+ Zlecenie</a></div>
+  {% set rows = task_rows %}{% set back = '/sprzet/%d' % e.id %}{% set empty = 'Brak zleceń.' %}{% include "_task_rows.html" %}
   <h2>Historia serwisu</h2>
   {% for s in e.services %}<div class="card" style="padding:12px 14px">
     <div class="row"><b>{{ s.date|date }}</b> <span class="badge">{{ s.kind_label }}</span><span class="spacer"></span>
