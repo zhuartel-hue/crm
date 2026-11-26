@@ -643,11 +643,20 @@ def import_agreements(db: Session, company: Company, agreements: list[dict], ent
                                  product_id=None))
         r.items_json = json.dumps(rows, ensure_ascii=False)
         status = str(a.get("agreementStatus") or "").upper()
-        ended = status == "EXPIRED" or (r.end_date is not None and r.end_date < today)
-        r.active = not ended
-        # Firmao fakturuje takze umowy o statusie "Nowa" (np. AUTO-ROJAN), wiec liczy sie tylko koniec i pozycje.
-        r.invoicing = not ended and bool(rows)
         last = _date(a.get("lastInvoiceIssueDate"))
+        # Status umowy w Firmao nie mowi, czy z niej fakturuje (cykliczne maja zwykle "Nowa"). Decyduje to, czy
+        # faktury z niej nadal powstaja: ostatnia w ciagu okresu + 1 miesiac = umowa trwa, nawet gdy Firmao
+        # pokazuje wygasla albo date konca.
+        recent = last is not None and last >= recurring.add_months(today, -(r.interval_months + 1), 1)
+        ended = not recent and (status == "EXPIRED" or (r.end_date is not None and r.end_date < today))
+        if recent and r.end_date is not None and r.end_date < today:
+            # Firmao fakturuje mimo minionej daty konca: bez daty konca, a stara data w adnotacjach umowy
+            note = f"Data końca w Firmao: {r.end_date:%d.%m.%Y} (Firmao dalej fakturował)."
+            if note not in (r.contract_notes or ""):
+                r.contract_notes = ((r.contract_notes + "\n") if r.contract_notes else "") + note
+            r.end_date = None
+        r.active = not ended
+        r.invoicing = not ended and bool(rows)
         upcoming = recurring.first_date(max(today + dt.timedelta(days=1), r.start_date or today), r.day_of_month)
         nxt = recurring.add_months(last, r.interval_months, r.day_of_month) if last else upcoming
         r.next_date = max(nxt, upcoming)
