@@ -58,6 +58,21 @@ Storage Box **BX11**, Falkenstein. Umowa powierzenia (DPA) zaakceptowana w panel
 `ssh chirpstack-1 'cd /opt/crm && docker compose start app'`. Dane z nowego serwera z czasu po
 przeprowadzce trzeba wtedy przenieść z powrotem (`pg_dump` z sygnavo-1).
 
+### Wariant bez czekania na DNS (użyty 26.11.2026)
+
+Gdy właściciel nie może od razu zmienić DNS, stary serwer przekazuje ruch na nowy:
+
+1. Na sygnavo-1 w `/etc/sygnavo/serwer.env`: `APP_ALIASES=", 188-245-222-137.sslip.io"` i
+   ponowne `zainstaluj.sh` (Caddy obsługuje wtedy oba adresy; certyfikat dla domeny głównej pobierze
+   sam po zmianie DNS).
+2. Na chirpstack-1 blok `crm.margotsystem.com` w `/opt/chirpstack/Caddyfile` (kopia przed zmianą obok):
+   `reverse_proxy https://188-245-222-137.sslip.io { header_up Host 188-245-222-137.sslip.io }`,
+   potem `caddy validate` i łagodne przeładowanie. Pozostałych bloków (LoRaWAN) nie ruszamy.
+3. Po zmianie DNS: usunąć ten blok ze starego serwera, a `APP_ALIASES` zostawić pusty.
+
+Uwaga: bez `APP_ALIASES` w `serwer.env` kolejne wdrożenie usunie adres sslip z Caddy i przekazywanie
+przestanie działać, dopóki DNS nie wskazuje nowego serwera.
+
 ## 5. Rozbudowa
 
 ### Więcej CPU / RAM

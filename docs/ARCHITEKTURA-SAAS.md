@@ -59,6 +59,33 @@ Wymagania, bez wyjątków:
 - Eksport wszystkich danych organizacji i jej usunięcie (RODO), z zachowaniem dokumentów, które prawo
   każe przechowywać.
 
+### Stan wdrożenia (aktualizowany)
+
+Zrobione w kodzie (migracja 0100, `app/users.py`, `app/tenancy.py`, testy `tests/test_users.py`):
+
+- Tabele `organisations` i `users`; `companies.organisation_id` (na razie NULL dozwolone, NOT NULL
+  w osobnym wdrożeniu). Istniejące firmy trafiają do pierwszej organizacji.
+- Konta użytkowników z rolami: właściciel, księgowość, handlowiec, magazyn/serwis. Pierwsze logowanie
+  dotychczasowym loginem tworzy konto właściciela, więc nic się nie zmienia dla obecnych użytkowników.
+  Hasło startowe trzeba zmienić przy pierwszym logowaniu; po 5 błędnych hasłach blokada na 15 minut;
+  wyłączenie konta działa od razu, także w otwartej sesji; zawsze zostaje co najmniej jeden właściciel.
+- Oddzielenie danych w jednym miejscu: dla zalogowanej osoby i dla tokenów Claude/API każde zapytanie
+  ORM dostaje automatycznie warunek „tylko firmy tej organizacji” (`with_loader_criteria`), także
+  `Session.get` i ładowanie relacji. Tokeny i klucze API mają `organisation_id`.
+- Testy izolacji: organizacja B nie widzi firm, kontrahentów, faktur, PDF, użytkowników ani kluczy
+  organizacji A, przez stronę i przez API.
+
+Do zrobienia w etapie B (kolejność):
+
+1. RLS w PostgreSQL jako druga warstwa (rola bazy bez BYPASSRLS, `SET app.org_id` na połączeniu).
+2. `organisation_id` bezpośrednio w tabelach podrzędnych (pozycje faktur, załączniki, zdjęcia) i
+   przegląd tras pobierających je po samym id.
+3. Dziennik zmian: wpisy bez firmy (np. dodanie użytkownika) przypisane do organizacji.
+4. Zadania w tle w kolejce (worker), potem kilka procesów aplikacji.
+5. 2FA (TOTP) dla właściciela i księgowości, zaproszenia mailem zamiast hasła startowego.
+6. Koniec danych Margot/ARI w `app/seed.py`: nowa organizacja startuje pusta (rejestracja po NIP).
+7. Szyfrowanie sekretów kluczem organizacji (envelope encryption, sekcja 3).
+
 ## 3. Sekrety klientów
 
 Tokeny KSeF, certyfikaty, dostęp do banku, hasła do skrzynek, Allegro, sklepów:
@@ -233,7 +260,7 @@ tylko w zakresie organizacji zalogowanego użytkownika.
 
 | Etap | Zakres | Termin |
 | --- | --- | --- |
-| A. Serwer | osobny CX33 + Volume + Storage Box, kopie, test odtwarzania, monitoring | przeprowadzka 1.12.2026 |
+| A. Serwer | osobny serwer + Volume + Storage Box, kopie, test odtwarzania, monitoring | **zrobione 26.11.2026** (CX23, bo CX33 był niedostępny; monitoring w toku) |
 | B. Podstawa SaaS | organizacje, `organisation_id` + RLS, użytkownicy i role, zaproszenia, 2FA, worker, koniec danych Margot w kodzie, szyfrowanie per organizacja | do 31.12.2026 |
 | C. Start własny | Margot i ARI pracują produkcyjnie na nowym serwerze | 1.01.2027 |
 | D. Wdrożenia z GitHuba | CI/CD, automatyczny powrót, serwer testowy | styczeń 2027 |
@@ -248,3 +275,6 @@ tylko w zakresie organizacji zalogowanego użytkownika.
 | 26.11.2026 | Bezpieczna, prosta i odwracalna rozbudowa serwera to priorytet; zasady zapisane w repozytorium (ten plik) | właściciel |
 | 26.11.2026 | Od teraz dokumentujemy procesy w bazie wiedzy (`docs/wiedza/`) pod forum, blog i asystenta AI | właściciel |
 | 26.11.2026 | Rekomendacja: osobny serwer Hetzner CX33 + Volume + Storage Box; czeka na zgodę | Claude |
+| 26.11.2026 | Zgoda: osobny serwer w Hetznerze; przeprowadzka jak najszybciej, wykonana tej samej nocy (CX23, później CX33) | właściciel |
+| 26.11.2026 | Zostajemy w Hetznerze; Cloudflare tylko do domeny sygnavo.com i ochrony | właściciel |
+| 26.11.2026 | Etap B: oddzielenie danych w aplikacji w jednym miejscu (filtr ORM), RLS w Postgresie jako druga warstwa później | Claude |

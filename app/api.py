@@ -17,7 +17,8 @@ class ApiAuthError(Exception):
     pass
 
 
-def principal(request: Request, db: Session = Depends(get_db)) -> Principal:
+async def principal(request: Request, db: Session = Depends(get_db)) -> Principal:
+    # async: ustawiony tu zakres organizacji (app/tenancy.py) obowiazuje w calym zapytaniu.
     p = authenticate(db, request)
     if p is None:
         raise ApiAuthError()

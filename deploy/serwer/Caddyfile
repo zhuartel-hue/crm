@@ -1,5 +1,7 @@
 # Zarzadzane przez repozytorium (deploy/serwer/Caddyfile). Zmiany tylko przez PR.
-{$APP_DOMAIN} {
+# APP_ALIASES (opcjonalnie, w /etc/sygnavo/serwer.env) to dodatkowe adresy, np. ", 188-245-222-137.sslip.io"
+# na czas przeprowadzki, gdy stary serwer przekazuje ruch na nowy, zanim zmieni sie DNS.
+{$APP_DOMAIN}{$APP_ALIASES} {
 	encode gzip
 	reverse_proxy app:8000
 	header {

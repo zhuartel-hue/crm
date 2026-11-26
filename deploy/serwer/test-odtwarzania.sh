@@ -20,7 +20,17 @@ echo "Zrzut: $(basename "$ZRZUT")"
 log "Odtwarzam w tymczasowej bazie"
 docker run -d --rm --name "$KONTENER" -e POSTGRES_PASSWORD=test -e POSTGRES_USER=crm -e POSTGRES_DB=crm \
   --memory 1g postgres:16-alpine >/dev/null
-for _ in $(seq 1 60); do docker exec "$KONTENER" pg_isready -U crm >/dev/null 2>&1 && break; sleep 1; done
+# Obraz postgres przy pierwszym starcie uruchamia baze tymczasowo (tylko gniazdo unix), potem restartuje.
+# Czekamy na polaczenie TCP, ktore dziala dopiero po tym restarcie, i na udane zapytanie.
+gotowa=0
+for _ in $(seq 1 90); do
+    if docker exec "$KONTENER" pg_isready -h 127.0.0.1 -U crm >/dev/null 2>&1 \
+        && docker exec "$KONTENER" psql -h 127.0.0.1 -U crm -d crm -tAc 'select 1' >/dev/null 2>&1; then
+        gotowa=1; break
+    fi
+    sleep 1
+done
+[ "$gotowa" = 1 ] || blad "tymczasowa baza testu nie wystartowala w 90 s"
 docker exec -i "$KONTENER" pg_restore -U crm -d crm --no-owner --exit-on-error < "$ZRZUT"
 
 log "Porownuje z produkcja"
