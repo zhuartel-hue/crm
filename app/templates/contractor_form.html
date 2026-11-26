@@ -25,6 +25,17 @@
 </form>
 {% if c.id and not (invoices|selectattr('status', 'equalto', 'issued')|list) %}
 <form method="post" action="/kontrahenci/{{ c.id }}/usun" onsubmit="return confirm('Usunąć tego kontrahenta?')" style="margin-top:12px"><button class="btn danger">Usuń kontrahenta</button></form>{% endif %}
+{% if c.id %}<h2 id="notatki">Notatki</h2>
+<form method="post" action="/kontrahenci/{{ c.id }}/notatki" class="card">
+  <textarea name="text" rows="3" placeholder="Nowa notatka, np. rozmowa telefoniczna, ustalenia" required></textarea>
+  <div class="row" style="margin-top:6px"><button class="btn primary small">Dodaj notatkę</button></div>
+</form>
+{% for n in c.note_rows %}<div class="card" style="padding:10px 12px">
+  <div class="row muted" style="font-size:.9em"><span>{{ n.at.strftime('%d.%m.%Y %H:%M') }} · {{ n.author }}{% if n.contact %} · {{ n.contact.name }}{% endif %}</span><span class="spacer"></span>
+  <form method="post" action="/kontrahenci/{{ c.id }}/notatki/{{ n.id }}/usun" onsubmit="return confirm('Usunąć notatkę?')" style="margin:0"><button class="btn small">Usuń</button></form></div>
+  <div style="white-space:pre-wrap;margin-top:4px">{{ n.text }}</div></div>
+{% else %}<p class="muted">Brak notatek.</p>{% endfor %}
+{% endif %}
 {% if c.id %}<div class="row"><h2>Osoby kontaktowe</h2><span class="spacer"></span><a class="btn small" href="/kontakty/nowy?kontrahent={{ c.id }}">+ Osoba</a></div>
 {% if c.contacts %}<div class="card tbl"><table>{% for p in c.contacts %}<tr><td><a href="/kontakty/{{ p.id }}">{{ p.name }}</a>{% if p.position %}<br><span class="muted">{{ p.position }}</span>{% endif %}</td>
 <td>{% if p.phone %}<a href="tel:{{ p.phone }}">{{ p.phone }}</a>{% endif %}</td>

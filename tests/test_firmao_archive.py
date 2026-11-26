@@ -64,9 +64,17 @@ OFFERS = [
 ]
 
 
+NOTES = [
+    {"id": 300, "customer": {"id": 10, "label": "Klient"}, "contact": {"id": 20}, "createdBy": {"id": 1, "label": "Arek"},
+     "date": "2025-06-01T08:30:00Z", "description": "<p>Klient prosi o <b>telefon</b></p><p>po 15</p>", "important": True,
+     "task": {"id": 5, "name": "Oddzwonić"}},
+    {"id": 301, "customer": {}, "description": "bez klienta"},
+]
+
+
 def bundle():
     return {"customers": CUSTOMERS, "contacts": CONTACTS, "products": PRODUCTS, "transactions": TRANSACTIONS,
-            "transactionentries": ENTRIES, "storagedocs": STORAGEDOCS, "offers": OFFERS}
+            "transactionentries": ENTRIES, "storagedocs": STORAGEDOCS, "offers": OFFERS, "salesnotes": NOTES}
 
 
 def _margot(db):
@@ -85,6 +93,11 @@ def test_archive_import(client):
         assert s["faktury"]["added"] == 3 and s["zakupy"]["added"] == 1
         assert s["wz"]["added"] == 2 and s["oferty"]["added"] == 1 and s["oferty"]["skipped"] == 1
         assert s["powiazania"] == 3
+        assert s["notatki"] == {"added": 1, "updated": 0, "skipped": 1}
+        from app.models import ContractorNote
+        note = db.query(ContractorNote).one()
+        assert note.text == "❗ Klient prosi o telefon\npo 15\nZadanie: Oddzwonić" and note.author == "Arek"
+        assert note.at.hour == 10 and note.contact is not None and note.contractor.source_ref == "firmao:10"
 
         inv = db.query(Invoice).filter_by(source_ref="firmao:1").one()
         assert inv.number == "2026/10/007" and inv.kind == "vat" and inv.status == "issued"
@@ -165,6 +178,17 @@ def test_cli_dry_run(client, tmp_path, capsys):
     with SessionLocal() as db:
         assert db.query(Invoice).count() == 3
     assert firmao_cli.main([str(f), "--firma", "1111111111"]) == 2
+    # tylko wybrane czesci (np. same notatki, bez nadpisywania faktur)
+    with SessionLocal() as db:
+        inv = db.query(Invoice).filter_by(source_ref="firmao:2").one()
+        inv.paid = inv.total_gross
+        db.commit()
+    assert firmao_cli.main([str(f), "--firma", "5551859956", "--tylko", "notatki"]) == 0
+    with SessionLocal() as db:
+        inv = db.query(Invoice).filter_by(source_ref="firmao:2").one()
+        assert inv.to_pay == 0
+    assert firmao_cli.main([str(f), "--firma", "5551859956", "--tylko", "faktury"]) == 2
+    assert firmao_cli.main([str(f), "--firma", "5551859956", "--tylko", "cos"]) == 2
 
 
 def test_bundle_tool(tmp_path):

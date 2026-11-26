@@ -18,7 +18,7 @@ from sqlalchemy import func, select
 
 from . import firmao_archive
 from .db import SessionLocal
-from .models import Company, Contact, Contractor, Delivery, Invoice, Offer, Product, PurchaseInvoice
+from .models import Company, Contact, Contractor, ContractorNote, Delivery, Invoice, Offer, Product, PurchaseInvoice
 
 
 def read_bundle(path: str) -> dict:
@@ -30,7 +30,7 @@ def read_bundle(path: str) -> dict:
 def counts(db, company_id: int) -> dict:
     def n(model, *cond):
         return db.scalar(select(func.count()).select_from(model).where(*cond)) or 0
-    return {"klienci": n(Contractor), "osoby": n(Contact), "produkty": n(Product),
+    return {"klienci": n(Contractor), "osoby": n(Contact), "notatki": n(ContractorNote), "produkty": n(Product),
             "faktury": n(Invoice, Invoice.company_id == company_id),
             "koszty": n(PurchaseInvoice, PurchaseInvoice.company_id == company_id),
             "wz_pz": n(Delivery, Delivery.company_id == company_id),
@@ -42,6 +42,8 @@ def main(argv=None) -> int:
     ap.add_argument("plik")
     ap.add_argument("--firma", required=True, help="NIP firmy w Sygnavo, do ktorej ida dokumenty")
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--tylko", default="", help="wybrane czesci, np. notatki albo klienci,osoby "
+                                                 f"({', '.join(firmao_archive.SECTIONS)})")
     a = ap.parse_args(argv)
     data = read_bundle(a.plik)
     nip = re.sub(r"\D", "", a.firma)
@@ -53,7 +55,16 @@ def main(argv=None) -> int:
         print(f"Firma: {company.short_name} ({company.nip})")
         print("W pliku: " + ", ".join(f"{k} {len(v)}" for k, v in data.items()))
         print(f"Przed: {counts(db, company.id)}")
-        summary = firmao_archive.import_all(db, data, company)
+        only = {x.strip() for x in a.tylko.split(",") if x.strip()} or None
+        if only and only - set(firmao_archive.SECTIONS):
+            print(f"Nieznane części: {', '.join(sorted(only - set(firmao_archive.SECTIONS)))}", file=sys.stderr)
+            return 2
+        try:
+            summary = firmao_archive.import_all(db, data, company, only=only)
+        except ValueError as e:
+            db.rollback()
+            print(str(e), file=sys.stderr)
+            return 2
         after = counts(db, company.id)
         print(f"Po: {after}")
         print(f"Wzory numeracji: {summary.get('wzory')}")

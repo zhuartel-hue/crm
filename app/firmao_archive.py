@@ -9,7 +9,9 @@ a bez numeru "external"). Stany magazynowe biora sie z produktow, WZ/PZ ich nie 
 from __future__ import annotations
 
 import datetime as dt
+import html
 import re
+from zoneinfo import ZoneInfo
 from collections import defaultdict
 from decimal import Decimal, InvalidOperation
 
@@ -17,7 +19,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from . import firmao_import, numbering
-from .models import (VAT_RATES, Company, Contractor, Delivery, DeliveryItem, Invoice, InvoiceItem, NumberSequence,
+from .models import (VAT_RATES, Company, Contact, Contractor, ContractorNote, Delivery, DeliveryItem, Invoice, InvoiceItem, NumberSequence,
                      Offer, OfferItem, Product, PurchaseInvoice)
 
 INVOICE_TYPES = {"INVOICE": "vat", "VAT": "vat", "VAT_INVOICE": "vat", "CORRECTION": "correction",
@@ -36,6 +38,7 @@ OFFER_STATUS = {"NEW": "new", "DRAFT": "new", "SENT": "sent", "ACCEPTED": "accep
                 "DURING_CALCULATIONS": "in_progress"}
 STORAGE_TYPES = {"OUTSIDE_RELEASE": "wz", "OUTSIDE_INCOME": "pz", "OUTSIDE_RECEIPT": "pz", "OUTSIDE_ADMISSION": "pz"}
 ZERO = Decimal("0")
+WARSAW = ZoneInfo("Europe/Warsaw")
 
 
 def _d(v, default: Decimal = ZERO) -> Decimal:
@@ -401,6 +404,56 @@ def import_offers(ctx: Ctx, offers: list[dict], entries: dict) -> dict:
     return out
 
 
+def _plain(text: str) -> str:
+    """Tresc notatki bez HTML (Firmao zapisuje czasem <p>, <br>)."""
+    if "<" not in text:
+        return html.unescape(text).strip()
+    text = re.sub(r"(?i)<br\s*/?>|</p>|</div>|</li>", "\n", text)
+    text = re.sub(r"<[^>]+>", "", text)
+    return re.sub(r"\n{3,}", "\n\n", html.unescape(text)).strip()
+
+
+def _dt(v) -> dt.datetime | None:
+    if not v:
+        return None
+    try:
+        return dt.datetime.fromisoformat(str(v).replace("Z", "+00:00")).astimezone(WARSAW).replace(tzinfo=None)
+    except ValueError:
+        return None
+
+
+def import_notes(db: Session, notes: list[dict]) -> dict:
+    """Notatki handlowe z Firmao przy kontrahentach (bez klienta - pomijane)."""
+    firms = {c.source_ref: c.id for c in db.scalars(select(Contractor).where(Contractor.source_ref != ""))}
+    people = {c.source_ref: c.id for c in db.scalars(select(Contact).where(Contact.source_ref != ""))}
+    have = {n.source_ref: n for n in db.scalars(select(ContractorNote).where(ContractorNote.source_ref != ""))}
+    out = {"added": 0, "updated": 0, "skipped": 0}
+    for r in notes:
+        cid = firms.get(f"firmao:{_id(r.get('customer'))}") if _id(r.get("customer")) else None
+        text = _plain(str(r.get("description") or ""))
+        if cid is None or not text or r.get("deleted"):
+            out["skipped"] += 1
+            continue
+        ref = f"firmao:{r['id']}"
+        n = have.get(ref)
+        if n is None:
+            n = ContractorNote(source_ref=ref)
+            db.add(n)
+            have[ref] = n
+            out["added"] += 1
+        else:
+            out["updated"] += 1
+        n.contractor_id = cid
+        n.contact_id = people.get(f"firmao:{_id(r.get('contact'))}") if _id(r.get("contact")) else None
+        n.at = _dt(r.get("date")) or _dt(r.get("creationDate")) or dt.datetime.now().replace(microsecond=0)
+        n.author = str((r.get("createdBy") or {}).get("label") or "Firmao")[:100]
+        extra = [f"Zadanie: {r['task']['name']}" if isinstance(r.get("task"), dict) and r["task"].get("name") else "",
+                 f"Oferta: {r['offer']['number']}" if isinstance(r.get("offer"), dict) and r["offer"].get("number") else ""]
+        n.text = "\n".join([("❗ " if r.get("important") else "") + text, *[x for x in extra if x]])
+    db.flush()
+    return out
+
+
 def link_documents(db: Session, transactions: list[dict], offers: list[dict], inv_map: dict, wz_map: dict,
                    offer_map: dict) -> int:
     """Powiazania z Firmao: faktura <-> WZ, oferta -> faktura, oferta -> WZ."""
@@ -516,18 +569,31 @@ def sync_sequences(db: Session, company: Company) -> dict:
     return out
 
 
-def import_all(db: Session, data: dict[str, list], company: Company, log=print) -> dict:
-    """Pelny import w kolejnosci: klienci, osoby, produkty, faktury, zakupy, WZ/PZ, oferty, powiazania, numeracja."""
+SECTIONS = ("klienci", "osoby", "produkty", "faktury", "zakupy", "wz", "oferty", "notatki")
+
+
+def import_all(db: Session, data: dict[str, list], company: Company, log=print, only: set[str] | None = None) -> dict:
+    """Pelny import w kolejnosci: klienci, osoby, produkty, faktury, zakupy, WZ/PZ, oferty, notatki, powiazania,
+    numeracja. only = wybrane czesci (np. {"notatki"}), zeby nie nadpisywac dokumentow zmienionych juz w Sygnavo."""
+    want = (lambda k: True) if not only else (lambda k: k in only)
     summary: dict = {}
-    if data.get("customers"):
+    if want("klienci") and data.get("customers"):
         summary["klienci"] = firmao_import.import_customers(db, data["customers"])
         log(f"klienci: {summary['klienci']}")
-    if data.get("contacts"):
+    if want("osoby") and data.get("contacts"):
         summary["osoby"] = firmao_import.import_contacts(db, data["contacts"])
         log(f"osoby: {summary['osoby']}")
-    if data.get("products"):
+    if want("produkty") and data.get("products"):
         summary["produkty"] = firmao_import.import_products(db, data["products"])
         log(f"produkty: {summary['produkty']}")
+    if want("notatki") and data.get("salesnotes"):
+        summary["notatki"] = import_notes(db, data["salesnotes"])
+        log(f"notatki: {summary['notatki']}")
+    docs = [k for k in ("faktury", "zakupy", "wz", "oferty") if want(k)]
+    if not docs:
+        return summary
+    if len(docs) < 4:
+        raise ValueError("Dokumenty (faktury, zakupy, wz, oferty) importuje się razem, bo są ze sobą powiązane.")
     ctx = Ctx(db, company)
     entries = group_entries(data.get("transactionentries") or [])
     tx = data.get("transactions") or []

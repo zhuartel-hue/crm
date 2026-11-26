@@ -17,8 +17,9 @@
 {% if ksef_select %}<form id="ksef-form" method="post" action="/faktury/ksef" class="row" style="margin-bottom:8px"
   onsubmit="var n=document.querySelectorAll('input[name=ids]:checked').length; if(!n){alert('Zaznacz faktury.');return false;} return confirm('Wysłać do KSeF zaznaczone faktury (' + n + ')? Tego nie da się cofnąć, zmiany robi się korektą.')">
   <input type="hidden" name="back" value="{{ request.url.path }}{{ '?' + request.url.query if request.url.query }}">
-  <button class="btn primary">Wyślij zaznaczone do KSeF</button>
-  <span class="muted">Ptaszek jest tylko przy fakturach jeszcze niewysłanych.</span>
+  <button class="btn primary" {{ 'disabled' if not ksef_on }}>Wyślij zaznaczone do KSeF</button>
+  {% if ksef_on %}<span class="muted">Czerwony znaczek = niezatwierdzona (zaznacz, aby wysłać), zielony ptaszek = jest w KSeF.</span>
+  {% else %}<span class="muted">KSeF jest jeszcze wyłączony dla tej firmy. Wgraj certyfikat w <a href="/ustawienia#ksef">Ustawienia → KSeF</a>, wtedy przycisk zadziała.</span>{% endif %}
 </form>{% endif %}
 {% include "_invoice_rows.html" %}
 {% if limited %}<p class="muted">Pokazano {{ invoices|length }} najnowszych z {{ count }}. Zawęź wyszukiwanie albo <a href="?{{ request.url.query }}{{ '&' if request.url.query }}wszystkie=1">pokaż wszystkie</a>.</p>{% endif %}

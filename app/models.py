@@ -85,6 +85,8 @@ class Contractor(Base):
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
 
     contacts: Mapped[list["Contact"]] = relationship(back_populates="contractor", order_by="Contact.last_name")
+    note_rows: Mapped[list["ContractorNote"]] = relationship(back_populates="contractor", cascade="all, delete-orphan",
+                                                            order_by="ContractorNote.at.desc()")
 
     @property
     def address_lines(self) -> list[str]:
@@ -114,6 +116,24 @@ class Contact(Base):
     @property
     def name(self) -> str:
         return f"{self.first_name} {self.last_name}".strip() or self.email or f"Osoba #{self.id}"
+
+
+class ContractorNote(Base):
+    """Notatka przy kontrahencie (jak notatki handlowe w Firmao): data, kto, tresc."""
+
+    __tablename__ = "contractor_notes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    contractor_id: Mapped[int] = mapped_column(ForeignKey("contractors.id", ondelete="CASCADE"), index=True)
+    contact_id: Mapped[int | None] = mapped_column(ForeignKey("contacts.id", ondelete="SET NULL"), nullable=True)
+    at: Mapped[dt.datetime] = mapped_column(DateTime)
+    author: Mapped[str] = mapped_column(String(100), default="")
+    text: Mapped[str] = mapped_column(Text, default="")
+    source_ref: Mapped[str] = mapped_column(String(120), default="", index=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
+
+    contractor: Mapped[Contractor] = relationship(back_populates="note_rows")
+    contact: Mapped[Contact | None] = relationship()
 
 
 CAR_STATUSES = {"available": "Na placu", "reserved": "Zarezerwowany", "sold": "Sprzedany"}

@@ -318,9 +318,10 @@ def test_bulk_send_and_auto_send(client, db, monkeypatch):
 
     monkeypatch.setattr(service, "client_factory", FakeClient)
     FakeClient.sent = []
-    # bez KSeF: brak ptaszkow na liscie
+    # bez KSeF: znaczki sa, ale przycisk wysylki nieaktywny
     plain = _issue(db, items=[{"name": "Opony", "unit_price": "400.00"}])
-    assert 'name="ids"' not in client.get("/faktury").text
+    page = client.get("/faktury").text
+    assert 'name="ids"' in page and "KSeF jest jeszcze wyłączony" in page
     client.post("/ustawienia/ksef", data={"ksef_env": "test", "ksef_token": "tajny-token"})
     db.expire_all()
 
@@ -350,6 +351,12 @@ def test_bulk_send_and_auto_send(client, db, monkeypatch):
     client.post(f"/kontrahenci/{c.id}", data={"name": "Auto Klient", "nip": "8672239415", "is_company": "1"})
     db.expire_all()
     assert c.ksef_auto is False
+    # przelacznik na liscie kontrahentow
+    assert "Niezatwierdzony" in client.get("/kontrahenci").text
+    r = client.post(f"/kontrahenci/{c.id}/ksef-auto", data={"back": "/kontrahenci?q=Auto"}, follow_redirects=False)
+    assert r.headers["location"] == "/kontrahenci?q=Auto"
+    db.expire_all()
+    assert c.ksef_auto is True and "Zatwierdzony: faktury" in client.get("/kontrahenci").text
 
 
 def test_invoice_list_is_limited(client, db, monkeypatch):

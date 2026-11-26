@@ -69,3 +69,22 @@ def test_import_contacts_from_firmao(client):
         assert db.query(Contact).filter_by(source_ref="firmao:286").one().contractor_id is None
     r = client.post("/import/firmao", files={"contacts": ("p.json", json.dumps(contacts).encode(), "application/json")})
     assert "0 nowych, 2 zaktualizowanych" in r.text
+
+
+def test_contractor_notes(client):
+    from app.db import SessionLocal
+    from app.models import Contractor, ContractorNote
+
+    with SessionLocal() as db:
+        c = Contractor(name="Klient Notatek")
+        db.add(c)
+        db.commit()
+        cid = c.id
+    r = client.post(f"/kontrahenci/{cid}/notatki", data={"text": "Dzwonił w sprawie alarmu"}, follow_redirects=False)
+    assert r.status_code == 303
+    page = client.get(f"/kontrahenci/{cid}").text
+    assert "Dzwonił w sprawie alarmu" in page and "admin" in page
+    with SessionLocal() as db:
+        nid = db.query(ContractorNote).one().id
+    client.post(f"/kontrahenci/{cid}/notatki/{nid}/usun")
+    assert "Brak notatek." in client.get(f"/kontrahenci/{cid}").text

@@ -53,6 +53,7 @@ from .models import (
     Company,
     Contact,
     Contractor,
+    ContractorNote,
     Delivery,
     DeliveryItem,
     Invoice,
@@ -391,7 +392,8 @@ def invoice_list(request: Request, rodzaj: str = "", miesiac: str = "", q: str =
         stmt = stmt.limit(LIST_LIMIT)
     invoices = db.scalars(stmt).all()
     return render(request, db, "invoices.html", invoices=invoices, rodzaj=rodzaj, miesiac=miesiac, q=q, total=total,
-                  ksef_f=ksef_f, count=count, limited=len(invoices) < count, ksef_select=ksef.enabled(company))
+                  ksef_f=ksef_f, count=count, limited=len(invoices) < count, ksef_select=True,
+                  ksef_on=ksef.enabled(company))
 
 
 @app.post("/faktury/ksef")
@@ -891,7 +893,8 @@ def contractor_edit(cid: int, request: Request, db: Session = Depends(get_db)):
     c = db.get(Contractor, cid)
     if c is None:
         raise HTTPException(404)
-    invoices = db.scalars(select(Invoice).where(Invoice.contractor_id == cid).order_by(Invoice.issue_date.desc())).all()
+    invoices = db.scalars(select(Invoice).where(Invoice.contractor_id == cid)
+                          .order_by(Invoice.issue_date.desc()).limit(100)).all()
     mails = db.scalars(select(MailMessage).where(MailMessage.contractor_id == cid)
                        .order_by(MailMessage.date.desc()).limit(30)).all()
     offer_rows = db.scalars(select(Offer).where(Offer.contractor_id == cid,
@@ -931,6 +934,47 @@ async def contractor_update(cid: int, request: Request, db: Session = Depends(ge
     if c is None:
         raise HTTPException(404)
     return await _save_contractor(request, db, c)
+
+
+@app.post("/kontrahenci/{cid}/ksef-auto")
+async def contractor_ksef_toggle(cid: int, request: Request, db: Session = Depends(get_db)):
+    c = db.get(Contractor, cid)
+    if c is None:
+        raise HTTPException(404)
+    form = await request.form()
+    c.ksef_auto = not c.ksef_auto
+    audit(db, web_actor(request), "contractor.ksef_auto",
+          f"{c.name}: automatyczna wysyłka do KSeF {'włączona' if c.ksef_auto else 'wyłączona'}", entity="contractor",
+          entity_id=c.id)
+    db.commit()
+    back = form.get("back") or "/kontrahenci"
+    return redirect(back if back.startswith("/kontrahenci") else "/kontrahenci")
+
+
+@app.post("/kontrahenci/{cid}/notatki")
+async def contractor_note_add(cid: int, request: Request, db: Session = Depends(get_db)):
+    c = db.get(Contractor, cid)
+    if c is None:
+        raise HTTPException(404)
+    form = await request.form()
+    text = (form.get("text") or "").strip()
+    if text:
+        db.add(ContractorNote(contractor_id=c.id, text=text[:20000], author=web_actor(request)[:100],
+                              at=dt.datetime.now().replace(microsecond=0)))
+        db.commit()
+        flash(request, "Dodano notatkę.")
+    return redirect(f"/kontrahenci/{cid}#notatki")
+
+
+@app.post("/kontrahenci/{cid}/notatki/{nid}/usun")
+def contractor_note_delete(cid: int, nid: int, request: Request, db: Session = Depends(get_db)):
+    n = db.get(ContractorNote, nid)
+    if n is None or n.contractor_id != cid:
+        raise HTTPException(404)
+    db.delete(n)
+    db.commit()
+    flash(request, "Usunięto notatkę.")
+    return redirect(f"/kontrahenci/{cid}#notatki")
 
 
 @app.post("/kontrahenci/{cid}/usun")
