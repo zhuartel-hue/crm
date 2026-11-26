@@ -2,7 +2,7 @@ FROM python:3.13-slim
 
 # Biblioteki dla WeasyPrint (PDF) i czcionka z polskimi znakami.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz-subset0 fonts-dejavu-core \
+ && apt-get install -y --no-install-recommends libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz-subset0 fonts-dejavu-core fonts-inter \
  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /srv

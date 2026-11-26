@@ -149,7 +149,8 @@ def _extras(o: Offer) -> dict:
         if p is None:
             continue
         photo = p.photos[0] if p.photos else None
-        out[it.id or n] = {"description": (p.description or "").strip(),
+        lines = [ln.strip().lstrip("-•*–").strip() for ln in (p.description or "").splitlines()]
+        out[it.id or n] = {"description": (p.description or "").strip(), "bullets": [ln for ln in lines if ln][:14],
                            "photo": f"data:image/jpeg;base64,{base64.b64encode(photo.thumb).decode()}" if photo else ""}
     return out
 
@@ -158,7 +159,7 @@ def render_html(o: Offer, template: str | None = None) -> str:
     from .pdf import _env, logo_uri
 
     tpl = template if template in OFFER_PDF_TEMPLATES else (o.pdf_template if o.pdf_template in OFFER_PDF_TEMPLATES
-                                                            else "zdjecia")
+                                                            else "katalog")
     return _env.get_template("offer_pdf.html").render(o=o, tpl=tpl, extras=_extras(o), logo_uri=logo_uri(o.company))
 
 

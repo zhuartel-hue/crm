@@ -28,7 +28,7 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index("ix_offer_templates_company_id", "offer_templates", ["company_id"])
-    op.add_column("offers", sa.Column("pdf_template", sa.String(length=20), server_default="zdjecia", nullable=False))
+    op.add_column("offers", sa.Column("pdf_template", sa.String(length=20), server_default="katalog", nullable=False))
 
 
 def downgrade() -> None:

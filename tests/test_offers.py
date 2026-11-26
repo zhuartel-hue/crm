@@ -179,12 +179,15 @@ def test_offer_pdf_looks(client):
         o.items.append(OfferItem(position=3, product=p, name="Kamera", quantity=1, unit="szt.", unit_price=100,
                                  vat_rate="23"))
         db.commit()
-        html = offers.render_html(o, "zdjecia")
-        assert "IR 30 m" in html and "data:image/jpeg;base64," in html and "t-zdjecia" in html
-        assert "data:image/jpeg" not in offers.render_html(o, "opisy") and "IR 30 m" in offers.render_html(o, "opisy")
-        assert "IR 30 m" not in offers.render_html(o, "grafika") and 'class="cover"' in offers.render_html(o, "grafika")
-    client.post(f"/oferty/{oid}/wyglad", data={"pdf_template": "classic"})
+        html = offers.render_html(o, "katalog")
+        assert "IR 30 m" in html and "data:image/jpeg;base64," in html and "t-katalog" in html
+        assert "data:image/jpeg;base64," in offers.render_html(o, "galeria")
+        zw = offers.render_html(o, "zwiezla")
+        assert "data:image/jpeg" not in zw and "IR 30 m" in zw
+        pr = offers.render_html(o, "prezentacja")
+        assert "IR 30 m" not in pr and 'class="cover"' in pr
+    client.post(f"/oferty/{oid}/wyglad", data={"pdf_template": "zwiezla"})
     with SessionLocal() as db:
-        assert db.get(Offer, oid).pdf_template == "classic"
-    assert client.get(f"/oferty/{oid}/pdf?wyglad=grafika").content[:4] == b"%PDF"
+        assert db.get(Offer, oid).pdf_template == "zwiezla"
+    assert client.get(f"/oferty/{oid}/pdf?wyglad=prezentacja").content[:4] == b"%PDF"
     assert "Wygląd PDF" in client.get(f"/oferty/{oid}").text

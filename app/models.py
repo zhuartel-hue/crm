@@ -80,8 +80,9 @@ class OfferTemplate(Base):
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
 
 
-OFFER_PDF_TEMPLATES = {"zdjecia": "Ze zdjęciami (zdjęcie po lewej)", "classic": "Classic (zdjęcie po prawej)",
-                       "opisy": "Z opisami, bez zdjęć", "grafika": "Z grafiką (strona tytułowa, krótka tabela)"}
+OFFER_PDF_TEMPLATES = {"katalog": "Katalog – duże zdjęcia i opisy", "galeria": "Galeria – kafelki ze zdjęciami",
+                       "zwiezla": "Zwięzła – elegancka tabela bez zdjęć",
+                       "prezentacja": "Prezentacja – strona tytułowa i zestawienie"}
 INVOICE_TEMPLATES = {"klasyczny": "Klasyczny", "nowoczesny": "Nowoczesny (niebieski)", "elegancki": "Elegancki"}
 
 
@@ -780,7 +781,7 @@ class Offer(Base):
     total_gross: Mapped[Decimal] = mapped_column(Money, default=Decimal("0"))
     notes: Mapped[str] = mapped_column(Text, default="")  # na PDF dla klienta
     internal_notes: Mapped[str] = mapped_column(Text, default="")  # tylko w programie
-    pdf_template: Mapped[str] = mapped_column(String(20), default="zdjecia", server_default="zdjecia")  # OFFER_PDF_TEMPLATES
+    pdf_template: Mapped[str] = mapped_column(String(20), default="katalog", server_default="katalog")  # OFFER_PDF_TEMPLATES
     invoice_id: Mapped[int | None] = mapped_column(ForeignKey("invoices.id", ondelete="SET NULL"), nullable=True)
     delivery_id: Mapped[int | None] = mapped_column(ForeignKey("deliveries.id", ondelete="SET NULL"), nullable=True)
     sent_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
