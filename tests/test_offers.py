@@ -132,3 +132,27 @@ def test_send_offer_by_email(client, fake_mail):  # noqa: F811
     with SessionLocal() as db:
         o = db.get(Offer, oid)
         assert o.status == "sent" and o.sent_at is not None
+
+
+def test_offer_templates(client):
+    from app.db import SessionLocal
+    from app.models import OfferTemplate
+
+    oid = _offer(client)
+    r = client.post(f"/oferty/{oid}/wzor", data={"name": "Serwis standard"}, follow_redirects=False)
+    assert r.status_code == 303
+    with SessionLocal() as db:
+        t = db.query(OfferTemplate).one()
+        assert t.title == "Serwis wózka" and t.valid_days == 14
+        tid = t.id
+    assert "Serwis standard" in client.get("/oferty/wzory").text
+    assert "Nowa ze wzoru" in client.get("/oferty").text
+    page = client.get(f"/oferty/nowa?wzor={tid}").text
+    assert "Przegląd" in page and "Dojazd" in page and "Realizacja 3 dni." in page and "Hurt Sp." not in page
+    # ta sama nazwa nadpisuje
+    client.post(f"/oferty/{oid}/wzor", data={"name": "Serwis standard"})
+    client.post(f"/oferty/{oid}/wzor", data={"name": " "})
+    with SessionLocal() as db:
+        assert db.query(OfferTemplate).count() == 1
+    client.post(f"/oferty/wzory/{tid}/usun")
+    assert "Brak wzorów" in client.get("/oferty/wzory").text

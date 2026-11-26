@@ -45,6 +45,7 @@ from .models import (
     MailMessage,
     OFFER_STATUSES,
     Offer,
+    OfferTemplate,
     INVOICE_KINDS,
     INVOICE_TEMPLATES,
     NEW_KINDS,
@@ -2173,22 +2174,57 @@ def offer_list(request: Request, q: str = "", status: str = "", db: Session = De
     rows = db.scalars(stmt.order_by(Offer.issue_date.desc(), Offer.id.desc()).limit(300)).all()
     open_rows = [o for o in rows if o.is_open]
     stats = dict(open_count=len(open_rows), open_gross=sum((o.total_gross for o in open_rows), Decimal("0")))
-    return render(request, db, "offer_list.html", rows=rows, q=q, status=status, STATUSES=OFFER_STATUSES, stats=stats)
+    return render(request, db, "offer_list.html", rows=rows, q=q, status=status, STATUSES=OFFER_STATUSES, stats=stats,
+                  offer_templates=offers.templates(db, company.id))
 
 
 @app.get("/oferty/nowa", response_class=HTMLResponse)
-def offer_new(request: Request, kontrahent: int = 0, kopia: int = 0, db: Session = Depends(get_db)):
+def offer_new(request: Request, kontrahent: int = 0, kopia: int = 0, wzor: int = 0, db: Session = Depends(get_db)):
     company = current_company(request, db)
+    t = db.get(OfferTemplate, wzor) if wzor else None
     if kopia:
         o = offers.duplicate(_get_offer(db, request, kopia), web_actor(request))
     else:
-        o = offers.new(company.id, web_actor(request))
+        o = offers.from_template(t, web_actor(request)) if t and t.company_id == company.id \
+            else offers.new(company.id, web_actor(request))
         c = db.get(Contractor, kontrahent) if kontrahent else None
         if c is not None:
             o.contractor_id, o.recipient_name = c.id, c.name
             o.recipient_address = "\n".join(c.address_lines)
             o.email = (c.email or "").split(",")[0].strip()
     return _offer_form(request, db, o)
+
+
+@app.post("/oferty/{oid}/wzor")
+async def offer_save_template(oid: int, request: Request, db: Session = Depends(get_db)):
+    o = _get_offer(db, request, oid)
+    form = await request.form()
+    try:
+        t = offers.save_template(db, o, form.get("name") or "")
+    except ValueError as e:
+        flash(request, str(e))
+        return redirect(f"/oferty/{oid}")
+    flash(request, f"Zapisano wzór „{t.name}”. Nową ofertę z niego zaczniesz w Ofertach → Nowa ze wzoru.")
+    return redirect(f"/oferty/{oid}")
+
+
+@app.get("/oferty/wzory", response_class=HTMLResponse)
+def offer_templates(request: Request, db: Session = Depends(get_db)):
+    company = current_company(request, db)
+    rows = offers.templates(db, company.id)
+    counts = {t.id: len(json.loads(t.items_json or "[]")) for t in rows}
+    return render(request, db, "offer_templates.html", rows=rows, counts=counts)
+
+
+@app.post("/oferty/wzory/{tid}/usun")
+def offer_template_delete(tid: int, request: Request, db: Session = Depends(get_db)):
+    t = db.get(OfferTemplate, tid)
+    if t is None or t.company_id != current_company(request, db).id:
+        raise HTTPException(404)
+    db.delete(t)
+    db.commit()
+    flash(request, f"Usunięto wzór „{t.name}”.")
+    return redirect("/oferty/wzory")
 
 
 async def _offer_save(request: Request, db: Session, o: Offer):

@@ -6,12 +6,14 @@ szkic faktury VAT albo szkic WZ; mozna tez skopiowac oferte jako nowa.
 from __future__ import annotations
 
 import datetime as dt
+import json
+from decimal import Decimal
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from . import numbering, wz
-from .models import OFFER_OPEN, OFFER_STATUSES, Delivery, DeliveryItem, Invoice, Offer, OfferItem
+from .models import OFFER_OPEN, OFFER_STATUSES, Delivery, DeliveryItem, Invoice, Offer, OfferItem, OfferTemplate
 
 DEFAULT_VALID_DAYS = 14
 EXPIRY_WARN_DAYS = 3
@@ -144,3 +146,40 @@ def render_pdf(o: Offer) -> bytes:
 
     html = _env.get_template("offer_pdf.html").render(o=o)
     return HTML(string=html, base_url=str(HERE)).write_pdf()
+
+
+ITEM_FIELDS = ("position", "product_id", "code", "name", "quantity", "unit", "unit_price", "vat_rate")
+
+
+def save_template(db: Session, o: Offer, name: str) -> OfferTemplate:
+    """Wzor z oferty (bez klienta i dat). Ta sama nazwa nadpisuje istniejacy wzor."""
+    name = name.strip()[:120]
+    if not name:
+        raise ValueError("Podaj nazwę wzoru.")
+    t = db.scalar(select(OfferTemplate).where(OfferTemplate.company_id == o.company_id, OfferTemplate.name == name))
+    if t is None:
+        t = OfferTemplate(company_id=o.company_id, name=name)
+        db.add(t)
+    t.title, t.notes, t.prices_gross = o.title, o.notes, bool(o.prices_gross)
+    t.valid_days = (o.valid_until - o.issue_date).days if o.valid_until and o.issue_date else None
+    t.items_json = json.dumps([{f: (str(getattr(it, f)) if isinstance(getattr(it, f), Decimal) else getattr(it, f))
+                                for f in ITEM_FIELDS} for it in o.items], ensure_ascii=False)
+    db.commit()
+    return t
+
+
+def from_template(t: OfferTemplate, actor: str = "") -> Offer:
+    o = new(t.company_id, actor)
+    if t.valid_days is not None:
+        o.valid_until = o.issue_date + dt.timedelta(days=t.valid_days)
+    o.title, o.notes, o.prices_gross = t.title, t.notes, t.prices_gross
+    for row in json.loads(t.items_json or "[]"):
+        o.items.append(OfferItem(**{k: (Decimal(v) if k in ("quantity", "unit_price") and v is not None else v)
+                                    for k, v in row.items() if k in ITEM_FIELDS}))
+    wz.recalculate(o)
+    return o
+
+
+def templates(db: Session, company_id: int) -> list[OfferTemplate]:
+    return list(db.scalars(select(OfferTemplate).where(OfferTemplate.company_id == company_id)
+                           .order_by(OfferTemplate.name)))

@@ -64,6 +64,22 @@ class Company(Base):
         return [x for x in (self.street, f"{self.postal_code} {self.city}".strip()) if x]
 
 
+class OfferTemplate(Base):
+    """Wzor oferty: gotowy tytul, tresc i pozycje, od ktorych zaczyna sie nowa oferte."""
+
+    __tablename__ = "offer_templates"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    name: Mapped[str] = mapped_column(String(120))
+    title: Mapped[str] = mapped_column(String(300), default="")
+    notes: Mapped[str] = mapped_column(Text, default="")
+    prices_gross: Mapped[bool] = mapped_column(default=False)
+    valid_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    items_json: Mapped[str] = mapped_column(Text, default="[]")
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
+
+
 INVOICE_TEMPLATES = {"klasyczny": "Klasyczny", "nowoczesny": "Nowoczesny (niebieski)", "elegancki": "Elegancki"}
 
 

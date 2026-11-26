@@ -1,7 +1,11 @@
 {% extends "base.html" %}
 {% block title %}Oferty{% endblock %}
 {% block content %}
-<div class="row"><h1>Oferty</h1><span class="spacer"></span><a class="btn primary" href="/oferty/nowa">+ Oferta</a></div>
+<div class="row"><h1>Oferty</h1><span class="spacer"></span>
+{% if offer_templates %}<form method="get" action="/oferty/nowa" class="row"><select name="wzor" style="max-width:220px" onchange="if(this.value)this.form.submit()"><option value="">+ Nowa ze wzoru…</option>
+  {% for t in offer_templates %}<option value="{{ t.id }}">{{ t.name }}</option>{% endfor %}</select></form>{% endif %}
+<a class="btn" href="/oferty/wzory">Wzory</a>
+<a class="btn primary" href="/oferty/nowa">+ Oferta</a></div>
 <div class="grid stats">
   <div class="card stat"><div class="l">Otwarte oferty</div><div class="v"><a href="/oferty?status=otwarte">{{ stats.open_count }}</a></div></div>
   <div class="card stat"><div class="l">Wartość otwartych (brutto)</div><div class="v">{{ stats.open_gross|money }} zł</div></div>
