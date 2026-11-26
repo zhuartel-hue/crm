@@ -1285,6 +1285,8 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String(200))
     active: Mapped[bool] = mapped_column(default=True, server_default=sa_true())
     must_change_password: Mapped[bool] = mapped_column(default=False, server_default=sa_false())
+    # Weryfikacja dwuetapowa (TOTP): sekret zaszyfrowany secretboxem; pusty = wylaczona.
+    totp_secret_enc: Mapped[str] = mapped_column(Text, default="", server_default="")
     failed_logins: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     locked_until: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
     last_login_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)

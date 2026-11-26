@@ -287,3 +287,145 @@ def users_reset_password(user_id: int, request: Request, password: str = Form(""
     db.commit()
     request.session["flash"] = f"Nowe hasło dla {u.login} zapisane."
     return RedirectResponse("/ustawienia/uzytkownicy", status_code=303)
+
+
+# --- weryfikacja dwuetapowa (TOTP) ------------------------------------------------------
+
+TWO_FA_TTL = dt.timedelta(minutes=5)
+
+
+def has_2fa(user: User) -> bool:
+    return bool(user.totp_secret_enc)
+
+
+def _secret(user: User) -> str:
+    from . import secretbox
+
+    return secretbox.open_(user.totp_secret_enc) if user.totp_secret_enc else ""
+
+
+def begin_2fa_login(request: Request, user: User, nxt: str | None) -> None:
+    """Haslo poprawne, ale konto ma 2FA: sesja jeszcze nie jest zalogowana, czeka na kod."""
+    request.session.clear()
+    request.session["2fa_uid"] = user.id
+    request.session["2fa_at"] = now().isoformat()
+    if nxt:
+        request.session["next"] = nxt
+
+
+@router.get("/login/kod")
+def login_code_form(request: Request):
+    from .main import templates
+
+    if not request.session.get("2fa_uid"):
+        return RedirectResponse("/login", status_code=303)
+    return templates.TemplateResponse(request, "login_code.html", {"error": None})
+
+
+@router.post("/login/kod")
+def login_code(request: Request, code: str = Form(""), db: Session = Depends(get_db)):
+    from .main import templates
+
+    uid, at = request.session.get("2fa_uid"), request.session.get("2fa_at", "")
+    user = db.get(User, uid or 0)
+    try:
+        fresh = now() - dt.datetime.fromisoformat(at) < TWO_FA_TTL
+    except ValueError:
+        fresh = False
+    if user is None or not user.active or not fresh or (user.locked_until and user.locked_until > now()):
+        request.session.clear()
+        return RedirectResponse("/login", status_code=303)
+    from . import totp
+
+    if not totp.verify(_secret(user), code):
+        user.failed_logins = (user.failed_logins or 0) + 1
+        if user.failed_logins >= MAX_FAILED:
+            user.locked_until, user.failed_logins = now() + LOCK_TIME, 0
+            db.commit()
+            request.session.clear()
+            return RedirectResponse("/login", status_code=303)
+        db.commit()
+        return templates.TemplateResponse(request, "login_code.html", {"error": "Zły kod. Spróbuj ponownie."},
+                                          status_code=401)
+    user.failed_logins, user.last_login_at = 0, now()
+    db.commit()
+    nxt = request.session.get("next")
+    request.session.clear()
+    start_session(request, user)
+    if user.must_change_password:
+        request.session["must_change"] = True
+        return RedirectResponse("/konto", status_code=303)
+    return RedirectResponse(nxt if nxt and nxt.startswith("/") and not nxt.startswith("//") else "/", status_code=303)
+
+
+def account_context(request: Request, db: Session) -> dict:
+    """Dane do strony Konto: stan 2FA i kod QR przy wlaczaniu."""
+    from . import totp
+
+    user = db.get(User, request.session.get("user_id") or 0)
+    ctx = {"me": user, "has_2fa": bool(user and has_2fa(user)), "totp_qr": None, "totp_secret": None}
+    pending = request.session.get("totp_pending")
+    if user is not None and pending and not has_2fa(user):
+        ctx["totp_qr"] = totp.qr_svg(totp.uri(pending, user.login))
+        ctx["totp_secret"] = pending
+    return ctx
+
+
+def _account_page(request: Request, db: Session, **extra):
+    from .main import render
+
+    return render(request, db, "account.html", **account_context(request, db), **extra)
+
+
+@router.post("/konto/2fa/start")
+def two_fa_start(request: Request, db: Session = Depends(get_db)):
+    from . import totp
+
+    request.session["totp_pending"] = totp.new_secret()
+    return RedirectResponse("/konto#2fa", status_code=303)
+
+
+@router.post("/konto/2fa/wlacz")
+def two_fa_enable(request: Request, code: str = Form(""), db: Session = Depends(get_db)):
+    from . import secretbox, totp
+
+    user = db.get(User, request.session.get("user_id") or 0)
+    pending = request.session.get("totp_pending")
+    if user is None or not pending:
+        return RedirectResponse("/konto", status_code=303)
+    if not totp.verify(pending, code):
+        return _account_page(request, db, error_2fa="Kod się nie zgadza. Sprawdź, czy zegar w telefonie jest dobrze ustawiony.")
+    user.totp_secret_enc = secretbox.seal(pending)
+    request.session.pop("totp_pending", None)
+    audit(db, f"www ({user.login})", "user.2fa", "Włączono weryfikację dwuetapową")
+    db.commit()
+    request.session["flash"] = "Weryfikacja dwuetapowa włączona. Od teraz przy logowaniu podasz też kod z telefonu."
+    return RedirectResponse("/konto", status_code=303)
+
+
+@router.post("/konto/2fa/wylacz")
+def two_fa_disable(request: Request, code: str = Form(""), db: Session = Depends(get_db)):
+    from . import totp
+
+    user = db.get(User, request.session.get("user_id") or 0)
+    if user is None or not has_2fa(user):
+        return RedirectResponse("/konto", status_code=303)
+    if not totp.verify(_secret(user), code):
+        return _account_page(request, db, error_2fa="Zły kod. Weryfikacja dwuetapowa nadal jest włączona.")
+    user.totp_secret_enc = ""
+    audit(db, f"www ({user.login})", "user.2fa", "Wyłączono weryfikację dwuetapową")
+    db.commit()
+    request.session["flash"] = "Weryfikacja dwuetapowa wyłączona."
+    return RedirectResponse("/konto", status_code=303)
+
+
+@router.post("/ustawienia/uzytkownicy/{user_id}/2fa-reset")
+def users_reset_2fa(user_id: int, request: Request, db: Session = Depends(get_db)):
+    """Zgubiony telefon: wlasciciel wylacza 2FA tej osobie, ona wlacza ja ponownie na nowym telefonie."""
+    owner = _owner(request, db)
+    u = _member(db, owner, user_id)
+    u.totp_secret_enc = ""
+    audit(db, f"www ({owner.login})", "user.2fa", f"Wyłączono weryfikację dwuetapową użytkownikowi {u.login}")
+    db.commit()
+    request.session["flash"] = f"Weryfikacja dwuetapowa dla {u.login} wyłączona."
+    return RedirectResponse("/ustawienia/uzytkownicy", status_code=303)

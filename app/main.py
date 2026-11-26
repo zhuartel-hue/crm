@@ -258,6 +258,9 @@ def login(request: Request, login: str = Form(...), password: str = Form(...), d
     if user is None:
         return templates.TemplateResponse(request, "login.html", {"error": "Zły login lub hasło."}, status_code=401)
     nxt = request.session.pop("next", None)
+    if users_mod.has_2fa(user):
+        users_mod.begin_2fa_login(request, user, nxt)
+        return redirect("/login/kod")
     request.session.clear()  # nowa sesja po zalogowaniu (ochrona przed przejeciem sesji)
     users_mod.start_session(request, user)
     if user.must_change_password:
@@ -273,7 +276,7 @@ def password_check(db: Session, login: str, pw: str) -> bool:
 
 @app.get("/konto", response_class=HTMLResponse)
 def account(request: Request, db: Session = Depends(get_db)):
-    return render(request, db, "account.html")
+    return render(request, db, "account.html", **users_mod.account_context(request, db))
 
 
 @app.post("/konto/haslo")
@@ -285,7 +288,7 @@ def account_password(request: Request, old: str = Form(""), new: str = Form(""),
     try:
         users_mod.change_password(db, user, old, new, repeat)
     except ValueError as e:
-        return render(request, db, "account.html", error=str(e))
+        return render(request, db, "account.html", error=str(e), **users_mod.account_context(request, db))
     audit(db, web_actor(request), "account.password", "Zmieniono hasło logowania")
     db.commit()
     request.session.pop("must_change", None)

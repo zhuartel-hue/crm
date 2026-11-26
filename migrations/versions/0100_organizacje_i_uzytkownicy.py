@@ -40,6 +40,7 @@ def upgrade() -> None:
         sa.Column("password_hash", sa.String(length=200), nullable=False),
         sa.Column("active", sa.Boolean(), nullable=False, server_default=sa.true()),
         sa.Column("must_change_password", sa.Boolean(), nullable=False, server_default=sa.false()),
+        sa.Column("totp_secret_enc", sa.Text(), nullable=False, server_default=""),
         sa.Column("failed_logins", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("locked_until", sa.DateTime(), nullable=True),
         sa.Column("last_login_at", sa.DateTime(), nullable=True),

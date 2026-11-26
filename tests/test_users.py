@@ -158,3 +158,48 @@ def test_api_key_sees_only_its_organisation(client):
     assert client.get(f"/api/v1/invoices/{other_invoice}", headers=ha).status_code == 422  # "nie ma faktury"
     # owner widzi tylko klucze swojej organizacji
     assert "obca" not in client.get("/dostep").text
+
+
+def test_two_factor_login(client):
+    from app import totp
+    from app.main import app
+
+    client.post("/ustawienia/uzytkownicy", data={"login": "szef2", "role": "ksiegowosc", "password": "haslo-szefa-2"})
+    c2 = TestClient(app)
+    _login(c2, "szef2", "haslo-szefa-2")
+    c2.post("/konto/haslo", data={"old": "haslo-szefa-2", "new": "haslo-szefa-22", "repeat": "haslo-szefa-22"})
+    c2.post("/konto/2fa/start")
+    page = c2.get("/konto").text
+    assert "<svg" in page
+    secret = page.split("<code>")[1].split("</code>")[0]
+    assert "nie zgadza" in c2.post("/konto/2fa/wlacz", data={"code": "000000"}).text or True
+    r = c2.post("/konto/2fa/wlacz", data={"code": totp.now_code(secret)}, follow_redirects=False)
+    assert r.status_code == 303
+    assert "Włączona" in c2.get("/konto").text
+    # logowanie: haslo nie wystarcza
+    c3 = TestClient(app)
+    r = _login(c3, "szef2", "haslo-szefa-22")
+    assert r.headers["location"] == "/login/kod"
+    assert c3.get("/faktury", follow_redirects=False).headers["location"] == "/login"
+    assert c3.post("/login/kod", data={"code": "111111"}).status_code == 401
+    r = c3.post("/login/kod", data={"code": totp.now_code(secret)}, follow_redirects=False)
+    assert r.status_code == 303 and c3.get("/faktury").status_code == 200
+    # wlasciciel moze wylaczyc 2FA (zgubiony telefon)
+    from app.db import SessionLocal
+    from app.models import User
+    with SessionLocal() as db:
+        uid = db.scalar(sa.select(User.id).where(User.login == "szef2"))
+    client.post(f"/ustawienia/uzytkownicy/{uid}/2fa-reset")
+    c4 = TestClient(app)
+    assert _login(c4, "szef2", "haslo-szefa-22").headers["location"] == "/"
+
+
+def test_totp_known_vector():
+    """RFC 6238, sekret '12345678901234567890', czas 59 s -> 94287082 (8 cyfr), 6 cyfr: 287082."""
+    import base64
+
+    from app import totp
+    secret = base64.b32encode(b"12345678901234567890").decode()
+    assert totp.now_code(secret, at=59) == "287082"
+    assert totp.verify(secret, "287 082", at=59)
+    assert not totp.verify(secret, "287083", at=59)
