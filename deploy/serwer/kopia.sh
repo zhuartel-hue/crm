@@ -8,8 +8,8 @@ LOKALNIE=/var/backups/sygnavo
 mkdir -p "$LOKALNIE" && chmod 700 "$LOKALNIE"
 umask 077
 
-ping "${HC_KOPIA_URL:-}" start
-trap 'ping "${HC_KOPIA_URL:-}" fail' ERR
+hc_ping "${HC_KOPIA_URL:-}" start
+trap 'hc_ping "${HC_KOPIA_URL:-}" fail' ERR
 
 PLIK="$LOKALNIE/crm-$(date +%Y%m%d-%H%M)-$ETYKIETA.dump"
 log "Zrzut bazy: $PLIK"
@@ -21,8 +21,8 @@ mv "$PLIK.tmp" "$PLIK"
 cp "$APP_DIR/.env" "$LOKALNIE/env-aplikacji"
 
 # Lokalnie: 48 ostatnich kopii godzinowych + 10 ostatnich przed wdrozeniami.
-ls -1t "$LOKALNIE"/crm-*-co-godzine.dump 2>/dev/null | tail -n +49 | xargs -r rm -f
-ls -1t "$LOKALNIE"/crm-*.dump 2>/dev/null | grep -v co-godzine | tail -n +11 | xargs -r rm -f
+ls -1t "$LOKALNIE"/crm-*-co-godzine.dump 2>/dev/null | tail -n +49 | xargs -r rm -f || true
+ls -1t "$LOKALNIE"/crm-*.dump 2>/dev/null | grep -v co-godzine | tail -n +11 | xargs -r rm -f || true
 
 if [ -n "${RESTIC_REPOSITORY:-}" ]; then
   log "Kopia na Storage Box (szyfrowana)"
@@ -35,5 +35,5 @@ if [ -n "${RESTIC_REPOSITORY:-}" ]; then
 else
   echo "UWAGA: brak RESTIC_REPOSITORY, kopia tylko lokalna."
 fi
-ping "${HC_KOPIA_URL:-}"
+hc_ping "${HC_KOPIA_URL:-}"
 log "Kopia OK"

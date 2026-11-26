@@ -3,12 +3,12 @@
 # i porownuje z produkcja. Produkcji nie dotyka. Co niedziele (sygnavo-test-odtwarzania.timer).
 # Uzycie: bash test-odtwarzania.sh
 source "$(dirname "$0")/wspolne.sh"
-ping "${HC_TEST_URL:-}" start
+hc_ping "${HC_TEST_URL:-}" start
 TMP="$(mktemp -d /var/tmp/sygnavo-test.XXXX)"
 KONTENER=sygnavo-test-odtwarzania
 sprzatnij() { docker rm -f "$KONTENER" >/dev/null 2>&1 || true; rm -rf "$TMP"; }
 trap 'sprzatnij' EXIT
-trap 'ping "${HC_TEST_URL:-}" fail' ERR
+trap 'hc_ping "${HC_TEST_URL:-}" fail' ERR
 
 [ -n "${RESTIC_REPOSITORY:-}" ] || { echo "Brak RESTIC_REPOSITORY: nie ma czego testowac."; false; }
 log "Pobieram najnowsza kopie ze Storage Box"
@@ -34,5 +34,5 @@ for para in "$t_f:$p_f" "$t_k:$p_k" "$t_p:$p_p"; do
   [ "$t" -gt 0 ] && [ "$t" -le "$p" ] && [ "$t" -ge $(( p * 98 / 100 )) ] || { echo "Niezgodnosc liczby rekordow."; false; }
 done
 [ "$t_v" = "$p_v" ] || echo "Uwaga: inna wersja bazy (bylo wdrozenie po kopii) - to nie jest blad."
-ping "${HC_TEST_URL:-}"
+hc_ping "${HC_TEST_URL:-}"
 log "Test odtwarzania OK"
