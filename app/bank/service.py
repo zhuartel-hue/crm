@@ -11,6 +11,8 @@ Zaksiegowanie dodaje kwote do Invoice.paid; cofniecie ja odejmuje.
 """
 from __future__ import annotations
 
+import datetime as dt
+
 import re
 import unicodedata
 from decimal import Decimal
@@ -164,7 +166,42 @@ def store(db: Session, actor: str, target: Company, rows: list[dict], source: st
         else:
             tx.state = state
     db.flush()
-    return {"added": added, "skipped": skipped, "auto": auto, "suggested": suggested}
+    re_auto, re_sugg = rematch(db, actor, target.id)
+    return {"added": added, "skipped": skipped, "auto": auto + re_auto, "suggested": suggested + re_sugg}
+
+
+REMATCH_DAYS = 120
+
+
+def rematch(db: Session, actor: str, company_id: int) -> tuple[int, int]:
+    """Wplywy bez faktury z ostatnich miesiecy sprawdza jeszcze raz, bo faktura mogla powstac po wplacie
+    (albo przyjsc z importu). Automatycznie ksieguje tylko, gdy w tytule jest numer faktury; dopasowanie
+    po kwocie lub nazwie zostaje propozycja do potwierdzenia, i tylko do faktury wystawionej przed wplata."""
+    since = dt.date.today() - dt.timedelta(days=REMATCH_DAYS)
+    txs = list(db.scalars(select(BankTransaction).where(
+        BankTransaction.company_id == company_id, BankTransaction.state == "none", BankTransaction.amount > 0,
+        BankTransaction.invoice_id.is_(None), BankTransaction.booking_date >= since)
+        .order_by(BankTransaction.booking_date)))
+    if not txs:
+        return 0, 0
+    invoices = open_invoices(db, company_id)
+    auto = suggested = 0
+    for tx in txs:
+        if not invoices:
+            break
+        inv, state = find_match(tx, invoices)
+        if inv is None:
+            continue
+        if state == "auto" and _number_in_title(inv, _compact(tx.title)):
+            _apply(db, actor, tx, inv, "auto")
+            auto += 1
+            invoices = [i for i in invoices if i.to_pay > 0]
+        elif inv.issue_date <= tx.booking_date:
+            tx.invoice_id = inv.id
+            tx.state = "suggested"
+            suggested += 1
+    db.flush()
+    return auto, suggested
 
 
 def import_file(db: Session, actor: str, data: bytes, filename: str, company: Company) -> dict:

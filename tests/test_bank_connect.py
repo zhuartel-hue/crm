@@ -197,3 +197,34 @@ def test_legal_pages_public():
         assert c.get("/polityka-prywatnosci").status_code == 200
         assert "Regulamin" in c.get("/regulamin").text
         assert c.get("/bank/powrot?state=x", follow_redirects=False).headers["location"] == "/login"
+
+
+def test_payment_before_invoice_is_matched_later(client, fake):
+    """Wplata przyszla, zanim faktura byla w programie: kolejne pobranie ja dopasowuje (po numerze w tytule)."""
+    from sqlalchemy import select
+
+    from app.bank import service
+    from app.db import SessionLocal
+    from app.models import BankTransaction, Company, Invoice
+
+    with SessionLocal() as db:
+        company = db.scalars(select(Company)).first()
+        cid = company.id
+        rows = [dict(account="PL1", booking_date=dt.date.today(), amount=Decimal("123.00"), title="Zapłata FV/1/01/2027",
+                     counterparty="Jan Kowalski", fingerprint="fp-early"),
+                dict(account="PL1", booking_date=dt.date.today() - dt.timedelta(days=200), amount=Decimal("123.00"),
+                     title="Zapłata FV/1/01/2027", counterparty="Jan Kowalski", fingerprint="fp-old")]
+        service.store(db, "test", company, rows, "eb")
+        db.commit()
+        assert db.scalar(select(BankTransaction).where(BankTransaction.fingerprint == "fp-early")).state == "none"
+    client.post("/firma/%d" % cid)
+    inv_id = _new_invoice(client, "vat")
+    with SessionLocal() as db:
+        assert db.get(Invoice, inv_id).number.startswith("FV/1/01/2027")
+        service.store(db, "test", db.get(Company, cid), [], "eb")
+        db.commit()
+        early = db.scalar(select(BankTransaction).where(BankTransaction.fingerprint == "fp-early"))
+        old = db.scalar(select(BankTransaction).where(BankTransaction.fingerprint == "fp-old"))
+        assert early.state == "auto" and early.invoice_id == inv_id
+        assert old.state == "none"  # starsze niz 120 dni zostaja bez zmian
+        assert db.get(Invoice, inv_id).to_pay == 0
