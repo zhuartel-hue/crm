@@ -44,13 +44,11 @@ OBJECTS = [
     ("invoicenumbers", "id"),
     ("mails", "id"),               # naglowki maili (API nie podaje tresci)
     ("agreements", "id"),          # umowy / faktury cykliczne (okres, dzien, nastepna faktura)
-    # sprzet: nazwa obiektu w API nie jest pewna, probujemy kolejno (blad 404 = 1 zapytanie)
-    ("equipments", "id"),
-    ("equipment", "id"),
-    ("devices", "id"),
+    ("resources", "id"),           # sprzet (w Firmao: resourcelist)
+    ("resourceclasses", "id"),     # rodzaje sprzetu
 ]
 # obiekty spoza domyslnego przebiegu (pobierane tylko przez --tylko)
-EXTRA = {"agreements", "equipments", "equipment", "devices"}
+EXTRA = {"agreements", "resources", "resourceclasses"}
 
 
 def read_credentials(path: Path) -> dict:

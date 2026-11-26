@@ -1014,3 +1014,85 @@ class RecurringInvoice(Base):
     @property
     def mode_label(self) -> str:
         return RECURRING_MODES.get(self.mode, self.mode)
+
+
+class Equipment(Base):
+    """Sprzet u klienta (kamera, rejestrator, wozek...): numery, gwarancja, lokalizacja, przeglady, historia serwisu."""
+
+    __tablename__ = "equipment"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    name: Mapped[str] = mapped_column(String(300))
+    category: Mapped[str] = mapped_column(String(100), default="")
+    inventory_no: Mapped[str] = mapped_column(String(100), default="")
+    serial_no: Mapped[str] = mapped_column(String(150), default="", index=True)
+    barcode: Mapped[str] = mapped_column(String(100), default="")
+    product_id: Mapped[int | None] = mapped_column(ForeignKey("products.id", ondelete="SET NULL"), nullable=True)
+    contractor_id: Mapped[int | None] = mapped_column(ForeignKey("contractors.id", ondelete="SET NULL"), nullable=True,
+                                                      index=True)
+    contact_id: Mapped[int | None] = mapped_column(ForeignKey("contacts.id", ondelete="SET NULL"), nullable=True)
+    supplier: Mapped[str] = mapped_column(String(300), default="")
+    location: Mapped[str] = mapped_column(String(300), default="")
+    purchase_date: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
+    install_date: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
+    price: Mapped[Decimal | None] = mapped_column(Money, nullable=True)
+    warranty_until: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
+    warranty_remind_days: Mapped[int] = mapped_column(Integer, default=30)
+    service_interval_months: Mapped[int] = mapped_column(Integer, default=0)  # 0 = bez przegladow okresowych
+    next_service: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
+    notes: Mapped[str] = mapped_column(Text, default="")
+    active: Mapped[bool] = mapped_column(default=True)
+    source_ref: Mapped[str] = mapped_column(String(120), default="", index=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
+
+    contractor: Mapped[Contractor | None] = relationship()
+    contact: Mapped[Contact | None] = relationship()
+    product: Mapped["Product | None"] = relationship()
+    services: Mapped[list["ServiceEntry"]] = relationship(back_populates="equipment", cascade="all, delete-orphan",
+                                                          order_by="ServiceEntry.date.desc(), ServiceEntry.id.desc()")
+
+    def warranty_state(self, today: dt.date | None = None) -> str:
+        """'' (brak), 'ok', 'soon' (konczy sie w okresie przypomnienia), 'over'."""
+        if not self.warranty_until:
+            return ""
+        today = today or dt.date.today()
+        if self.warranty_until < today:
+            return "over"
+        return "soon" if (self.warranty_until - today).days <= self.warranty_remind_days else "ok"
+
+    def service_state(self, today: dt.date | None = None) -> str:
+        if not self.next_service:
+            return ""
+        today = today or dt.date.today()
+        if self.next_service < today:
+            return "over"
+        return "soon" if (self.next_service - today).days <= 14 else "ok"
+
+
+SERVICE_KINDS = {"przeglad": "Przegląd", "naprawa": "Naprawa", "montaz": "Montaż", "gwarancja": "Naprawa gwarancyjna",
+                 "inne": "Inne"}
+
+
+class ServiceEntry(Base):
+    """Wpis w historii serwisu urzadzenia (przeglad, naprawa...), opcjonalnie z WZ albo faktura."""
+
+    __tablename__ = "service_entries"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    equipment_id: Mapped[int] = mapped_column(ForeignKey("equipment.id", ondelete="CASCADE"), index=True)
+    date: Mapped[dt.date] = mapped_column(Date)
+    kind: Mapped[str] = mapped_column(String(15), default="przeglad")
+    description: Mapped[str] = mapped_column(Text, default="")
+    author: Mapped[str] = mapped_column(String(100), default="")
+    delivery_id: Mapped[int | None] = mapped_column(ForeignKey("deliveries.id", ondelete="SET NULL"), nullable=True)
+    invoice_id: Mapped[int | None] = mapped_column(ForeignKey("invoices.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
+
+    equipment: Mapped[Equipment] = relationship(back_populates="services")
+    delivery: Mapped["Delivery | None"] = relationship()
+    invoice: Mapped["Invoice | None"] = relationship()
+
+    @property
+    def kind_label(self) -> str:
+        return SERVICE_KINDS.get(self.kind, self.kind)

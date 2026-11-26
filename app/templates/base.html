@@ -29,7 +29,7 @@
   ('Klienci', [('/kontrahenci', 'Kontrahenci', 'users', p.startswith('/kontrahenci')),
                ('/kontakty', 'Osoby kontaktowe', 'user', p.startswith('/kontakty')),
                ('/auta', 'Auta', 'car', p.startswith('/auta')),
-               ('', 'Sprzęt i serwis', 'tool', False),
+               ('/sprzet', 'Sprzęt i serwis', 'tool', p.startswith('/sprzet')),
                ('/poczta', 'Poczta', 'mail', p.startswith('/poczta')),
                ('', 'Połączenia', 'phone', False)]),
   ('Organizacja', [('', 'Zadania', 'check', False),

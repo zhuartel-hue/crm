@@ -41,6 +41,15 @@
 <td>{% if p.phone %}<a href="tel:{{ p.phone }}">{{ p.phone }}</a>{% endif %}</td>
 <td class="hide-sm">{% if p.email %}<a href="/poczta/nowa?kontakt={{ p.id }}">{{ p.email }}</a>{% endif %}</td></tr>{% endfor %}</table></div>
 {% else %}<p class="muted">Brak osób kontaktowych.</p>{% endif %}{% endif %}
+{% if c.id %}<div class="row"><h2>Umowy</h2><span class="spacer"></span><a class="btn small" href="/umowy/nowa?kontrahent={{ c.id }}">+ Umowa</a></div>
+{% if contracts %}<div class="card tbl"><table>{% for r in contracts %}<tr><td><a href="/umowy/{{ r.id }}">{{ r.number or r.name }}</a></td>
+<td class="hide-sm">{{ r.start_date|date if r.start_date }} – {{ r.end_date|date if r.end_date else 'bezterminowo' }}</td>
+<td>{% if r.invoicing and r.active %}{{ r.interval_label }}, następna {{ r.next_date|date }}{% endif %}</td><td><span class="badge {{ 'm' if r.status == 'active' }}">{{ r.status_label }}</span></td></tr>{% endfor %}</table></div>
+{% else %}<p class="muted">Brak umów.</p>{% endif %}
+<div class="row"><h2>Sprzęt</h2><span class="spacer"></span><a class="btn small" href="/sprzet/nowy?kontrahent={{ c.id }}">+ Sprzęt</a></div>
+{% if equipment %}<div class="card tbl"><table>{% for e in equipment %}<tr><td><a href="/sprzet/{{ e.id }}">{{ e.name }}</a>{% if e.serial_no %}<br><span class="muted" style="font-size:12px">SN {{ e.serial_no }}</span>{% endif %}</td>
+<td class="hide-sm">{{ e.location }}</td><td>{% include "_equipment_badges.html" %}</td></tr>{% endfor %}</table></div>
+{% else %}<p class="muted">Brak sprzętu.</p>{% endif %}{% endif %}
 {% if invoices %}<div class="row"><h2>Faktury</h2><span class="spacer"></span><a class="btn small" href="/faktury/nowa?kontrahent={{ c.id }}">+ Faktura</a></div>{% include "_invoice_rows.html" %}{% endif %}
 {% if deliveries %}<h2>WZ i PZ</h2><div class="card tbl"><table>{% for d in deliveries %}<tr><td><a href="/wz/{{ d.id }}">{{ d.display_number }}</a></td><td>{{ d.issue_date|date }}</td><td class="n">{{ d.total_gross|money if d.total_gross }}</td></tr>{% endfor %}</table></div>{% endif %}
 {% if c.id %}<div class="row"><h2>Oferty</h2><span class="spacer"></span><a class="btn small" href="/oferty/nowa?kontrahent={{ c.id }}">+ Oferta</a></div>

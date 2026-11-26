@@ -71,6 +71,9 @@ from .models import (
     RECURRING_INTERVALS,
     RECURRING_MODES,
     RecurringInvoice,
+    SERVICE_KINDS,
+    Equipment,
+    ServiceEntry,
 )
 from .seed import seed
 
@@ -360,7 +363,13 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
         *issued, Invoice.ksef_status.in_(("", "rejected", "error")))) if ksef.enabled(company) else None
     stats = dict(month_count=month_count, month_gross=month_gross, unpaid_count=unpaid_count, unpaid_sum=unpaid_sum,
                  overdue_count=overdue_count, ksef_todo=ksef_todo)
-    return render(request, db, "dashboard.html", company=company, recent=recent, stats=stats, cars=cars_on_lot,
+    equipment_due = [e for e in db.scalars(select(Equipment).where(
+        Equipment.company_id == company.id, Equipment.active,
+        or_(Equipment.next_service <= today + dt.timedelta(days=14),
+            Equipment.warranty_until.between(today, today + dt.timedelta(days=90))))
+        .order_by(Equipment.next_service, Equipment.warranty_until).limit(30)).all()
+        if e.service_state(today) in ("over", "soon") or e.warranty_state(today) == "soon"][:8]
+    return render(request, db, "dashboard.html", company=company, recent=recent, stats=stats, cars=cars_on_lot, equipment_due=equipment_due,
                   bank_warnings=bank_connect.warnings(db, company.id), overdue=overdue, deliveries=deliveries,
                   mails=mails, offers_expiring=offers.expiring(db, company.id), today=today)
 
@@ -911,8 +920,14 @@ def contractor_edit(cid: int, request: Request, db: Session = Depends(get_db)):
     deliveries = db.scalars(select(Delivery).where(Delivery.contractor_id == cid,
                                                    Delivery.company_id == current_company(request, db).id)
                             .order_by(Delivery.issue_date.desc()).limit(30)).all()
+    equipment = db.scalars(select(Equipment).where(Equipment.contractor_id == cid,
+                                                   Equipment.company_id == current_company(request, db).id)
+                           .order_by(Equipment.active.desc(), Equipment.name)).all()
+    contracts = db.scalars(select(RecurringInvoice).where(RecurringInvoice.contractor_id == cid,
+                                                          RecurringInvoice.company_id == current_company(request, db).id)
+                           .order_by(RecurringInvoice.active.desc(), RecurringInvoice.id.desc())).all()
     return render(request, db, "contractor_form.html", c=c, invoices=invoices, mails=mails, offers=offer_rows,
-                  deliveries=deliveries)
+                  deliveries=deliveries, equipment=equipment, contracts=contracts, today=dt.date.today())
 
 
 async def _save_contractor(request: Request, db: Session, c: Contractor):
@@ -1932,7 +1947,7 @@ def wz_list(request: Request, q: str = "", rodzaj: str = "", db: Session = Depen
 
 
 @app.get("/wz/nowa", response_class=HTMLResponse)
-def wz_new(request: Request, faktura: int = 0, rodzaj: str = "wz", db: Session = Depends(get_db)):
+def wz_new(request: Request, faktura: int = 0, rodzaj: str = "wz", kontrahent: int = 0, db: Session = Depends(get_db)):
     company = current_company(request, db)
     if faktura:
         d = wz.from_invoice(get_invoice(db, request, faktura))
@@ -1940,6 +1955,9 @@ def wz_new(request: Request, faktura: int = 0, rodzaj: str = "wz", db: Session =
         d = Delivery(company_id=company.id, kind=rodzaj if rodzaj in DELIVERY_KINDS else "wz", status="draft",
                      issue_date=dt.date.today(), recipient_name="", recipient_address="", notes="", signed_by="",
                      prices_gross=False)
+        c = db.get(Contractor, kontrahent) if kontrahent else None
+        if c is not None:
+            d.contractor_id, d.recipient_name, d.recipient_address = c.id, c.name, "\n".join(c.address_lines)
     return _wz_form(request, db, d)
 
 
@@ -2144,6 +2162,187 @@ def contact_delete(pid: int, request: Request, db: Session = Depends(get_db)):
     db.commit()
     flash(request, f"Usunięto: {p.name}.")
     return redirect(back)
+
+
+# ---------------------------------------------------------------- Sprzet i serwis
+
+EQUIPMENT_TEXT = {"name": 300, "category": 100, "inventory_no": 100, "serial_no": 150, "barcode": 100,
+                  "supplier": 300, "location": 300}
+EQUIPMENT_DATES = ("purchase_date", "install_date", "warranty_until", "next_service")
+
+
+def _get_equipment(db: Session, request: Request, eid: int) -> Equipment:
+    e = db.get(Equipment, eid)
+    if e is None or e.company_id != current_company(request, db).id:
+        raise HTTPException(404)
+    return e
+
+
+@app.get("/sprzet", response_class=HTMLResponse)
+def equipment_list(request: Request, q: str = "", widok: str = "", kategoria: str = "", db: Session = Depends(get_db)):
+    company = current_company(request, db)
+    today = dt.date.today()
+    cond = [Equipment.company_id == company.id]
+    stmt = select(Equipment).outerjoin(Contractor, Equipment.contractor_id == Contractor.id)
+    if q:
+        like = f"%{q.strip()}%"
+        cond.append(or_(Equipment.name.ilike(like), Equipment.serial_no.ilike(like), Equipment.inventory_no.ilike(like),
+                        Equipment.barcode.ilike(like), Equipment.location.ilike(like), Contractor.name.ilike(like),
+                        Contractor.nip.ilike(like)))
+    if kategoria:
+        cond.append(Equipment.category == kategoria)
+    if widok == "gwarancje":
+        cond += [Equipment.active, Equipment.warranty_until.is_not(None),
+                 Equipment.warranty_until <= today + dt.timedelta(days=60)]
+    elif widok == "przeglady":
+        cond += [Equipment.active, Equipment.next_service.is_not(None),
+                 Equipment.next_service <= today + dt.timedelta(days=30)]
+    elif widok == "wycofane":
+        cond.append(Equipment.active.is_(False))
+    else:
+        cond.append(Equipment.active)
+    order = Equipment.next_service if widok == "przeglady" else (
+        Equipment.warranty_until if widok == "gwarancje" else Equipment.name)
+    rows = db.scalars(stmt.where(*cond).order_by(order, Equipment.id).limit(500)).all()
+    categories = [c for c in db.scalars(select(Equipment.category).where(Equipment.company_id == company.id,
+                                                                          Equipment.category != "").distinct()
+                                        .order_by(Equipment.category))]
+    return render(request, db, "equipment_list.html", rows=rows, q=q, widok=widok, kategoria=kategoria,
+                  categories=categories, today=today)
+
+
+def _equipment_form(request: Request, db: Session, e: Equipment, error: str | None = None):
+    company = current_company(request, db)
+    contractors = db.scalars(select(Contractor).order_by(Contractor.name)).all()
+    contacts = db.scalars(select(Contact).where(Contact.contractor_id == e.contractor_id)
+                          .order_by(Contact.last_name)).all() if e.contractor_id else []
+    categories = [c for c in db.scalars(select(Equipment.category).where(Equipment.company_id == company.id,
+                                                                          Equipment.category != "").distinct())]
+    products = prod.search(db, "", active_only=True)
+    deliveries = db.scalars(select(Delivery).where(Delivery.company_id == company.id,
+                                                   Delivery.contractor_id == e.contractor_id)
+                            .order_by(Delivery.issue_date.desc()).limit(30)).all() if e.contractor_id else []
+    return render(request, db, "equipment_form.html", e=e, contractors=contractors, contacts=contacts,
+                  categories=categories, products=products, deliveries=deliveries, KINDS=SERVICE_KINDS,
+                  today=dt.date.today(), error=error)
+
+
+@app.get("/sprzet/nowy", response_class=HTMLResponse)
+def equipment_new(request: Request, kontrahent: int = 0, db: Session = Depends(get_db)):
+    company = current_company(request, db)
+    e = Equipment(company_id=company.id, name="", category="", inventory_no="", serial_no="", barcode="", supplier="",
+                  location="", notes="", active=True, warranty_remind_days=30, service_interval_months=0,
+                  contractor_id=kontrahent or None, source_ref="")
+    if kontrahent:
+        c = db.get(Contractor, kontrahent)
+        e.location = ", ".join(c.address_lines) if c else ""
+    return _equipment_form(request, db, e)
+
+
+async def _equipment_save(request: Request, db: Session, e: Equipment):
+    form = await request.form()
+    for f, n in EQUIPMENT_TEXT.items():
+        setattr(e, f, (form.get(f) or "").strip()[:n])
+    e.notes = (form.get("notes") or "").strip()
+    cid = form.get("contractor_id") or ""
+    e.contractor_id = int(cid) if cid.isdigit() and db.get(Contractor, int(cid)) else None
+    pid = form.get("contact_id") or ""
+    contact = db.get(Contact, int(pid)) if pid.isdigit() else None
+    e.contact_id = contact.id if contact and contact.contractor_id == e.contractor_id else None
+    label = (form.get("product") or "").strip()
+    product = next((p for p in prod.search(db, label, active_only=False) if p.label == label), None) if label else None
+    e.product_id = product.id if product else None
+    if product and not e.name:
+        e.name = product.name[:300]
+    e.active = form.get("active", "1") == "1"
+    try:
+        for f in EQUIPMENT_DATES:
+            setattr(e, f, dt.date.fromisoformat(form[f]) if form.get(f) else None)
+        e.price = calc.parse_decimal(form.get("price") or "", None)
+        e.warranty_remind_days = max(0, int(form.get("warranty_remind_days") or 30))
+        e.service_interval_months = max(0, min(60, int(form.get("service_interval_months") or 0)))
+    except ValueError:
+        return _equipment_form(request, db, e, "Sprawdź daty i liczby.")
+    if not e.name:
+        return _equipment_form(request, db, e, "Podaj nazwę urządzenia albo wybierz produkt.")
+    if e.service_interval_months and not e.next_service:
+        start = e.install_date or e.purchase_date or dt.date.today()
+        e.next_service = recurring.add_months(start, e.service_interval_months, start.day)
+    is_new = e.id is None
+    db.add(e)
+    db.flush()
+    audit(db, web_actor(request), "equipment.save", f"{'Nowy' if is_new else 'Zmieniony'} sprzęt „{e.name}”",
+          company_id=e.company_id, entity="equipment", entity_id=e.id)
+    db.commit()
+    flash(request, f"Zapisano: {e.name}.")
+    return redirect(f"/sprzet/{e.id}")
+
+
+@app.post("/sprzet/nowy")
+async def equipment_create(request: Request, db: Session = Depends(get_db)):
+    company = current_company(request, db)
+    return await _equipment_save(request, db, Equipment(company_id=company.id, source_ref=""))
+
+
+@app.get("/sprzet/{eid}", response_class=HTMLResponse)
+def equipment_edit(eid: int, request: Request, db: Session = Depends(get_db)):
+    return _equipment_form(request, db, _get_equipment(db, request, eid))
+
+
+@app.post("/sprzet/{eid}")
+async def equipment_update(eid: int, request: Request, db: Session = Depends(get_db)):
+    return await _equipment_save(request, db, _get_equipment(db, request, eid))
+
+
+@app.post("/sprzet/{eid}/usun")
+def equipment_delete(eid: int, request: Request, db: Session = Depends(get_db)):
+    e = _get_equipment(db, request, eid)
+    audit(db, web_actor(request), "equipment.delete", f"Usunięto sprzęt „{e.name}”", company_id=e.company_id,
+          entity="equipment")
+    db.delete(e)
+    db.commit()
+    flash(request, f"Usunięto: {e.name}.")
+    return redirect("/sprzet")
+
+
+@app.post("/sprzet/{eid}/serwis")
+async def equipment_service_add(eid: int, request: Request, db: Session = Depends(get_db)):
+    e = _get_equipment(db, request, eid)
+    form = await request.form()
+    try:
+        when = dt.date.fromisoformat(form.get("date") or dt.date.today().isoformat())
+    except ValueError:
+        when = dt.date.today()
+    kind = form.get("kind") if form.get("kind") in SERVICE_KINDS else "inne"
+    text = (form.get("description") or "").strip()
+    did = form.get("delivery_id") or ""
+    d = db.get(Delivery, int(did)) if did.isdigit() else None
+    if not text and d is None:
+        flash(request, "Opisz, co zostało zrobione.")
+        return redirect(f"/sprzet/{eid}#serwis")
+    db.add(ServiceEntry(equipment_id=e.id, date=when, kind=kind, description=text,
+                        author=request.session.get("user", ""),
+                        delivery_id=d.id if d and d.company_id == e.company_id else None))
+    if kind == "przeglad" and e.service_interval_months:
+        e.next_service = recurring.add_months(when, e.service_interval_months, when.day)
+    audit(db, web_actor(request), "equipment.service", f"Serwis „{e.name}”: {SERVICE_KINDS[kind]}",
+          company_id=e.company_id, entity="equipment", entity_id=e.id)
+    db.commit()
+    flash(request, "Dodano wpis serwisowy." + (f" Następny przegląd: {e.next_service:%d.%m.%Y}."
+                                              if kind == "przeglad" and e.next_service else ""))
+    return redirect(f"/sprzet/{eid}#serwis")
+
+
+@app.post("/sprzet/{eid}/serwis/{sid}/usun")
+def equipment_service_delete(eid: int, sid: int, request: Request, db: Session = Depends(get_db)):
+    e = _get_equipment(db, request, eid)
+    se = db.get(ServiceEntry, sid)
+    if se is None or se.equipment_id != e.id:
+        raise HTTPException(404)
+    db.delete(se)
+    db.commit()
+    flash(request, "Usunięto wpis serwisowy.")
+    return redirect(f"/sprzet/{eid}#serwis")
 
 
 # ---------------------------------------------------------------- Oferty
@@ -2669,7 +2868,7 @@ def _recurring_form(request: Request, db: Session, r: RecurringInvoice, error: s
 
 
 @app.get("/umowy/nowa", response_class=HTMLResponse)
-def recurring_new(request: Request, faktura: int = 0, db: Session = Depends(get_db)):
+def recurring_new(request: Request, faktura: int = 0, kontrahent: int = 0, db: Session = Depends(get_db)):
     company = current_company(request, db)
     if faktura:
         r = recurring.from_invoice(get_invoice(db, request, faktura))
@@ -2679,6 +2878,10 @@ def recurring_new(request: Request, faktura: int = 0, db: Session = Depends(get_
                              interval_months=1, day_of_month=1, next_date=recurring.first_date(dt.date.today(), 1),
                              mode="send", email_to="", notes="", active=True, last_error="", start_date=dt.date.today())
     r.invoicing, r.number, r.contract_notes = True, "", ""
+    c = db.get(Contractor, kontrahent) if kontrahent and not faktura else None
+    if c is not None:
+        r.contractor_id, r.buyer_name, r.buyer_nip = c.id, c.name, c.nip
+        r.buyer_address, r.email_to = "\n".join(c.address_lines), (c.email or "").split(",")[0].strip()
     return _recurring_form(request, db, r)
 
 

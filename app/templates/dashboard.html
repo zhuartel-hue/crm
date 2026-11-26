@@ -35,6 +35,10 @@
     {% for o in offers_expiring %}<a class="tile-row" href="/oferty/{{ o.id }}"><span><b>{{ o.display_number }}</b> · {{ o.recipient_name }}</span>
       <span class="n {{ 'muted' if not o.expired }}" {% if o.expired %}style="color:var(--danger)"{% endif %}>{{ 'minęła ' if o.expired else 'do ' }}{{ o.valid_until|date }}</span></a>{% endfor %}</div>{% endif %}
 
+  {% if equipment_due %}<div class="card tile"><div class="tile-h"><h2>Przeglądy i gwarancje</h2><a href="/sprzet?widok=przeglady">sprzęt</a></div>
+    {% for e in equipment_due %}<a class="tile-row" href="/sprzet/{{ e.id }}"><span><b>{{ e.name }}</b>{% if e.contractor %} · {{ e.contractor.name }}{% endif %}</span>
+      <span class="n">{% if e.service_state(today) in ('over', 'soon') %}<span {% if e.service_state(today) == 'over' %}style="color:var(--danger)"{% endif %}>przegląd {{ e.next_service|date }}</span>{% else %}gwarancja do {{ e.warranty_until|date }}{% endif %}</span></a>{% endfor %}</div>{% endif %}
+
   {% if cars %}<div class="card tile"><div class="tile-h"><h2>Auta na placu</h2><a href="/auta">auta</a></div>
     {% for c in cars %}<a class="tile-row" href="/auta/{{ c.id }}"><span>{{ c.label }}</span><span class="n">{{ c.asking_price|money }}</span></a>{% endfor %}</div>{% endif %}
 </div>
