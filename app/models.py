@@ -73,7 +73,7 @@ class OfferTemplate(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
     name: Mapped[str] = mapped_column(String(120))
-    title: Mapped[str] = mapped_column(String(300), default="")
+    title: Mapped[str] = mapped_column(String(300), default="")  # wewnetrzny tytul (dla zespolu)
     notes: Mapped[str] = mapped_column(Text, default="")
     prices_gross: Mapped[bool] = mapped_column(default=False)
     valid_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -778,7 +778,8 @@ class Offer(Base):
     issue_date: Mapped[dt.date] = mapped_column(Date)
     valid_until: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
     probability: Mapped[int | None] = mapped_column(Integer, nullable=True)  # szansa w %
-    title: Mapped[str] = mapped_column(String(300), default="")
+    title: Mapped[str] = mapped_column(String(300), default="")  # wewnetrzny tytul (dla zespolu)
+    heading: Mapped[str] = mapped_column(String(300), default="", server_default="")  # naglowek na PDF
     contractor_id: Mapped[int | None] = mapped_column(ForeignKey("contractors.id", ondelete="SET NULL"), nullable=True)
     recipient_name: Mapped[str] = mapped_column(String(300), default="")
     recipient_address: Mapped[str] = mapped_column(Text, default="")
@@ -812,15 +813,29 @@ class Offer(Base):
 
     @property
     def status_label(self) -> str:
-        return OFFER_STATUSES.get(self.status) or OFFER_LEGACY.get(self.status, self.status)
+        st = self._status_cfg()
+        return st["label"] if st else (OFFER_STATUSES.get(self.status) or OFFER_LEGACY.get(self.status, self.status))
 
     @property
     def status_class(self) -> str:
-        return "ok" if self.status in OFFER_WON else ("due" if self.status == "rejected" else ("warn" if self.status == "cancelled" else ""))
+        st = self._status_cfg()
+        if st:
+            return st["color"]
+        return "ok" if self.status in OFFER_WON else ("due" if self.status == "rejected" else "")
 
     @property
     def is_open(self) -> bool:
-        return self.status in OFFER_OPEN
+        st = self._status_cfg()
+        return st["group"] == "open" if st else self.status in OFFER_OPEN
+
+    def _status_cfg(self) -> dict | None:
+        """Status wg ustawien firmy (nazwa, kolor, grupa); bez sesji: wbudowane."""
+        from sqlalchemy.orm import object_session
+
+        from . import offer_statuses
+
+        db = object_session(self)
+        return offer_statuses.find(db, self.company_id, self.status) if db is not None and self.company_id else None
 
     @property
     def days_left(self) -> int | None:
@@ -1017,7 +1032,16 @@ class RecurringInvoice(Base):
     @property
     def status_label(self) -> str:
         return {"ended": "zakończona", "future": "od " + (f"{self.start_date:%d.%m.%Y}" if self.start_date else ""),
-                "active": "aktywna", "no_invoices": "aktywna, bez faktur"}[self.status]
+                "active": "aktywna", "no_invoices": "faktury wstrzymane"}[self.status]
+
+    @property
+    def status_hint(self) -> str:
+        return {"no_invoices": "Umowa trwa, ale ma wyłączone wystawianie faktur (np. w Firmao była „Nowa” albo nie ma "
+                               "pozycji). Zaznacz „Wystawiaj faktury” w umowie, żeby ruszyła.",
+                "ended": "Umowa zakończona, faktury już nie powstają.",
+                "future": "Umowa zaczyna się później, faktury ruszą od daty startu.",
+                "active": "Faktury powstają zgodnie z harmonogramem."}[self.status] + (
+            " Do startu Sygnavo tylko szkic: nic się nie wystawia ani nie wysyła." if self.mode == "draft" else "")
 
     @property
     def interval_label(self) -> str:

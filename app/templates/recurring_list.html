@@ -16,7 +16,7 @@ Bez daty końca faktury idą, dopóki nie zakończysz umowy.</p>
 <tr><th>Umowa</th><th>Klient</th><th class="hide-sm">Obowiązuje</th><th class="hide-sm">Faktury</th><th>Następna</th><th class="n">Brutto</th></tr>
 {% for r in rows %}
 <tr><td><a href="/umowy/{{ r.id }}">{{ r.number or r.name }}</a>{% if r.number and r.name and r.name != 'Umowa ' ~ r.number %}<br><span class="muted" style="font-size:12px">{{ r.name }}</span>{% endif %}
-{% if r.status != 'active' %} <span class="badge">{{ r.status_label }}</span>{% endif %}
+{% if r.status != 'active' %} <span class="badge" title="{{ r.status_hint }}">{{ r.status_label }}</span>{% endif %}
 {% if r.last_error %}<br><span class="badge warn" title="{{ r.last_error }}">błąd przy ostatniej próbie</span>{% endif %}</td>
 <td>{{ r.contractor.name if r.contractor else r.buyer_name }}</td>
 <td class="hide-sm">{{ r.start_date|date if r.start_date else '' }} – {{ r.end_date|date if r.end_date else 'bezterminowo' }}</td>

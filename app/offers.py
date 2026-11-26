@@ -22,7 +22,7 @@ EXPIRY_WARN_DAYS = 3
 def new(company_id: int, actor: str = "") -> Offer:
     today = dt.date.today()
     return Offer(company_id=company_id, status="new", issue_date=today,
-                 valid_until=today + dt.timedelta(days=DEFAULT_VALID_DAYS), title="", recipient_name="",
+                 valid_until=today + dt.timedelta(days=DEFAULT_VALID_DAYS), title="", heading="", recipient_name="",
                  recipient_address="", contact_person="", email="", prices_gross=False, notes="", internal_notes="",
                  created_by=actor[:100])
 
@@ -47,7 +47,13 @@ def save(db: Session, o: Offer) -> None:
 
 
 def set_status(o: Offer, status: str) -> None:
-    if status not in OFFER_STATUSES:
+    from sqlalchemy.orm import object_session
+
+    from . import offer_statuses
+
+    db = object_session(o)
+    ok = offer_statuses.find(db, o.company_id, status) is not None if db is not None else status in OFFER_STATUSES
+    if not ok:
         raise ValueError("Nieznany status oferty.")
     o.status = status
 
@@ -59,7 +65,7 @@ def mark_sent(o: Offer) -> None:
 
 
 def _accept(o: Offer) -> None:
-    if o.status in OFFER_OPEN:
+    if o.is_open:
         o.status = "accepted"
 
 
@@ -116,7 +122,7 @@ def duplicate(o: Offer, actor: str = "") -> Offer:
     c = new(o.company_id, actor)
     if o.valid_until:
         c.valid_until = c.issue_date + (o.valid_until - o.issue_date)
-    for f in ("title", "contractor_id", "recipient_name", "recipient_address", "contact_person", "email",
+    for f in ("title", "heading", "contractor_id", "recipient_name", "recipient_address", "contact_person", "email",
               "prices_gross", "notes", "probability"):
         setattr(c, f, getattr(o, f))
     for it in o.items:
@@ -129,12 +135,18 @@ def duplicate(o: Offer, actor: str = "") -> Offer:
 EXPIRED_SHOW_DAYS = 7
 
 
+def _open_keys(db: Session, company_id: int) -> list[str]:
+    from . import offer_statuses
+
+    return offer_statuses.keys(db, company_id, "open")
+
+
 def expiring(db: Session, company_id: int, days: int = EXPIRY_WARN_DAYS, limit: int = 8) -> list[Offer]:
     """Otwarte oferty, ktorym konczy sie waznosc albo minela w ostatnim tygodniu – do przypomnienia na Start
     (starsze, np. z archiwum Firmao, nie zasmiecaja pulpitu)."""
     today = dt.date.today()
     return list(db.scalars(select(Offer).where(
-        Offer.company_id == company_id, Offer.status.in_(OFFER_OPEN), Offer.valid_until.is_not(None),
+        Offer.company_id == company_id, Offer.status.in_(_open_keys(db, company_id)), Offer.valid_until.is_not(None),
         Offer.valid_until <= today + dt.timedelta(days=days),
         Offer.valid_until >= today - dt.timedelta(days=EXPIRED_SHOW_DAYS)).order_by(Offer.valid_until).limit(limit)))
 

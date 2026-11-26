@@ -191,3 +191,33 @@ def test_offer_pdf_looks(client):
         assert db.get(Offer, oid).pdf_template == "zwiezla"
     assert client.get(f"/oferty/{oid}/pdf?wyglad=prezentacja").content[:4] == b"%PDF"
     assert "Wygląd PDF" in client.get(f"/oferty/{oid}").text
+
+
+def test_custom_offer_statuses(client):
+    from app import offer_statuses as ost
+    from app.db import SessionLocal
+
+    page = client.get("/ustawienia/statusy-ofert").text
+    assert "w trakcie negocjacji" in page and "wbudowany" in page
+    with SessionLocal() as db:
+        rows = ost.config(db, 1)
+    form = {"k": [], "label": [], "group": [], "color": [], "hidden": [], "delete": []}
+    for r in rows:
+        form["k"].append(r["k"]); form["label"].append("Wysłana mailem" if r["k"] == "sent" else r["label"])
+        form["group"].append(r["group"]); form["color"].append(r["color"])
+        form["hidden"].append("1" if r["k"] == "ordered" else "0"); form["delete"].append("0")
+    for f, v in (("k", ""), ("label", "Wizja lokalna"), ("group", "open"), ("color", "warn"), ("hidden", "0"), ("delete", "0")):
+        form[f].append(v)
+    r = client.post("/ustawienia/statusy-ofert", data=form, follow_redirects=False)
+    assert r.status_code == 303, r.text
+    with SessionLocal() as db:
+        st = {x["k"]: x for x in ost.config(db, 1)}
+    assert st["sent"]["label"] == "Wysłana mailem" and st["ordered"]["hidden"] and st["c1"]["label"] == "Wizja lokalna"
+    lst = client.get("/oferty").text
+    assert "Wizja lokalna" in lst
+    # wbudowanego nie da sie usunac
+    form["delete"][0] = "1"
+    assert "jest wbudowany" in client.post("/ustawienia/statusy-ofert", data=form).text
+    # druga firma ma swoje (domyslne) statusy
+    with SessionLocal() as db:
+        assert ost.find(db, 2, "c1") is None and ost.label(db, 2, "sent") == "wysłana"

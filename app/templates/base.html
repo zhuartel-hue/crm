@@ -6,7 +6,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <title>{% block title %}Sygnavo{% endblock %} · {{ company.short_name }}</title>
-<link rel="stylesheet" href="/static/app.css?v=4">
+<link rel="stylesheet" href="/static/app.css?v=6">
 <link rel="manifest" href="/static/manifest.webmanifest">
 <link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
 <link rel="icon" href="/static/icons/icon-192.png">
@@ -86,8 +86,9 @@
   <a href="#" id="tab-menu">{{ icon('menu') }}<span>Więcej</span></a>
 </nav>
 {% block scripts %}{% endblock %}
-<script src="/static/picker.js?v=1"></script>
-<script src="/static/livesearch.js?v=1" defer></script>
+<script src="/static/picker.js?v=2"></script>
+<script src="/static/tables.js?v=1" defer></script>
+<script src="/static/livesearch.js?v=3" defer></script>
 <script>
 (function () {
   const side = document.getElementById('side'), scrim = document.getElementById('scrim');

@@ -32,9 +32,11 @@
     {% if o.delivery %}<br>WZ: <a href="/wz/{{ o.delivery_id }}">{{ o.delivery.display_number }}</a>{% endif %}
     {% if o.created_by %}<br><span class="muted">Dodał: {{ o.created_by }}</span>{% endif %}</div>
 </div>
-<form method="post" action="/oferty/{{ o.id }}/status" class="row card" style="gap:6px;flex-wrap:wrap">
-  <span class="muted">Zmień status:</span>
-  {% for k, v in STATUSES.items() %}{% if k != o.status %}<button class="btn small" name="status" value="{{ k }}">{{ v }}</button>{% endif %}{% endfor %}
+<form method="post" action="/oferty/{{ o.id }}/status" class="row card" style="gap:8px;flex-wrap:wrap;align-items:center">
+  <span class="muted">Status:</span>
+  <div style="min-width:220px"><select name="status" class="searchable status-pick {{ o.status_class }}" data-placeholder="szukaj statusu" aria-label="Status oferty" onchange="this.form.submit()">
+  {% for k, v in STATUSES.items() %}<option value="{{ k }}" {{ 'selected' if o.status == k }}>{{ v }}</option>{% endfor %}</select></div>
+  <a class="muted" style="font-size:13px" href="/ustawienia/statusy-ofert">Edytuj listę statusów</a>
 </form>
 <div class="card tbl"><table>
 <tr><th>Lp.</th><th>Pozycja</th><th class="n">Ilość</th><th>Jedn.</th><th class="n">Cena {{ 'brutto' if o.prices_gross else 'netto' }}</th><th class="n hide-sm">VAT</th><th class="n">Brutto</th></tr>

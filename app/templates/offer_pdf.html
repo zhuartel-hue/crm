@@ -116,7 +116,7 @@ table.t .lp { color: #9aa3af; width: 7mm; }
   <div class="logo">{% if logo_uri %}<img src="{{ logo_uri }}" alt="">{% else %}<b>{{ c.name }}</b>{% endif %}</div>
   <div class="main">
     <div class="lbl">Oferta</div>
-    <h1>{{ o.title or 'Oferta handlowa' }}</h1>
+    <h1>{{ o.heading or 'Oferta handlowa' }}</h1>
     <div class="bar"></div>
     <div class="for">Przygotowana dla<b>{{ o.recipient_name }}</b>{% if o.contact_person %}<span class="mut">{{ o.contact_person }}</span>{% endif %}</div>
   </div>
@@ -136,7 +136,7 @@ table.t .lp { color: #9aa3af; width: 7mm; }
 
 {% if tpl != 'prezentacja' %}
 <div class="hero">
-  <h1>{{ o.title or 'Oferta handlowa' }}</h1>
+  <h1>{{ o.heading or 'Oferta handlowa' }}</h1>
   <div class="for">dla <b>{{ o.recipient_name }}</b>{% if o.contact_person %} · {{ o.contact_person }}{% endif %}</div>
 </div>
 <div class="bar"></div>

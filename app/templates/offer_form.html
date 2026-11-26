@@ -4,10 +4,11 @@
 <h1>{{ 'Edycja oferty ' ~ o.display_number if o.id else 'Nowa oferta' }}</h1>
 <form method="post" class="card" action="{{ '/oferty/%d/edytuj' % o.id if o.id else '/oferty/nowa' }}">
 <div class="grid">
-  <div style="grid-column:1/-1"><label>Tytuł oferty (opcjonalnie)</label><input name="title" value="{{ o.title }}" placeholder="np. Serwis wózka widłowego"></div>
+  <div style="grid-column:1/-1"><label>Tytuł oferty (dla nas, klient go nie widzi)</label><input name="title" value="{{ o.title }}" placeholder="np. Home Kalinowska, kamery modernizacja"></div>
+  <div style="grid-column:1/-1"><label>Nagłówek na PDF dla klienta (opcjonalnie)</label><input name="heading" value="{{ o.heading }}" placeholder="Oferta handlowa"></div>
   <div><label>Data oferty</label><input type="date" name="issue_date" value="{{ o.issue_date.isoformat() if o.issue_date }}"></div>
   <div><label>Ważna do</label><input type="date" name="valid_until" value="{{ o.valid_until.isoformat() if o.valid_until }}"></div>
-  <div><label>Status</label><select name="status">{% for k, v in STATUSES.items() %}<option value="{{ k }}" {{ 'selected' if o.status == k }}>{{ v }}</option>{% endfor %}</select></div>
+  <div><label>Status</label><select name="status" class="searchable" data-placeholder="szukaj statusu">{% for k, v in STATUSES.items() %}<option value="{{ k }}" {{ 'selected' if o.status == k }}>{{ v }}</option>{% endfor %}</select></div>
   <div><label>Szansa (%)</label><input name="probability" inputmode="numeric" value="{{ o.probability if o.probability is not none else '' }}" placeholder="np. 50"></div>
   <div style="grid-column:1/-1"><label>Kontrahent z bazy</label><select name="contractor_id" id="contractor">
     <option value="">—</option>

@@ -26,6 +26,8 @@
         var b = nf.nextElementSibling;
         while (b) { var m = b.nextElementSibling; if (b.tagName !== 'SCRIPT') parent.appendChild(document.importNode(b, true)); b = m; }
         history.replaceState(null, '', url);
+        if (window.sygnavoTables) window.sygnavoTables.apply(parent);
+        if (window.sygnavoPicker) window.sygnavoPicker(parent);
       }).catch(function () {});
     }
     inp.addEventListener('input', function () { clearTimeout(timer); timer = setTimeout(go, 250); });

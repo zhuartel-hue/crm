@@ -2,7 +2,7 @@
 {% block title %}{{ r.name or 'Nowa umowa' }}{% endblock %}
 {% block content %}
 <div class="row"><h1>{{ r.name if r.id else 'Nowa umowa' }}</h1>
-{% if r.id %}<span class="badge {{ 'm' if r.status == 'active' }}">{{ r.status_label }}</span>{% endif %}<span class="spacer"></span>
+{% if r.id %}<span class="badge {{ 'm' if r.status == 'active' }}">{{ r.status_label }}</span><span class="muted" style="font-size:13px">{{ r.status_hint }}</span>{% endif %}<span class="spacer"></span>
 {% if r.id and r.active and r.invoicing %}<form method="post" action="/umowy/{{ r.id }}/teraz" onsubmit="return confirm('Utworzyć teraz fakturę za {{ r.next_date|date }}?')"><button class="btn">Utwórz teraz</button></form>{% endif %}
 {% if r.id and r.active %}<form method="post" action="/umowy/{{ r.id }}/zakoncz" onsubmit="return confirm('Zakończyć umowę z dniem dzisiejszym? Kolejne faktury nie będą tworzone.')"><button class="btn">Zakończ umowę</button></form>{% endif %}
 {% if r.id and not r.active %}<form method="post" action="/umowy/{{ r.id }}/wznow"><button class="btn">Wznów umowę</button></form>{% endif %}

@@ -16,6 +16,8 @@ from sqlalchemy import func, or_, select, update
 from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
 
+from . import dashboard as dash
+from . import offer_statuses as ost
 from . import api, auth, calc, config, firmao_import, mail_templates, mcp_server, migrate, nip_lookup, numbering, offers, password, payments, pdf, recurring, secretbox, wz
 from . import products as prod
 from . import tasks as tasks_mod
@@ -38,6 +40,7 @@ from .models import (
     DELIVERY_KINDS,
     SCOPES,
     ApiToken,
+    AppSetting,
     AuditLog,
     BankConnection,
     BankTransaction,
@@ -388,9 +391,72 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
         .order_by(Equipment.next_service, Equipment.warranty_until).limit(30)).all()
         if e.service_state(today) in ("over", "soon") or e.warranty_state(today) == "soon"][:8]
     tasks_today = tasks_mod.today_tasks(db, company.id, today, limit=8)
-    return render(request, db, "dashboard.html", company=company, recent=recent, stats=stats, cars=cars_on_lot, equipment_due=equipment_due, tasks_today=tasks_today, now=dt.datetime.now(),
+    layout, custom = dash.load(db, company.id, request.session.get("user", ""), has_cars=bool(cars_on_lot))
+    shown = {it["k"] for it in layout}
+    return render(request, db, "dashboard.html", company=company, recent=recent, stats=stats, cars=cars_on_lot,
+                  equipment_due=equipment_due, tasks_today=tasks_today, now=dt.datetime.now(),
                   bank_warnings=bank_connect.warnings(db, company.id), overdue=overdue, deliveries=deliveries,
-                  mails=mails, offers_expiring=offers.expiring(db, company.id), today=today)
+                  mails=mails, offers_expiring=offers.expiring(db, company.id), today=today,
+                  layout=layout, custom_layout=custom, WIDGETS=dash.WIDGETS, DASH_COLS=dash.COLS, DASH_MAX_H=dash.MAX_H,
+                  hidden=[k for k in dash.WIDGETS if k not in shown])
+
+
+def _cols_key(request: Request, table: str) -> str:
+    import hashlib
+
+    user = request.session.get("user", "")
+    return "cols:" + hashlib.sha1(f"{user}|{table}".encode()).hexdigest()[:40]
+
+
+@app.get("/ustawienia/kolumny")
+def table_columns_get(request: Request, t: str = "", db: Session = Depends(get_db)):
+    """Zapamietane kolumny listy (kolejnosc i szerokosci) dla zalogowanego uzytkownika."""
+    row = db.get(AppSetting, _cols_key(request, t[:300]))
+    try:
+        return json.loads(row.value) if row else {}
+    except ValueError:
+        return {}
+
+
+@app.post("/ustawienia/kolumny")
+async def table_columns_save(request: Request, db: Session = Depends(get_db)):
+    try:
+        data = await request.json()
+    except ValueError:
+        raise HTTPException(400)
+    key = _cols_key(request, str(data.get("t") or "")[:300])
+    row = db.get(AppSetting, key)
+    if data.get("reset"):
+        if row is not None:
+            db.delete(row)
+        db.commit()
+        return {"ok": True}
+    order = [int(x) for x in (data.get("order") or []) if isinstance(x, int) and 0 <= x < 60][:60]
+    widths = {str(int(k)): min(max(int(v), 40), 2000) for k, v in (data.get("widths") or {}).items()
+              if str(k).isdigit() and isinstance(v, (int, float))}
+    row = row or AppSetting(key=key)
+    row.value = json.dumps({"order": order, "widths": widths})
+    db.add(row)
+    db.commit()
+    return {"ok": True}
+
+
+@app.post("/start/uklad")
+async def dashboard_layout_save(request: Request, db: Session = Depends(get_db)):
+    """Zapis ukladu Startu (JSON z edytora) albo powrot do domyslnego."""
+    company = current_company(request, db)
+    user = request.session.get("user", "")
+    try:
+        data = await request.json()
+    except ValueError:
+        raise HTTPException(400)
+    if data.get("reset"):
+        dash.reset(db, company.id, user)
+        db.commit()
+        return {"ok": True}
+    layout = dash.save(db, company.id, user, data.get("items"))
+    db.commit()
+    return {"ok": True, "items": layout}
 
 
 # --- faktury --------------------------------------------------------------
@@ -2635,17 +2701,51 @@ def _get_offer(db: Session, request: Request, oid: int) -> Offer:
 def _offer_form(request: Request, db: Session, o: Offer, error: str | None = None):
     products = prod.search(db, current_company(request, db).id, "", active_only=True)
     contractors = _contractors(db, current_company(request, db).id)
-    return render(request, db, "offer_form.html", o=o, products=products, STATUSES=OFFER_STATUSES,
+    return render(request, db, "offer_form.html", o=o, products=products,
+                  STATUSES=ost.visible(db, current_company(request, db).id, o.status),
                   products_json=script_json(prod.picker_json(products)), contractors=contractors, error=error)
+
+
+@app.get("/ustawienia/statusy-ofert", response_class=HTMLResponse)
+def offer_statuses_page(request: Request, db: Session = Depends(get_db), error: str | None = None):
+    company = current_company(request, db)
+    return render(request, db, "offer_statuses.html", company=company, rows=ost.config(db, company.id),
+                  used=ost.usage(db, company.id), GROUPS=ost.GROUPS, COLORS=ost.COLORS, error=error)
+
+
+@app.post("/ustawienia/statusy-ofert")
+async def offer_statuses_save(request: Request, db: Session = Depends(get_db)):
+    company = current_company(request, db)
+    form = await request.form()
+    try:
+        if form.get("reset"):
+            ost.reset(db, company.id)
+        else:
+            cols = {f: form.getlist(f) for f in ("k", "label", "group", "color", "hidden", "delete")}
+            rows = [{"k": cols["k"][i], "label": cols["label"][i] if i < len(cols["label"]) else "",
+                     "group": cols["group"][i] if i < len(cols["group"]) else "open",
+                     "color": cols["color"][i] if i < len(cols["color"]) else "",
+                     "hidden": (cols["hidden"][i] if i < len(cols["hidden"]) else "0") == "1",
+                     "delete": (cols["delete"][i] if i < len(cols["delete"]) else "0") == "1"}
+                    for i in range(len(cols["k"]))]
+            ost.save(db, company.id, rows)
+    except ValueError as e:
+        db.rollback()
+        return offer_statuses_page(request, db, error=str(e))
+    audit(db, web_actor(request), "offer.statuses", "Zmieniono statusy ofert", company_id=company.id)
+    db.commit()
+    flash(request, "Zapisano statusy ofert.")
+    return redirect("/ustawienia/statusy-ofert")
 
 
 @app.get("/oferty", response_class=HTMLResponse)
 def offer_list(request: Request, q: str = "", status: str = "", db: Session = Depends(get_db)):
     company = current_company(request, db)
     stmt = select(Offer).where(Offer.company_id == company.id)
+    all_st = {r["k"]: r["label"] for r in ost.config(db, company.id)}
     if status == "otwarte":
-        stmt = stmt.where(Offer.status.in_(("new", "sent")))
-    elif status in OFFER_STATUSES:
+        stmt = stmt.where(Offer.status.in_(ost.keys(db, company.id, "open")))
+    elif status in all_st:
         stmt = stmt.where(Offer.status == status)
     if q:
         like = f"%{q}%"
@@ -2653,7 +2753,8 @@ def offer_list(request: Request, q: str = "", status: str = "", db: Session = De
     rows = db.scalars(stmt.order_by(Offer.issue_date.desc(), Offer.id.desc()).limit(300)).all()
     open_rows = [o for o in rows if o.is_open]
     stats = dict(open_count=len(open_rows), open_gross=sum((o.total_gross for o in open_rows), Decimal("0")))
-    return render(request, db, "offer_list.html", rows=rows, q=q, status=status, STATUSES=OFFER_STATUSES, stats=stats,
+    return render(request, db, "offer_list.html", rows=rows, q=q, status=status, STATUSES=ost.visible(db, company.id),
+                  ALL_STATUSES=all_st, stats=stats,
                   offer_templates=offers.templates(db, company.id))
 
 
@@ -2709,6 +2810,7 @@ def offer_template_delete(tid: int, request: Request, db: Session = Depends(get_
 async def _offer_save(request: Request, db: Session, o: Offer):
     form = await request.form()
     o.title = (form.get("title") or "").strip()[:300]
+    o.heading = (form.get("heading") or "").strip()[:300]
     o.recipient_name = (form.get("recipient_name") or "").strip()[:300]
     o.recipient_address = (form.get("recipient_address") or "").strip()
     o.contact_person = (form.get("contact_person") or "").strip()[:200]
@@ -2732,7 +2834,7 @@ async def _offer_save(request: Request, db: Session, o: Offer):
         o.valid_until = dt.date.fromisoformat(form.get("valid_until") or "")
     except ValueError:
         o.valid_until = None
-    if form.get("status") in OFFER_STATUSES:
+    if ost.find(db, o.company_id, form.get("status") or "") is not None:
         o.status = form.get("status")
     try:
         if error:
@@ -2762,7 +2864,7 @@ async def offer_create(request: Request, db: Session = Depends(get_db)):
 @app.get("/oferty/{oid}", response_class=HTMLResponse)
 def offer_view(oid: int, request: Request, db: Session = Depends(get_db)):
     o = _get_offer(db, request, oid)
-    return render(request, db, "offer_view.html", o=o, STATUSES=OFFER_STATUSES)
+    return render(request, db, "offer_view.html", o=o, STATUSES=ost.visible(db, o.company_id, o.status))
 
 
 @app.get("/oferty/{oid}/edytuj", response_class=HTMLResponse)
