@@ -5,6 +5,7 @@ Kontrahenta bez zrodla dopasowujemy po NIP, produkt po kodzie. Nic nie jest wysy
 """
 from __future__ import annotations
 
+import datetime as dt
 import json
 import re
 from decimal import Decimal, InvalidOperation
@@ -12,7 +13,7 @@ from decimal import Decimal, InvalidOperation
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .models import VAT_RATES, Contact, Contractor, Product
+from .models import CUSTOMER_TYPES, VAT_RATES, Contact, Contractor, Product
 
 COUNTRIES = {"polska": "PL", "poland": "PL", "niemcy": "DE", "germany": "DE", "czechy": "CZ", "litwa": "LT",
              "ukraina": "UA", "wielka brytania": "GB", "holandia": "NL", "francja": "FR", "włochy": "IT"}
@@ -115,6 +116,24 @@ def import_customers(db: Session, rows: list[dict], company_id: int) -> dict:
             city or c.city or "", country
         c.email = (_first(r.get("emails")) or _first(r.get("email")) or c.email or "")[:200]
         c.phone = (_first(r.get("phones")) or _first(r.get("phoneNumber")) or _first(r.get("phone")) or c.phone or "")[:40]
+        c.website = (r.get("website") or c.website or "")[:200]
+        c.regon = str(r.get("identificationNumber") or c.regon or "")[:20]
+        krs = str(r.get("krs") or "")
+        c.krs = (krs if len(krs) > 3 else c.krs or "")[:20]
+        c.bank_account = (r.get("bankAccountNumber") or c.bank_account or "")[:40]
+        ct = r.get("customerType") or {}
+        if isinstance(ct, dict) and ct.get("key") in CUSTOMER_TYPES:
+            c.customer_type = ct["key"]
+        corr = r.get("correspondenceAddress")
+        if corr and r.get("officeAddress") and corr != r.get("officeAddress"):
+            cs, cp, cc, _ = _address(corr)
+            c.corr_address = ", ".join(x for x in (cs, f"{cp} {cc}".strip()) if x)[:300]
+        nxt = str(r.get("nextContactDate") or "")[:10]
+        if nxt:
+            try:
+                c.next_contact = dt.date.fromisoformat(nxt)
+            except ValueError:
+                pass
         desc = (r.get("description") or "").strip()
         if desc and desc not in (c.notes or ""):
             c.notes = ((c.notes + "\n") if c.notes else "") + desc
