@@ -24,7 +24,7 @@
 {% for d in cal.days %}
   <div class="card cal-daycard {{ 'today' if d == today }}">
     <div class="row"><b>{{ cal.DAYS[d.weekday()] }} {{ d.strftime('%d.%m') }}</b><span class="spacer"></span><a class="muted" href="/zadania/nowe?data={{ d.isoformat() }}">+ dodaj</a></div>
-    {% for t in cal.by_day.get(d, []) %}<div class="cal-line">{{ chip(t) }}{% if t.contractor %}<span class="muted"> · {{ t.contractor.name }}</span>{% endif %}{% if t.address and cal.view == 'dzien' %}<span class="muted"> · {{ t.address }}</span>{% endif %}</div>
+    {% for t in cal.by_day.get(d, []) %}<div class="cal-line">{{ chip(t) }}{% if t.contractor %}<span class="muted"> · {{ klink(t.contractor_id, t.contractor.name) }}</span>{% endif %}{% if t.address and cal.view == 'dzien' %}<span class="muted"> · {{ t.address }}</span>{% endif %}</div>
     {% else %}<div class="muted" style="font-size:13px">wolne</div>{% endfor %}
   </div>
 {% endfor %}

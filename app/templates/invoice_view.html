@@ -27,7 +27,7 @@
   {% if inv.kind in NEW_KINDS %}<form method="post" action="/faktury/{{ inv.id }}/kopiuj"><button class="btn">Kopiuj jako nową</button></form>{% endif %}
 </div>
 <div class="grid">
-  <div class="card"><div class="muted">Nabywca</div><b>{{ inv.buyer_name }}</b>{% if inv.buyer_nip %}<br>NIP {{ inv.buyer_nip }}{% endif %}<br><span style="white-space:pre-line">{{ inv.buyer_address }}</span></div>
+  <div class="card"><div class="muted">Nabywca</div><b>{{ klink(inv.contractor_id, inv.buyer_name) }}</b>{% if inv.buyer_nip %}<br>NIP {{ inv.buyer_nip }}{% endif %}<br><span style="white-space:pre-line">{{ inv.buyer_address }}</span></div>
   <div class="card">Wystawiona {{ inv.issue_date|date }}, sprzedaż {{ inv.sale_date|date }}<br>{{ inv.payment_label }}{% if inv.due_date %}, termin {{ inv.due_date|date }}{% endif %}
   {% if inv.car %}<br>Auto: <a href="/auta/{{ inv.car.id }}">{{ inv.car.label }}</a>{% endif %}
   {% if inv.related %}<br>{{ 'Korygowana faktura' if inv.kind == 'correction' else 'Na podstawie' }}: <a href="/faktury/{{ inv.related.id }}">{{ inv.related.kind_label }} {{ inv.related.display_number }}</a>{% endif %}

@@ -17,7 +17,7 @@
 {% for e in rows %}
 <tr><td><a href="/sprzet/{{ e.id }}">{{ e.name }}</a>{% if e.category %}<br><span class="muted" style="font-size:12px">{{ e.category }}{% if e.inventory_no %} · {{ e.inventory_no }}{% endif %}</span>{% endif %}
   <div>{% include "_equipment_badges.html" %}</div></td>
-<td>{% if e.contractor %}<a href="/kontrahenci/{{ e.contractor_id }}">{{ e.contractor.name }}</a>{% endif %}</td>
+<td>{% if e.contractor %}{{ klink(e.contractor_id, e.contractor.name) }}{% endif %}</td>
 <td class="hide-sm">{{ e.serial_no }}</td><td class="hide-sm">{{ e.location }}</td>
 <td class="hide-sm">{{ e.warranty_until|date if e.warranty_until }}</td>
 <td>{{ e.next_service|date if e.next_service }}</td></tr>

@@ -22,7 +22,7 @@
   {% else %}<button class="btn" disabled title="Z oferty jest faktura albo WZ, więc zostaje w historii. Możesz zmienić jej status.">Usuń</button>{% endif %}
 </div>
 <div class="grid">
-  <div class="card"><div class="muted">Klient</div><b>{{ o.recipient_name }}</b><br><span style="white-space:pre-line">{{ o.recipient_address }}</span>
+  <div class="card"><div class="muted">Klient</div><b>{{ klink(o.contractor_id, o.recipient_name) }}</b><br><span style="white-space:pre-line">{{ o.recipient_address }}</span>
     {% if o.contact_person %}<br>{{ o.contact_person }}{% endif %}{% if o.email %}<br>{{ o.email }}{% endif %}
     {% if o.contractor_id %}<br><a href="/kontrahenci/{{ o.contractor_id }}">Karta kontrahenta</a>{% endif %}</div>
   <div class="card">{% if o.title %}<b>{{ o.title }}</b><br>{% endif %}

@@ -118,3 +118,27 @@ def test_contractor_mail_history_per_contact(client):
     assert "Zamówienie od Anny" in page and "Oferta dla Bartka" not in page
     card = client.get(f"/kontrahenci/{cid}").text
     assert "Cała historia" in card and "Oferta dla Bartka" in card
+
+
+def test_contractor_links_and_full_card(client):
+    from app.db import SessionLocal
+    from app.models import Contractor, Invoice
+    from test_app import _new_invoice
+    inv_id = _new_invoice(client, "vat", buyer_name="Firma Linkowa", due_date="2020-01-01")
+    with SessionLocal() as db:
+        cid = db.get(Invoice, inv_id).contractor_id
+        other = Contractor(company_id=2, name="Obca Firma", is_company=True, country="PL")
+        db.add(other)
+        db.commit()
+        other_id = other.id
+    link = f'class="klink" href="/kontrahenci/{cid}">Firma Linkowa</a>'
+    assert link in client.get("/faktury").text
+    assert link in client.get("/naleznosci").text
+    assert link in client.get(f"/faktury/{inv_id}").text
+    card = client.get(f"/kontrahenci/{cid}").text
+    for part in ("Do zapłaty", "Po terminie", 'id="faktury"', 'id="wz"', 'id="koszty"', 'id="historia"',
+                 'id="maile"', 'id="notatki"', "Dane kontrahenta (edycja)", "Faktury (1)"):
+        assert part in card, part
+    assert "123,00" in card  # zaleglosc
+    # karta innej firmy niedostepna
+    assert client.get(f"/kontrahenci/{other_id}").status_code == 404

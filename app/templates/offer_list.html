@@ -21,7 +21,7 @@
 {% for o in rows %}
 <tr><td style="white-space:nowrap"><a href="/oferty/{{ o.id }}">{{ o.display_number }}</a></td>
 <td style="min-width:180px"><form method="post" action="/oferty/{{ o.id }}/tytul" style="margin:0"><input type="hidden" name="back" value="{{ request.url.path }}{{ '?' ~ request.url.query if request.url.query }}"><input name="title" value="{{ o.title }}" maxlength="300" placeholder="dodaj tytuł…" aria-label="Tytuł oferty {{ o.display_number }}" onchange="this.form.submit()" style="padding:5px 8px;font-size:14px"></form></td>
-<td>{{ o.issue_date|date }}</td><td>{{ o.recipient_name }}</td>
+<td>{{ o.issue_date|date }}</td><td>{{ klink(o.contractor_id, o.recipient_name) }}</td>
 <td class="hide-sm">{{ o.valid_until|date }}{% if o.expired %} <span class="badge warn">minęła</span>{% endif %}</td>
 <td class="n">{{ o.total_net|money }}</td><td class="n">{{ o.total_vat|money }}</td><td class="n">{{ o.total_gross|money }}</td>
 <td><form method="post" action="/oferty/{{ o.id }}/status" style="margin:0"><input type="hidden" name="back" value="{{ request.url.path }}{{ '?' ~ request.url.query if request.url.query }}"><select name="status" class="searchable status-pick {{ o.status_class }}" data-placeholder="szukaj statusu" aria-label="Status oferty {{ o.display_number }}" onchange="this.form.submit()">

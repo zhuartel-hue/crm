@@ -19,7 +19,7 @@
 {% for d in rows %}{% set ps = wz_payment(d) %}
 <tr><td>{% if d.kind == 'wz' and d.status == 'issued' and not d.invoice_id %}<input type="checkbox" name="ids" value="{{ d.id }}" form="wz-inv" aria-label="zaznacz {{ d.number }}">{% endif %}</td>
 <td><a href="/wz/{{ d.id }}">{{ d.display_number }}</a>{% if d.kind == 'pz' %} <span class="badge">PZ</span>{% endif %}{% if d.status == 'draft' %} <span class="badge warn">szkic</span>{% endif %}</td>
-<td>{{ d.issue_date|date }}</td><td>{{ d.recipient_name }}</td><td class="n">{{ d.total_net|money if d.total_gross }}</td><td class="n">{{ d.total_vat|money if d.total_gross }}</td><td class="n">{{ d.total_gross|money if d.total_gross }}</td>
+<td>{{ d.issue_date|date }}</td><td>{{ klink(d.contractor_id, d.recipient_name) }}</td><td class="n">{{ d.total_net|money if d.total_gross }}</td><td class="n">{{ d.total_vat|money if d.total_gross }}</td><td class="n">{{ d.total_gross|money if d.total_gross }}</td>
 <td class="hide-sm">{% if d.invoice %}<a href="/faktury/{{ d.invoice_id }}">{{ d.invoice.display_number }}</a>{% endif %}</td>
 <td style="white-space:nowrap">{% if d.kind == 'wz' %}{% if ps == 'paid' %}<span class="badge ok">zapłacono</span>{% elif ps == 'partial' %}<span class="badge due" title="Do zapłaty {{ d.invoice.to_pay|money }} zł">częściowo</span>{% elif ps == 'unpaid' %}<span class="badge due">nie zapłacono</span>{% elif ps == 'draft' %}<span class="muted" title="Faktura jest jeszcze szkicem">szkic faktury</span>{% else %}<span class="muted" title="Brak faktury do tej WZ">bez faktury</span>{% endif %}{% endif %}</td></tr>
 {% else %}<tr><td colspan="9" class="muted">Brak dokumentów.</td></tr>{% endfor %}

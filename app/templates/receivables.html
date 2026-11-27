@@ -17,7 +17,7 @@
 {% for i in rows %}
 <tr>
 <td><a href="/faktury/{{ i.id }}">{{ i.display_number }}</a><br><span class="muted">{{ i.issue_date|date }}</span></td>
-<td>{{ i.buyer_name }}{% if i.buyer_nip %}<br><span class="muted">NIP {{ i.buyer_nip }}</span>{% endif %}</td>
+<td>{{ klink(i.contractor_id, i.buyer_name) }}{% if i.buyer_nip %}<br><span class="muted">NIP {{ i.buyer_nip }}</span>{% endif %}</td>
 <td style="white-space:nowrap">{{ i.due_date|date if i.due_date else '—' }}
   {% if i.days_overdue %}<br><span class="badge" style="color:#b42318">{{ i.days_overdue }} dni po terminie</span>
   {% elif i.due_date and i.due_date >= today %}<br><span class="muted">za {{ (i.due_date - today).days }} dni</span>{% endif %}</td>

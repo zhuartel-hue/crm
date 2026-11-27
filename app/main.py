@@ -14,7 +14,7 @@ from fastapi import Depends, FastAPI, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import func, or_, select, update
+from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.orm import Session, defer, selectinload
 from starlette.concurrency import run_in_threadpool
 from starlette.middleware.sessions import SessionMiddleware
@@ -110,6 +110,17 @@ templates.env.globals.update(
 templates.env.globals["ksef_cert_info"] = ksef.cert_info
 templates.env.globals["ksef_can_send"] = ksef.can_send
 templates.env.globals["wz_payment"] = wz.payment_state
+
+
+def _klink(contractor_id, name, cls: str = "klink"):
+    """Nazwa kontrahenta jako wyrazny link do jego karty (gdy jest w bazie), inaczej sam tekst."""
+    from markupsafe import Markup, escape
+    if contractor_id:
+        return Markup('<a class="{}" href="/kontrahenci/{}">{}</a>').format(cls, int(contractor_id), name or "kontrahent")
+    return escape(name or "")
+
+
+templates.env.globals["klink"] = _klink
 templates.env.globals["INVOICE_TEMPLATES"] = INVOICE_TEMPLATES
 templates.env.globals["OFFER_PDF_TEMPLATES"] = OFFER_PDF_TEMPLATES
 templates.env.globals["ksef_status_label"] = ksef.status_label
@@ -992,13 +1003,39 @@ def contractor_edit(cid: int, request: Request, db: Session = Depends(get_db)):
     call_rows = db.scalars(select(PhoneCall).where(PhoneCall.contractor_id == cid,
                                                    PhoneCall.company_id == current_company(request, db).id)
                            .order_by(PhoneCall.started_at.desc()).limit(15)).all()
+    company_id = current_company(request, db).id
+    task_rows = db.scalars(select(Task).where(Task.contractor_id == cid, Task.parent_id.is_(None),
+                                              Task.company_id == company_id)
+                           .order_by(Task.status.in_(("done", "cancelled")), Task.due_at.desc()).limit(30)).all()
+    # koszty od tego kontrahenta (powiazane albo po NIP sprzedawcy)
+    pcond = PurchaseInvoice.contractor_id == cid
+    nip = "".join(ch for ch in (c.nip or "") if ch.isdigit())
+    if len(nip) == 10:
+        pcond = or_(pcond, PurchaseInvoice.seller_nip == nip)
+    purchase_rows = db.scalars(select(PurchaseInvoice).where(PurchaseInvoice.company_id == company_id, pcond)
+                               .order_by(PurchaseInvoice.issue_date.desc(), PurchaseInvoice.id.desc()).limit(30)).all()
+    # naleznosci od kontrahenta (wszystkie faktury, nie tylko pokazane)
+    unpaid = db.scalars(select(Invoice).where(Invoice.contractor_id == cid, Invoice.company_id == company_id,
+                                              Invoice.status == "issued", Invoice.kind.in_(payments.PAYABLE_KINDS),
+                                              Invoice.paid < Invoice.total_gross)).all()
+    owed = payments.summary(list(unpaid))
+    sales_total = db.scalar(select(func.coalesce(func.sum(Invoice.total_gross), 0)).where(
+        Invoice.contractor_id == cid, Invoice.company_id == company_id, Invoice.status == "issued",
+        Invoice.kind.in_(payments.PAYABLE_KINDS)))
+    # historia zmian: kontrahent i jego dokumenty
+    refs = {"contractor": [cid], "invoice": [i.id for i in invoices], "wz": [d.id for d in deliveries],
+            "offer": [o.id for o in offer_rows], "order": [z.id for z in order_rows],
+            "recurring": [r.id for r in contracts], "equipment": [e.id for e in equipment],
+            "task": [t.id for t in task_rows], "purchase": [x.id for x in purchase_rows]}
+    conds = [and_(AuditLog.entity == k, AuditLog.entity_id.in_(v)) for k, v in refs.items() if v]
+    history = db.scalars(select(AuditLog).where(or_(AuditLog.company_id == company_id, AuditLog.entity == "contractor"),
+                                                or_(*conds))
+                         .order_by(AuditLog.id.desc()).limit(40)).all()
     return render(request, db, "contractor_form.html", c=c, invoices=invoices, mails=mails, offers=offer_rows,
                   orders=order_rows, calls=call_rows, CALL_DIRECTIONS=CALL_DIRECTIONS,
                   deliveries=deliveries, equipment=equipment, contracts=contracts, today=dt.date.today(),
-                  task_rows=db.scalars(select(Task).where(Task.contractor_id == cid, Task.parent_id.is_(None),
-                                                          Task.company_id == current_company(request, db).id)
-                                       .order_by(Task.status.in_(("done", "cancelled")), Task.due_at.desc())
-                                       .limit(30)).all(), now=dt.datetime.now())
+                  task_rows=task_rows, purchases=purchase_rows, owed=owed, sales_total=sales_total,
+                  history=history, now=dt.datetime.now())
 
 
 def _contractor_mail_stmt(db: Session, c: Contractor, company_id: int, contact: Contact | None = None):

@@ -9,7 +9,7 @@
 {% if t.priority in ('high', 'urgent') %} <span class="badge warn">{{ t.priority_label }}</span>{% endif %}
 {% if t.timer_started_at %} <span class="badge m">trwa</span>{% endif %}
 {% if t.subtasks %} <span class="muted" style="font-size:12px">{{ t.subtasks|selectattr('is_open', 'false')|list|length }}/{{ t.subtasks|length }}</span>{% endif %}
-<br><span class="muted" style="font-size:12px">{% if t.contractor %}{{ t.contractor.name }}{% endif %}{% if t.equipment %} · {{ t.equipment.name }}{% endif %}{% if t.address %} · {{ t.address }}{% endif %}</span></td>
+<br><span class="muted" style="font-size:12px">{% if t.contractor %}{{ klink(t.contractor_id, t.contractor.name) }}{% endif %}{% if t.equipment %} · {{ t.equipment.name }}{% endif %}{% if t.address %} · {{ t.address }}{% endif %}</span></td>
 <td class="n" style="white-space:nowrap">{% if t.due_at %}<span {% if t.overdue(now) %}style="color:var(--danger)"{% endif %}>{{ t.due_at|date }}{% if t.due_at.strftime('%H:%M') != '00:00' %} {{ t.due_at.strftime('%H:%M') }}{% endif %}</span>
 {% elif t.start_at %}{{ t.start_at|date }}{% if t.start_at.strftime('%H:%M') != '00:00' %} {{ t.start_at.strftime('%H:%M') }}{% endif %}{% endif %}</td></tr>
 {% else %}<tr><td colspan="3" class="muted">{{ empty or 'Brak zadań.' }}</td></tr>{% endfor %}

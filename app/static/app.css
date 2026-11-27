@@ -36,7 +36,7 @@ main{width:100%;max-width:none;margin:0;padding:0 16px 24px}
 main{padding-top:10px!important}
 /* typografia */
 h1{font-size:20px;line-height:1.25;margin:2px 0 8px;letter-spacing:-.015em;font-weight:700}
-h2{font-size:16px;margin:24px 0 10px;font-weight:650}
+h2{font-size:16px;margin:14px 0 6px;font-weight:650}
 .muted{color:var(--muted)}
 /* karty i siatki */
 .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:10px;margin-bottom:8px;box-shadow:var(--shadow)}
@@ -174,3 +174,6 @@ a.card.stat{display:block;color:var(--text);text-decoration:none}a.card.stat:hov
 table.cols-fixed td,table.cols-fixed th{overflow:hidden;text-overflow:ellipsis}
 .picker-sm{min-width:150px}.picker-sm input{padding:4px 8px;font-size:13px}
 .picker-sm input.status-pick{width:100%}
+
+.klink{font-weight:600;color:var(--text);text-decoration:underline;text-decoration-color:var(--accent);text-decoration-thickness:1.5px;text-underline-offset:2px}.klink:hover{color:var(--accent)}
+.kcard p.muted{margin:2px 0 6px}.kcard h2{margin:10px 0 4px}.kcard .card{margin-bottom:6px}

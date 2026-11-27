@@ -16,7 +16,7 @@
 {% for c in rows %}
 <tr><td style="white-space:nowrap">{{ c.started_at.strftime('%d.%m.%Y %H:%M') }}</td>
 <td style="white-space:nowrap" title="{{ c.direction_label }}, {{ c.status_label }}">{{ '↙' if c.direction == 'in' else ('↗' if c.direction == 'out' else '↔') }} {% if c.status != 'answered' %}<span class="badge {{ 'due' if c.status == 'missed' and c.direction == 'in' else '' }}">{{ c.status_label }}</span>{% endif %}</td>
-<td>{% if c.contractor %}<a href="/kontrahenci/{{ c.contractor_id }}">{{ c.contractor.name }}</a>{% else %}<span class="muted">—</span>{% endif %}{% if c.task %}<br><a class="muted" style="font-size:12px" href="/zadania/{{ c.task_id }}">{{ c.task.title }}</a>{% endif %}</td>
+<td>{% if c.contractor %}{{ klink(c.contractor_id, c.contractor.name) }}{% else %}<span class="muted">—</span>{% endif %}{% if c.task %}<br><a class="muted" style="font-size:12px" href="/zadania/{{ c.task_id }}">{{ c.task.title }}</a>{% endif %}</td>
 <td class="hide-sm">{% if c.phone %}<a href="tel:{{ c.phone }}">{{ c.phone }}</a>{% endif %}</td>
 <td class="n">{{ c.duration if c.seconds else '' }}</td><td class="hide-sm">{{ c.user_label }}</td>
 <td style="min-width:200px"><form method="post" action="/polaczenia/{{ c.id }}" style="margin:0"><input type="hidden" name="back" value="{{ request.url.path }}{{ '?' ~ request.url.query if request.url.query }}"><input name="note" value="{{ c.note }}" placeholder="dodaj notatkę…" onchange="this.form.submit()" style="padding:5px 8px;font-size:14px" aria-label="Notatka do rozmowy"></form></td></tr>

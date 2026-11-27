@@ -15,7 +15,7 @@
   {% endif %}
 </div>
 <div class="grid">
-  <div class="card"><div class="muted">{{ 'Dostawca' if d.kind == 'pz' else 'Odbiorca' }}</div><b>{{ d.recipient_name }}</b><br><span style="white-space:pre-line">{{ d.recipient_address }}</span></div>
+  <div class="card"><div class="muted">{{ 'Dostawca' if d.kind == 'pz' else 'Odbiorca' }}</div><b>{{ klink(d.contractor_id, d.recipient_name) }}</b><br><span style="white-space:pre-line">{{ d.recipient_address }}</span></div>
   <div class="card">{{ 'Data przyjęcia' if d.kind == 'pz' else 'Data wydania' }} {{ d.issue_date|date }}
     {% if d.invoice %}<br>Faktura: <a href="/faktury/{{ d.invoice_id }}">{{ d.invoice.display_number }}</a>{% endif %}
     {% if d.notes %}<br><span style="white-space:pre-line">{{ d.notes }}</span>{% endif %}</div>

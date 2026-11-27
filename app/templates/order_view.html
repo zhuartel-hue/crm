@@ -16,7 +16,7 @@
   {% else %}<button class="btn" disabled title="Z zamówienia jest faktura albo WZ, więc zostaje w historii. Możesz zmienić jego status.">Usuń</button>{% endif %}
 </div>
 <div class="grid">
-  <div class="card"><div class="muted">{{ 'Klient' if z.direction == 'sale' else 'Dostawca' }}</div><b>{{ z.recipient_name }}</b><br><span style="white-space:pre-line">{{ z.recipient_address }}</span>
+  <div class="card"><div class="muted">{{ 'Klient' if z.direction == 'sale' else 'Dostawca' }}</div><b>{{ klink(z.contractor_id, z.recipient_name) }}</b><br><span style="white-space:pre-line">{{ z.recipient_address }}</span>
     {% if z.contact_person %}<br>{{ z.contact_person }}{% endif %}{% if z.phone %}<br><a href="tel:{{ z.phone }}">{{ z.phone }}</a>{% endif %}{% if z.email %}<br>{{ z.email }}{% endif %}
     {% if z.contractor_id %}<br><a href="/kontrahenci/{{ z.contractor_id }}">Karta kontrahenta</a>{% endif %}</div>
   <div class="card">{% if z.title %}<b>{{ z.title }}</b><br>{% endif %}

@@ -23,7 +23,7 @@
 <tr style="{{ '' if m.seen else 'font-weight:600' }}">
 <td style="white-space:nowrap">{{ m.date.strftime('%d.%m %H:%M') if m.date }}</td>
 <td>{% if m.direction == 'out' %}<span class="muted">do</span> {{ m.to_addrs[:60] }}{% else %}{{ m.from_name or m.from_addr }}{% endif %}
-  {% if m.contractor %}<br><a class="muted" href="/kontrahenci/{{ m.contractor_id }}">{{ m.contractor.name }}</a>{% endif %}</td>
+  {% if m.contractor %}<br>{{ klink(m.contractor_id, m.contractor.name) }}{% endif %}</td>
 <td><a href="/poczta/{{ m.id }}">{{ m.subject or '(bez tematu)' }}</a>{% if m.attachments %} 📎{% endif %}
   {% if m.invoice %} <span class="badge">{{ m.invoice.number }}</span>{% endif %}
   <br><span class="muted">{{ m.snippet }}</span></td>
