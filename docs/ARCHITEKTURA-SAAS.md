@@ -293,9 +293,18 @@ polityka prywatności i umowa powierzenia (do sprawdzenia przez prawnika).
 
 Wszystko, co przechodzimy przy budowie i używaniu Sygnavo, zapisujemy w `docs/wiedza/` (strony modułów i FAQ).
 Z tego powstanie centrum pomocy z forum, treści na bloga i social media oraz asystent AI w programie,
-który odpowiada klientom na podstawie tej wiedzy (wyszukiwanie w bazie wiedzy, odpowiedzi tylko z niej,
-bez dostępu asystenta do danych innych organizacji). Asystent korzysta z istniejącego serwera MCP (`/mcp`)
-tylko w zakresie organizacji zalogowanego użytkownika.
+który odpowiada klientom na podstawie tej wiedzy (odpowiedzi tylko z niej, bez dostępu asystenta do danych
+innych organizacji).
+
+Stan od 27.11.2026 (`app/assistant.py`, okienko „Pomoc”, funkcja `asystent_ai` w fazie beta):
+- cała baza wiedzy dla klientów (bez stron z `Dla klientów: nie`) idzie w stałym prefiksie zapytania do Claude
+  z pamięcią podręczną, więc kolejne pytania kosztują ułamek ceny; model w `AI_MODEL`, limit `AI_DAILY_LIMIT`
+  pytań dziennie na organizację, koszt każdego pytania zapisany w `assistant_messages` (90 dni);
+- zrzuty ekranu z ramkami robi `tools/zrzuty_pomocy.py` na danych testowych; ta sama funkcja podświetla przyciski
+  na żywo („Pokaż na ekranie”);
+- asystent dostaje tylko ogólny stan ustawień firmy (bez nazw, NIP, kontrahentów, dokumentów) i niczego nie zmienia;
+  akcje w imieniu klienta (przez `/mcp`) dopiero po osobnej decyzji właściciela i zawsze z potwierdzeniem klienta;
+- później ten sam asystent na stronie sygnavo.com, bez kontekstu firmy.
 
 ## 11. Kolejność prac
 

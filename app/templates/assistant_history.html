@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Pomoc: historia pytań{% endblock %}
+{% block content %}
+<h1>Asystent AI: pytania zespołu</h1>
+<p class="muted">W tym miesiącu: {{ month_count }} pytań, koszt ok. {{ '%.2f'|format(month_cost * 4) }} zł
+({{ '%.4f'|format(month_cost) }} USD). Model: {{ cfg.model }}. Limit: {{ cfg.daily_limit }} pytań dziennie na organizację.
+{% if not cfg.api_key %}<b>Asystent nie jest podłączony (brak klucza API).</b>{% endif %}
+{% if not enabled %}<b>Okienko Pomoc jest wyłączone dla tej organizacji.</b>{% endif %}</p>
+<p class="muted">Pytania z oceną „Nie” to tematy do dopisania w instrukcjach. Pytania przechowujemy 90 dni.</p>
+<div class="card">
+<table class="tbl">
+<thead><tr><th>Kiedy</th><th>Strona</th><th>Pytanie</th><th>Odpowiedź</th><th>Ocena</th><th class="num">Koszt</th></tr></thead>
+<tbody>
+{% for r in rows %}
+<tr>
+  <td class="muted" style="white-space:nowrap">{{ r.created_at.strftime('%Y-%m-%d %H:%M') if r.created_at }}</td>
+  <td class="muted">{{ r.page }}</td>
+  <td>{{ r.question }}</td>
+  <td><details><summary class="muted">pokaż</summary><div style="white-space:pre-wrap;max-width:520px">{{ r.answer }}</div></details></td>
+  <td>{{ 'pomogło' if r.rating == 1 else 'nie pomogło' if r.rating == -1 else '–' }}</td>
+  <td class="num muted">{{ '%.2f'|format(r.cost_usd * 4 * 100) }} gr</td>
+</tr>
+{% else %}
+<tr><td colspan="6" class="muted">Jeszcze nikt nie pytał asystenta.</td></tr>
+{% endfor %}
+</tbody></table>
+</div>
+{% endblock %}

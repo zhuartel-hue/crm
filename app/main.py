@@ -22,7 +22,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from . import dashboard as dash
 from . import offer_statuses as ost
 from . import calls, orders, reports
-from . import features, jobs, tenancy
+from . import assistant, features, jobs, tenancy
 from . import users as users_mod
 from . import sms as sms_mod
 from . import api, auth, calc, config, firmao_import, mail_templates, mcp_server, migrate, nip_lookup, numbering, offers, password, payments, pdf, recurring, secretbox, wz
@@ -198,6 +198,7 @@ def _check_session(request: Request) -> list[int] | None:
 app.include_router(auth.router)
 app.include_router(users_mod.router)
 app.include_router(mcp_server.router)
+app.include_router(assistant.router)
 api.install(app)
 
 # SessionMiddleware musi byc dodany po require_login, zeby dzialal przed nim.

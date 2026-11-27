@@ -19,6 +19,8 @@ organizacji nie widzi jej danych.
 3. Wpisz hasło startowe (co najmniej 10 znaków) i przekaż je tej osobie.
 4. Przy pierwszym logowaniu program poprosi ją o ustawienie własnego hasła.
 
+![Dodawanie użytkownika](../zrzuty/uzytkownik-nowy.png)
+
 ## Najczęstsze pytania
 - **Ktoś odszedł z firmy.** Ustaw „Aktywny: nie” i zapisz. Dostęp znika od razu, także na
   otwartym telefonie czy komputerze. Historia jego pracy zostaje w dzienniku zmian.

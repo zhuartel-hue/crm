@@ -1,0 +1,277 @@
+{
+ "generated": "2026-11-27",
+ "commit": "e316e12",
+ "screens": [
+  {
+   "id": "pomoc-okienko",
+   "title": "Przycisk Pomoc",
+   "page": "/",
+   "steps": [
+    {
+     "css": ".pz-btn",
+     "label": "przycisk Pomoc (znak zapytania) w prawym dolnym rogu"
+    }
+   ],
+   "image": "pomoc-okienko.png"
+  },
+  {
+   "id": "firma-przelacznik",
+   "title": "Przełącznik firm",
+   "page": "/",
+   "steps": [
+    {
+     "css": ".switch button",
+     "label": "przełącznik firm u góry menu"
+    }
+   ],
+   "image": "firma-przelacznik.png"
+  },
+  {
+   "id": "faktura-nowa",
+   "title": "Lista faktur: nowa faktura",
+   "page": "/faktury",
+   "steps": [
+    {
+     "css": "a.btn",
+     "text": "+ Faktura",
+     "label": "przycisk + Faktura"
+    }
+   ],
+   "image": "faktura-nowa.png"
+  },
+  {
+   "id": "faktura-formularz",
+   "title": "Formularz faktury",
+   "page": "/faktury/nowa",
+   "steps": [
+    {
+     "css": "#buyer_nip",
+     "label": "pole NIP nabywcy"
+    },
+    {
+     "css": "button",
+     "text": "Pobierz po NIP",
+     "label": "Pobierz po NIP (dane z białej listy VAT)"
+    },
+    {
+     "css": "#add",
+     "label": "+ Pozycja (kolejny towar lub usługa)"
+    },
+    {
+     "css": "button[value=issue]",
+     "label": "Wystaw fakturę (nadaje numer)"
+    }
+   ],
+   "image": "faktura-formularz.png"
+  },
+  {
+   "id": "ustawienia-dane-firmy",
+   "title": "Ustawienia: dane firmy na fakturze",
+   "page": "/ustawienia",
+   "steps": [
+    {
+     "css": "input[name=nip]",
+     "label": "NIP firmy"
+    },
+    {
+     "css": "input[name=bank_account]",
+     "label": "numer konta na fakturze"
+    }
+   ],
+   "image": "ustawienia-dane-firmy.png"
+  },
+  {
+   "id": "ustawienia-logo",
+   "title": "Ustawienia: logo i wygląd faktury",
+   "page": "/ustawienia",
+   "steps": [
+    {
+     "css": "input[name=logo]",
+     "label": "Wybierz plik z logo (PNG lub JPG)"
+    },
+    {
+     "css": "button",
+     "text": "Zapisz wygląd",
+     "label": "Zapisz wygląd"
+    }
+   ],
+   "image": "ustawienia-logo.png"
+  },
+  {
+   "id": "ustawienia-ksef",
+   "title": "Ustawienia: KSeF",
+   "page": "/ustawienia",
+   "steps": [
+    {
+     "css": "select[name=ksef_env]",
+     "label": "Środowisko KSeF (testowe albo produkcyjne)"
+    },
+    {
+     "css": "select[name=ksef_auth]",
+     "label": "Logowanie: certyfikat albo token"
+    },
+    {
+     "css": "button",
+     "text": "Zapisz KSeF",
+     "label": "Zapisz KSeF"
+    }
+   ],
+   "image": "ustawienia-ksef.png"
+  },
+  {
+   "id": "ustawienia-poczta",
+   "title": "Ustawienia: przejście do skrzynek pocztowych",
+   "page": "/ustawienia",
+   "steps": [
+    {
+     "css": "a.btn",
+     "text": "Skrzynki pocztowe",
+     "label": "Skrzynki pocztowe"
+    }
+   ],
+   "image": "ustawienia-poczta.png"
+  },
+  {
+   "id": "poczta-skrzynka",
+   "title": "Nowa skrzynka pocztowa",
+   "page": "/ustawienia/poczta",
+   "steps": [
+    {
+     "css": "input[name=email]",
+     "label": "adres e-mail skrzynki"
+    },
+    {
+     "css": "input[name=imap_host]",
+     "label": "serwer IMAP (od dostawcy poczty)"
+    },
+    {
+     "css": "button",
+     "text": "Zapisz skrzynkę",
+     "label": "Zapisz skrzynkę"
+    }
+   ],
+   "image": "poczta-skrzynka.png"
+  },
+  {
+   "id": "uzytkownik-nowy",
+   "title": "Dodawanie użytkownika",
+   "page": "/ustawienia/uzytkownicy",
+   "steps": [
+    {
+     "css": "input[name=email][type=email]",
+     "label": "e-mail nowej osoby (to jej login)"
+    },
+    {
+     "css": "form:has(input[type=email]) select[name=role]",
+     "label": "rola (co widzi w programie)"
+    },
+    {
+     "css": "button",
+     "text": "Dodaj",
+     "label": "Dodaj"
+    }
+   ],
+   "image": "uzytkownik-nowy.png"
+  },
+  {
+   "id": "kontrahent-nowy",
+   "title": "Kontrahenci: nowy kontrahent",
+   "page": "/kontrahenci",
+   "steps": [
+    {
+     "css": "a.btn",
+     "text": "+ Kontrahent",
+     "label": "przycisk + Kontrahent"
+    }
+   ],
+   "image": "kontrahent-nowy.png"
+  },
+  {
+   "id": "produkt-nowy",
+   "title": "Produkty: nowy produkt",
+   "page": "/produkty",
+   "steps": [
+    {
+     "css": "a.btn",
+     "text": "+ Produkt",
+     "label": "przycisk + Produkt"
+    }
+   ],
+   "image": "produkt-nowy.png"
+  },
+  {
+   "id": "oferta-nowa",
+   "title": "Oferty: nowa oferta",
+   "page": "/oferty",
+   "steps": [
+    {
+     "css": "a.btn",
+     "text": "+ Oferta",
+     "label": "przycisk + Oferta"
+    }
+   ],
+   "image": "oferta-nowa.png"
+  },
+  {
+   "id": "wz-faktura",
+   "title": "Magazyn: faktura z kilku WZ",
+   "page": "/wz",
+   "steps": [
+    {
+     "css": "select[name=rodzaj]",
+     "label": "filtr: wybierz WZ bez faktury"
+    },
+    {
+     "css": "button",
+     "text": "Faktura z zaznaczonych WZ",
+     "label": "Faktura z zaznaczonych WZ"
+    }
+   ],
+   "image": "wz-faktura.png"
+  },
+  {
+   "id": "koszty-dodaj",
+   "title": "Koszty: faktura kosztowa spoza KSeF",
+   "page": "/koszty",
+   "steps": [
+    {
+     "css": "a.btn",
+     "text": "Dodaj koszt",
+     "label": "Dodaj koszt"
+    }
+   ],
+   "image": "koszty-dodaj.png"
+  },
+  {
+   "id": "raport-sprzedazy",
+   "title": "Raport sprzedaży dla księgowej",
+   "page": "/raporty/sprzedaz",
+   "steps": [
+    {
+     "css": "a.btn",
+     "text": "Poprzedni miesiąc",
+     "label": "Poprzedni miesiąc"
+    },
+    {
+     "css": "a.btn",
+     "text": "PDF",
+     "label": "PDF (albo Drukuj / Excel obok)"
+    }
+   ],
+   "image": "raport-sprzedazy.png"
+  },
+  {
+   "id": "bank-polaczenie",
+   "title": "Bank: podłączenie konta",
+   "page": "/bank",
+   "steps": [
+    {
+     "css": "a.btn",
+     "text": "bank",
+     "label": "Połącz z bankiem"
+    }
+   ],
+   "image": "bank-polaczenie.png"
+  }
+ ]
+}

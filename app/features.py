@@ -29,6 +29,7 @@ class Feature:
 FEATURES: dict[str, Feature] = {
     # Przyklad i test mechanizmu; prawdziwe funkcje dopisujemy tu przy ich budowie.
     "dwuetapowe_wymuszone": Feature("Wymuszona weryfikacja dwuetapowa dla właściciela i księgowości", "beta"),
+    "asystent_ai": Feature("Asystent AI (okienko Pomoc ze zrzutami ekranu)", "beta"),
 }
 
 

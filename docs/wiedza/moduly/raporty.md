@@ -15,6 +15,8 @@ Do wydruku, PDF albo Excela, np. dla księgowej. Menu **Organizacja → Raporty*
    - **PDF**: plik PDF z numerami stron, gotowy do wysłania.
    - **Excel (CSV)**: plik, który otwiera się w Excelu (polskie znaki i przecinki w kwotach działają).
 
+![Raport sprzedaży](../zrzuty/raport-sprzedazy.png)
+
 ## Co jest w raporcie sprzedaży
 - Podsumowanie: liczba faktur, netto, VAT, brutto, ile zapłacono i ile zostało do zapłaty.
 - Zestawienie **wg stawek VAT** (23%, 8%, 5%, 0%, zw).

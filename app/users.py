@@ -35,7 +35,7 @@ ROLE_HINTS = {
 }
 
 # Sciezki zawsze dostepne po zalogowaniu.
-_COMMON = ("/konto", "/logout", "/firma/", "/static", "/zdjecia", "/sw.js")
+_COMMON = ("/konto", "/logout", "/firma/", "/static", "/zdjecia", "/sw.js", "/pomoc/")
 # Czego rola NIE moze (prefiksy sciezek). Wlasciciel moze wszystko.
 _DENY = {
     "ksiegowosc": ("/ustawienia/uzytkownicy", "/dostep", "/import"),

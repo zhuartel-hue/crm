@@ -1,5 +1,6 @@
 # Czy program wytrzyma, gdy zarejestruje się kilkaset firm?
 Moduł: serwer · Aktualizacja: 2026-11-27
+Dla klientów: nie
 
 Tak. Program do faktur generuje mały ruch: cała baza dwóch firm z kilkoma tysiącami faktur i zdjęciami
 zajmuje kilkadziesiąt MB. Serwer powiększamy stopniowo (więcej procesora, pamięci i dysku) w kilka minut,

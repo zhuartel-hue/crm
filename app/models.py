@@ -1540,3 +1540,26 @@ class User(Base):
     locked_until: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
     last_login_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class AssistantMessage(Base):
+    """Pytanie do asystenta AI (okienko Pomoc) i odpowiedz: do oceny jakosci, uzupelniania bazy wiedzy i kosztow."""
+
+    __tablename__ = "assistant_messages"
+    __table_args__ = (Index("ix_assistant_messages_org_created", "organisation_id", "created_at"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    organisation_id: Mapped[int] = mapped_column(ForeignKey("organisations.id"))
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    page: Mapped[str] = mapped_column(String(200), default="")
+    question: Mapped[str] = mapped_column(Text, default="")
+    answer: Mapped[str] = mapped_column(Text, default="")
+    model: Mapped[str] = mapped_column(String(60), default="")
+    input_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    output_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    cache_read_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    cache_write_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    cost_usd: Mapped[Decimal] = mapped_column(Numeric(10, 6), default=Decimal("0"))
+    rating: Mapped[int] = mapped_column(Integer, default=0)  # 1 pomoglo, -1 nie pomoglo, 0 bez oceny
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())

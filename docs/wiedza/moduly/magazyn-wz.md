@@ -30,3 +30,5 @@ Zasady:
 - WZ, która ma już fakturę, nie ma pola do zaznaczenia.
 - Na fakturze jest sama nazwa pozycji. Kod produktu zostaje wewnątrz Sygnavo.
 - Po utworzeniu szkicu każda WZ pokazuje link do faktury. Gdy usuniesz szkic faktury, WZ znów są „bez faktury”.
+
+![Faktura z kilku WZ](../zrzuty/wz-faktura.png)

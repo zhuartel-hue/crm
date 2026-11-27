@@ -32,6 +32,8 @@ Przycisk **Dodaj koszt**: wpisz numer, NIP (przycisk **Pobierz** uzupełnia nazw
 (brutto liczy się samo z netto i VAT), dodaj skan. Koszt trafia do **Do weryfikacji**. W kolumnie KSeF ma czerwony
 krzyżyk z podpowiedzią „Dodana ręcznie, spoza KSeF”.
 
+![Dodaj koszt](../zrzuty/koszty-dodaj.png)
+
 ## KSeF
 Gdy KSeF jest włączony (certyfikat albo token w Ustawieniach), faktury kosztowe pobierają się same co kilka godzin
 albo przyciskiem **Pobierz z KSeF**. Dopóki KSeF jest wyłączony, dodawaj koszty ręcznie ze skanem.

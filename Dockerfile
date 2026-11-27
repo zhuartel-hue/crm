@@ -11,6 +11,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY alembic.ini ./
 COPY migrations ./migrations
 COPY app ./app
+# Baza wiedzy i zrzuty ekranu dla asystenta AI (okienko Pomoc).
+COPY docs/wiedza ./docs/wiedza
 
 RUN useradd --system --uid 10001 crm
 USER crm

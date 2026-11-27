@@ -203,3 +203,35 @@ table.cols-fixed td,table.cols-fixed th{overflow:hidden;text-overflow:ellipsis}
   a{color:inherit}
   table{font-size:10.5px}tr{break-inside:avoid}
 }
+/* okienko Pomoc (asystent AI, app/static/pomoc.js) */
+.pz{position:fixed;right:16px;bottom:16px;z-index:40}
+.pz-btn{width:40px;height:40px;border-radius:50%;border:0;background:var(--accent);color:#fff;font:700 19px/1 inherit;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.2)}
+.pz.open .pz-btn{display:none}
+.pz-panel{display:none;position:absolute;right:0;bottom:0;width:min(400px,calc(100vw - 24px));height:min(600px,calc(100vh - 32px));background:var(--card);border:1px solid var(--line);border-radius:6px;box-shadow:0 8px 28px rgba(0,0,0,.18);flex-direction:column;overflow:hidden}
+.pz.open .pz-panel{display:flex}
+.pz-panel header{display:flex;align-items:center;gap:6px;padding:7px 10px;border-bottom:1px solid var(--line);font-size:14px}
+.pz-panel header .spacer{flex:1}
+.pz-panel header button{border:0;background:none;color:var(--muted);cursor:pointer;font:inherit;font-size:13px;padding:2px 6px;border-radius:4px}
+.pz-panel header button:hover{background:var(--line2)}.pz-close{font-size:18px!important;line-height:1}
+.pz-log{flex:1;overflow-y:auto;padding:10px;display:flex;flex-direction:column;gap:8px;font-size:14px}
+.pz-m{max-width:94%;padding:6px 9px;border-radius:6px;line-height:1.45;overflow-wrap:anywhere}
+.pz-m p{margin:0 0 6px}.pz-m p:last-child{margin-bottom:0}.pz-m ol,.pz-m ul{margin:4px 0 6px;padding-left:20px}.pz-m li{margin:2px 0}
+.pz-m h4{margin:6px 0 2px;font-size:14px}
+.pz-u{align-self:flex-end;background:var(--accent);color:#fff;white-space:pre-wrap}
+.pz-a{align-self:flex-start;background:var(--line2)}
+.pz-wait{color:var(--muted);font-style:italic}
+.pz-fig{margin:6px 0;background:var(--card);border:1px solid var(--line);border-radius:4px;overflow:hidden}
+.pz-fig img{display:block;width:100%;height:auto;cursor:zoom-in}
+.pz-fig figcaption{display:flex;align-items:center;gap:6px;padding:4px 6px;font-size:12px;color:var(--muted)}
+.pz-fig figcaption span{flex:1}
+.pz-show{border:1px solid var(--accent);background:none;color:var(--accent);border-radius:4px;font:inherit;font-size:12px;padding:2px 6px;cursor:pointer;white-space:nowrap}
+.pz-rate{display:flex;gap:6px;align-items:center;margin-top:4px;font-size:12px;color:var(--muted)}
+.pz-rate button{border:1px solid var(--line);background:var(--card);color:var(--text);border-radius:4px;font:inherit;font-size:12px;padding:0 6px;cursor:pointer}
+.pz-panel form{display:flex;gap:6px;padding:8px;border-top:1px solid var(--line);align-items:flex-end}
+.pz-panel textarea{flex:1;resize:none;font:inherit;font-size:14px;border:1px solid var(--line);border-radius:4px;padding:5px 7px;background:var(--card);color:var(--text)}
+.pz-panel form.busy .btn{opacity:.5}
+.pz-panel footer{font-size:11px;color:var(--muted);padding:0 10px 6px}
+.pz-hl{position:absolute;z-index:39;border:3px solid #e11d48;border-radius:5px;pointer-events:none;box-shadow:0 0 0 3px rgba(225,29,72,.18)}
+.pz-hl span{position:absolute;left:-13px;top:-13px;width:22px;height:22px;border-radius:50%;background:#e11d48;color:#fff;font:700 12px/22px ui-sans-serif,system-ui,sans-serif;text-align:center}
+@media (max-width:900px){.pz{bottom:calc(70px + env(safe-area-inset-bottom));right:10px}.pz-panel{position:fixed;right:6px;left:6px;width:auto;bottom:calc(66px + env(safe-area-inset-bottom));height:calc(100vh - 140px)}}
+.pz-hist{font-size:13px;color:var(--muted);padding:2px 6px}
