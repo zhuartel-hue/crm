@@ -12,7 +12,7 @@
   <div class="card stat"><div class="l">Sprzedaż razem (brutto)</div><div class="v">{{ sales_total|money }} zł</div></div>
 </div>
 <div class="row" style="gap:4px;margin-bottom:8px">
-  {% for anchor, label, n in [('os', 'Oś czasu', 0), ('notatki', 'Notatki', c.note_rows|length), ('faktury', 'Faktury', invoices|length), ('wz', 'WZ/PZ', deliveries|length), ('oferty', 'Oferty', offers|length), ('zamowienia', 'Zamówienia', orders|length), ('umowy', 'Umowy', contracts|length), ('zadania', 'Zadania', task_rows|length), ('sprzet', 'Sprzęt', equipment|length), ('koszty', 'Koszty', purchases|length), ('rozmowy', 'Rozmowy', calls|length), ('maile', 'Maile', mail_count), ('sms', 'SMS', sms_rows|length), ('osoby', 'Osoby', c.contacts|length), ('historia', 'Historia', history|length)] %}
+  {% for anchor, label, n in [('os', 'Oś czasu', 0), ('notatki', 'Notatki', c.note_rows|length), ('faktury', 'Faktury', invoices|length), ('wz', 'WZ/PZ', deliveries|length), ('oferty', 'Oferty', offers|length), ('zamowienia', 'Zamówienia', orders|length), ('umowy', 'Umowy', contracts|length), ('zadania', 'Zadania', task_rows|length), ('sprzet', 'Sprzęt', equipment|length), ('koszty', 'Koszty', purchases|length), ('rozmowy', 'Rozmowy', calls|length), ('maile', 'Maile', mail_count), ('sms', 'SMS', sms_rows|length), ('pliki', 'Pliki', files|length + contract_files|length + mail_files|length), ('osoby', 'Osoby', c.contacts|length), ('historia', 'Historia', history|length)] %}
   <a class="btn small" href="#{{ anchor }}">{{ label }}{% if n %} ({{ n }}{{ '+' if anchor == 'faktury' and n >= 100 }}){% endif %}</a>{% endfor %}
   <a class="btn small" href="#dane">Dane</a>
 </div>
@@ -141,6 +141,24 @@
 <td class="hide-sm">{% if p.email %}<a href="/poczta/nowa?kontakt={{ p.id }}">{{ p.email }}</a>{% endif %}</td>
 <td style="white-space:nowrap">{% if p.email %}<a class="btn small" href="/kontrahenci/{{ c.id }}/maile?osoba={{ p.id }}">Maile</a>{% endif %}</td></tr>{% endfor %}</table></div>
 {% else %}<p class="muted">Brak osób kontaktowych.</p>{% endif %}
+<div class="row"><h2 id="pliki">Pliki</h2></div>
+<form method="post" action="/kontrahenci/{{ c.id }}/pliki" enctype="multipart/form-data" class="card row">
+  <input type="file" name="files" multiple required style="max-width:340px" aria-label="Pliki">
+  <input name="title" placeholder="Opis (opcjonalnie)" style="max-width:260px" aria-label="Opis"><button class="btn small primary">Dodaj pliki</button>
+</form>
+{% if files or contract_files or mail_files %}<div class="card tbl"><table>
+{% for f in files %}<tr><td style="white-space:nowrap">{{ f.created_at.strftime('%d.%m.%Y') if f.created_at }}</td><td><span class="badge">plik</span></td>
+<td><a href="/kontrahenci/{{ c.id }}/pliki/{{ f.id }}" target="_blank" rel="noopener">{{ f.title or f.filename }}</a>{% if f.title and f.title != f.filename %} <span class="muted">{{ f.filename }}</span>{% endif %}</td>
+<td class="n muted">{{ (f.size / 1024)|round|int }} kB</td>
+<td style="white-space:nowrap"><a class="btn small" href="/kontrahenci/{{ c.id }}/pliki/{{ f.id }}?pobierz=1">Pobierz</a>
+<form method="post" action="/kontrahenci/{{ c.id }}/pliki/{{ f.id }}/usun" style="display:inline;margin:0" onsubmit="return confirm('Usunąć plik?')"><button class="btn small">Usuń</button></form></td></tr>{% endfor %}
+{% for f in contract_files %}<tr><td style="white-space:nowrap">{{ f.created_at.strftime('%d.%m.%Y') if f.created_at }}</td><td><span class="badge">umowa</span></td>
+<td><a href="/umowy/{{ f.recurring_id }}/pliki/{{ f.id }}" target="_blank" rel="noopener">{{ f.title or f.filename }}</a> <span class="muted">{{ f.kind_label }}</span></td>
+<td class="n muted">{{ (f.size / 1024)|round|int }} kB</td><td><a class="btn small" href="/umowy/{{ f.recurring_id }}/pliki/{{ f.id }}?pobierz=1">Pobierz</a></td></tr>{% endfor %}
+{% for m, a in mail_files %}<tr><td style="white-space:nowrap">{{ m.date.strftime('%d.%m.%Y') if m.date }}</td><td><span class="badge">e-mail</span></td>
+<td>{% if a.size and a.size < 25*1024*1024 %}<a href="/poczta/zalacznik/{{ a.id }}">{{ a.filename or 'załącznik' }}</a>{% else %}{{ a.filename }}{% endif %} <a class="muted" href="/poczta/{{ m.id }}">{{ (m.subject or '(bez tematu)')[:60] }}</a></td>
+<td class="n muted">{{ (a.size / 1024)|round|int }} kB</td><td></td></tr>{% endfor %}
+</table></div>{% else %}<p class="muted">Brak plików. Dodaj skan, zdjęcie albo dokument; tu pojawią się też załączniki z maili i skany umów.</p>{% endif %}
 <div class="row"><h2 id="historia">Historia zmian</h2></div>
 {% if history %}<div class="card tbl"><table>{% for h in history %}<tr><td style="white-space:nowrap">{{ h.at.strftime('%d.%m.%Y %H:%M') if h.at }}</td><td class="hide-sm muted">{{ h.actor }}</td><td>{{ h.summary }}</td></tr>{% endfor %}</table></div>
 {% else %}<p class="muted">Brak wpisów.</p>{% endif %}

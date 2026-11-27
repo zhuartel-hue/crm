@@ -40,3 +40,8 @@ zamówienia, zadania, koszty i zmiany z dziennika. Kliknięcie wpisu otwiera dok
 Sekcja **SMS**: numer (podpowiedzi z telefonów kontrahenta i osób), treść do 640 znaków, **Wyślij SMS**. Każdy SMS
 trafia do historii kontrahenta i na oś czasu. Dopóki bramka SMS (np. SMSAPI) nie jest podłączona, SMS ma status
 „czeka na bramkę SMS” i nie wychodzi do odbiorcy. Po podłączeniu bramki oczekujące SMS-y zostaną wysłane.
+
+## Pliki
+Sekcja **Pliki**: dodajesz skany, zdjęcia i dokumenty (kilka naraz, do 25 MB każdy, z opcjonalnym opisem). W tej samej
+liście widać też skany umów tego kontrahenta i załączniki z jego maili. PDF i zdjęcia otwierają się w przeglądarce,
+resztę pobierasz. Pliki są w bazie, więc wchodzą do kopii zapasowej.

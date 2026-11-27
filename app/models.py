@@ -584,6 +584,23 @@ class ContractFile(Base):
         return CONTRACT_FILE_KINDS.get(self.kind, self.kind)
 
 
+class ContractorFile(Base):
+    """Plik dodany recznie na karcie kontrahenta (skan, zdjecie, dokument). Plik w bazie, wiec jest w kopii."""
+
+    __tablename__ = "contractor_files"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    contractor_id: Mapped[int] = mapped_column(ForeignKey("contractors.id", ondelete="CASCADE"), index=True)
+    title: Mapped[str] = mapped_column(String(200), default="")
+    filename: Mapped[str] = mapped_column(String(200), default="")
+    content_type: Mapped[str] = mapped_column(String(100), default="application/octet-stream")
+    size: Mapped[int] = mapped_column(Integer, default=0)
+    data: Mapped[bytes] = mapped_column(LargeBinary)
+    added_by: Mapped[str] = mapped_column(String(60), default="")
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
+
+
 class AppSetting(Base):
     """Ustawienia programu zmieniane w aplikacji (np. skrot hasla administratora)."""
 

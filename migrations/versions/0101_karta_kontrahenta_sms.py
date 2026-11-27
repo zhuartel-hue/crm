@@ -1,4 +1,4 @@
-"""Karta kontrahenta jak w Firmao: typ, REGON, KRS, konto, adres korespondencyjny, nastepny kontakt; SMS-y.
+"""Karta kontrahenta jak w Firmao: typ, REGON, KRS, konto, adres korespondencyjny, nastepny kontakt; SMS-y; pliki kontrahenta.
 
 Tylko dodawanie kolumn i tabeli (migracja odwracalna).
 
@@ -46,7 +46,24 @@ def upgrade() -> None:
     )
 
 
+    op.create_table(
+        "contractor_files",
+        sa.Column("id", sa.Integer(), primary_key=True),
+        sa.Column("company_id", sa.Integer(), sa.ForeignKey("companies.id"), nullable=False, index=True),
+        sa.Column("contractor_id", sa.Integer(), sa.ForeignKey("contractors.id", ondelete="CASCADE"), nullable=False,
+                  index=True),
+        sa.Column("title", sa.String(200), nullable=False, server_default=""),
+        sa.Column("filename", sa.String(200), nullable=False, server_default=""),
+        sa.Column("content_type", sa.String(100), nullable=False, server_default="application/octet-stream"),
+        sa.Column("size", sa.Integer(), nullable=False, server_default="0"),
+        sa.Column("data", sa.LargeBinary(), nullable=False),
+        sa.Column("added_by", sa.String(60), nullable=False, server_default=""),
+        sa.Column("created_at", sa.DateTime(), server_default=sa.func.now(), nullable=False),
+    )
+
+
 def downgrade() -> None:
+    op.drop_table("contractor_files")
     op.drop_table("sms_messages")
     with op.batch_alter_table("contractors") as b:
         b.drop_column("next_contact")
