@@ -58,3 +58,11 @@ def test_system_status_tool(client, tmp_path, monkeypatch):
     st = res["structuredContent"]
     assert st["production"]["wersja"] == "abc1234" and st["test_panel"] is None
     assert st["deploy_log"][-1].endswith("abc1234 dziala")
+
+
+def test_integrations_blocked(test_panel):
+    from app.integrations import http
+    from app.integrations.common import IntegrationError
+
+    with pytest.raises(IntegrationError, match="Panel testowy"):
+        http.request("GET", "https://example.com")

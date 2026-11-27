@@ -65,6 +65,12 @@ UPDATE companies SET ksef_token_enc = '', ksef_key_enc = '';
 UPDATE users SET totp_secret_enc = '';
 DELETE FROM api_tokens;
 DELETE FROM oauth_codes;
+-- Integracje (sklepy, Allegro, kurierzy): bez kluczy i wylaczone.
+DO $$ BEGIN
+  IF to_regclass('public.integrations') IS NOT NULL THEN
+    UPDATE integrations SET secret = '', state = 'off';
+  END IF;
+END $$;
 SQL
 
 log "Uruchamiam panel testowy"
