@@ -85,7 +85,7 @@
     if (!state.msgs.length) {
       const d = document.createElement('div');
       d.className = 'pz-m pz-a';
-      d.innerHTML = '<p>Cześć! Zapytaj, jak coś zrobić w Sygnavo, np. <i>jak wystawić fakturę</i> albo <i>jak dodać logo</i>. Pokażę, gdzie kliknąć.</p>';
+      d.innerHTML = '<p>Cześć! Zapytaj, jak coś zrobić w Sygnavo, np. <i>jak wystawić fakturę</i> albo <i>jak dodać logo</i>. Pokażę, gdzie kliknąć.</p><p><a href="/pomoc/artykuly">Wszystkie instrukcje</a></p>';
       log.appendChild(d);
     }
     state.msgs.forEach(bubble);
@@ -102,13 +102,15 @@
   root.querySelector('.pz-close').addEventListener('click', () => setOpen(false));
   root.querySelector('.pz-new').addEventListener('click', () => { state.msgs = []; state.screens = {}; save(); renderAll(); });
 
-  log.addEventListener('click', (e) => {
+  let pageScreens = {};
+  try { pageScreens = JSON.parse((document.getElementById('pz-screens') || {}).textContent || '{}'); } catch (e) { /* brak */ }
+  // Zrzuty w okienku i na stronie instrukcji: powiekszenie i „Pokaz na ekranie”.
+  document.addEventListener('click', (e) => {
     const img = e.target.closest('.pz-fig img');
     if (img) { window.open(img.src, '_blank'); return; }
     const b = e.target.closest('.pz-show'); if (!b) return;
-    const s = state.screens[b.dataset.zrzut]; if (!s) return;
-    const here = location.pathname;
-    if (s.page && s.page !== here) {
+    const s = state.screens[b.dataset.zrzut] || pageScreens[b.dataset.zrzut]; if (!s) return;
+    if (s.page && s.page !== location.pathname) {
       sessionStorage.setItem('syg-pomoc-show', JSON.stringify(s));
       location.href = s.page;
       return;

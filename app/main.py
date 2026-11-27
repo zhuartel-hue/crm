@@ -131,6 +131,7 @@ templates.env.globals["klink"] = _klink
 templates.env.globals["INVOICE_TEMPLATES"] = INVOICE_TEMPLATES
 templates.env.globals["OFFER_PDF_TEMPLATES"] = OFFER_PDF_TEMPLATES
 templates.env.globals["ksef_status_label"] = ksef.status_label
+templates.env.globals["pomoc_ai"] = assistant.ai_enabled
 
 
 @asynccontextmanager

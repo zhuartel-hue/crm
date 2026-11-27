@@ -6,7 +6,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <title>{% block title %}Sygnavo{% endblock %} · {{ company.short_name }}</title>
-<link rel="stylesheet" href="/static/app.css?v=10">
+<link rel="stylesheet" href="/static/app.css?v=11">
 <link rel="manifest" href="/static/manifest.webmanifest">
 <link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
 <link rel="icon" href="/static/icons/icon-192.png">
@@ -92,16 +92,16 @@
 <div class="pz no-print" id="pz">
   <button type="button" class="pz-btn" aria-label="Pomoc" title="Pomoc: zapytaj asystenta">?</button>
   <section class="pz-panel" aria-label="Pomoc">
-    <header><b>Pomoc Sygnavo</b><span class="spacer"></span>
+    <header><b>Pomoc Sygnavo</b><a class="pz-hist" href="/pomoc/artykuly" title="Wszystkie instrukcje">Instrukcje</a><span class="spacer"></span>
       {% if role == 'wlasciciel' %}<a class="pz-hist" href="/pomoc/historia" title="Pytania zespołu i koszt">Historia</a>{% endif %}
       <button type="button" class="pz-new" title="Nowa rozmowa">Nowa</button>
       <button type="button" class="pz-close" aria-label="Zamknij">×</button></header>
     <div class="pz-log" aria-live="polite"></div>
     <form><textarea rows="2" maxlength="1500" placeholder="Np. jak dodać logo na fakturze?"></textarea><button class="btn primary small">Zapytaj</button></form>
-    <footer>Asystent AI odpowiada na podstawie instrukcji Sygnavo i może się mylić. Niczego nie zmienia za Ciebie.</footer>
+    <footer>{% if pomoc_ai() %}Asystent AI odpowiada na podstawie instrukcji Sygnavo i może się mylić. Niczego nie zmienia za Ciebie.{% else %}Pomoc wyszukuje odpowiedź w <a href="/pomoc/artykuly">instrukcjach Sygnavo</a>.{% endif %}</footer>
   </section>
 </div>
-<script src="/static/pomoc.js?v=1" defer></script>
+<script src="/static/pomoc.js?v=2" defer></script>
 {% endif %}
 <script src="/static/picker.js?v=2"></script>
 <script src="/static/tables.js?v=1" defer></script>

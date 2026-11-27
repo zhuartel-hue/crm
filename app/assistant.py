@@ -64,7 +64,13 @@ def settings() -> dict:
         "effort": os.environ.get("AI_EFFORT", "low").strip() or "low",
         "daily_limit": int(os.environ.get("AI_DAILY_LIMIT", "100") or 100),
         "fallbacks": os.environ.get("AI_FALLBACKS", "1") != "0",
+        # "ai" = odpowiada Claude (wymaga klucza), "szukaj" = darmowa wyszukiwarka instrukcji (app/help_search.py).
+        "mode": "ai" if os.environ.get("ANTHROPIC_API_KEY") and os.environ.get("AI_MODE", "ai") != "szukaj" else "szukaj",
     }
+
+
+def ai_enabled() -> bool:
+    return settings()["mode"] == "ai"
 
 
 # --- baza wiedzy ------------------------------------------------------------------
@@ -234,18 +240,22 @@ _LINK = re.compile(r"\[([^\]\n]{1,120})\]\((/[A-Za-z0-9/_\-?=&.#%]{0,200})\)")
 _BOLD = re.compile(r"\*\*([^*\n]{1,200})\*\*")
 _CODE = re.compile(r"`([^`\n]{1,200})`")
 _SCREEN = re.compile(r"^\s*(?:\[\[zrzut:([a-z0-9-]{1,60})\]\]|!\[[^\]]*\]\((?:\.\./)?zrzuty/([a-z0-9-]{1,60})\.png\))\s*$")
+# Zwykly obrazek z bazy wiedzy (moduly/img/x.png): pokazujemy bez podswietlania.
+_IMAGE = re.compile(r"^\s*!\[([^\]]{0,120})\]\((?:\.\./moduly/)?img/([a-z0-9-]{1,60}\.(?:png|jpg))\)\s*$")
 _SCREEN_ANY = re.compile(r"\[\[zrzut:[^\]]*\]\]")
+# Linki miedzy stronami bazy wiedzy (x.md, ../faq/x.md) -> strona instrukcji w programie.
+_MD_LINK = re.compile(r"\]\((?:\.\./)?(?:moduly/|faq/)?([a-z0-9-]{1,60})\.md\)")
 
 
 def _inline(text: str) -> str:
-    s = str(escape(text))
+    s = str(escape(_MD_LINK.sub(r"](/pomoc/artykul/\1)", text)))
     s = _LINK.sub(lambda m: f'<a href="{m.group(2)}">{m.group(1)}</a>', s)
     s = _BOLD.sub(r"<b>\1</b>", s)
     s = _CODE.sub(r"<code>\1</code>", s)
     return s
 
 
-def render_answer(text: str, screens: dict[str, dict]) -> tuple[str, list[str]]:
+def render_answer(text: str, screens: dict[str, dict], max_screens: int = 3) -> tuple[str, list[str]]:
     """Zamienia odpowiedz (prosty Markdown) na HTML. Zwraca HTML i liste uzytych zrzutow."""
     html: list[str] = []
     used: list[str] = []
@@ -254,7 +264,7 @@ def render_answer(text: str, screens: dict[str, dict]) -> tuple[str, list[str]]:
 
     def close_para():
         if para:
-            html.append("<p>" + "<br>".join(para) + "</p>")
+            html.append("<p>" + " ".join(para) + "</p>")
             para.clear()
 
     def close_list():
@@ -269,7 +279,7 @@ def render_answer(text: str, screens: dict[str, dict]) -> tuple[str, list[str]]:
             close_para()
             sid = m.group(1) or m.group(2)
             s = screens.get(sid)
-            if s and sid not in used and len(used) < 3:
+            if s and sid not in used and len(used) < max_screens:
                 used.append(sid)
                 fig = (f'<figure class="pz-fig"><img src="/pomoc/zrzut/{escape(s["image"])}" alt="{escape(s.get("title", ""))}"'
                        f' loading="lazy"><figcaption><span>{escape(s.get("title", ""))}</span>'
@@ -280,10 +290,20 @@ def render_answer(text: str, screens: dict[str, dict]) -> tuple[str, list[str]]:
                 else:
                     html.append(fig)
             continue
+        im = _IMAGE.match(line)
+        if im:
+            close_para()
+            if (KNOWLEDGE_DIR / "moduly" / "img" / im.group(2)).exists():
+                html.append(f'<figure class="pz-fig"><img src="/pomoc/obraz/{escape(im.group(2))}" alt="{escape(im.group(1))}"'
+                            f' loading="lazy"><figcaption><span>{escape(im.group(1))}</span></figcaption></figure>')
+            continue
         line = _SCREEN_ANY.sub("", line).rstrip()
         stripped = line.strip()
         if not stripped:
             close_para()
+            continue
+        if lst and line[:1] in (" ", "\t") and html and html[-1].endswith("</li>"):
+            html[-1] = html[-1][:-5] + " " + _inline(stripped) + "</li>"  # dalszy ciag punktu listy
             continue
         num = re.match(r"^\d{1,2}[.)]\s+(.*)$", stripped)
         bul = re.match(r"^[-*•]\s+(.*)$", stripped)
@@ -326,6 +346,35 @@ def _today_count(db: Session, org_id: int) -> int:
         AssistantMessage.organisation_id == org_id, AssistantMessage.created_at >= start)) or 0
 
 
+def _screens_payload(screens: dict, used: list[str]) -> dict:
+    return {sid: {"page": screens[sid].get("page", ""), "steps": screens[sid].get("steps", [])} for sid in used}
+
+
+def _search_reply(db: Session, request: Request, org_id: int, question: str, page: str) -> dict:
+    """Tryb bez AI: najlepiej pasujaca instrukcja z bazy wiedzy. Bez kosztow; pytanie zapisujemy do oceny."""
+    from . import help_search
+    from .main import current_company
+
+    text = help_search.answer(question)
+    screens = {s["id"]: s for s in load_screens()}
+    html, used = render_answer(text, screens)
+    row = AssistantMessage(organisation_id=org_id, company_id=current_company(request, db).id,
+                           user_id=request.session.get("user_id"), page=page, question=question,
+                           answer=text, model="wyszukiwarka", cost_usd=Decimal("0"))
+    db.add(row)
+    _purge(db, org_id)
+    db.commit()
+    return {"ok": True, "id": row.id, "text": text, "html": html, "mode": "szukaj",
+            "screens": _screens_payload(screens, used)}
+
+
+def _purge(db: Session, org_id: int) -> None:
+    # Pytania moga zawierac dane wpisane przez klienta: trzymamy je tylko przez KEEP_DAYS dni.
+    db.execute(delete(AssistantMessage).where(
+        AssistantMessage.organisation_id == org_id,
+        AssistantMessage.created_at < dt.datetime.now() - dt.timedelta(days=KEEP_DAYS)))
+
+
 def _reply(text: str, **extra) -> dict:
     return {"ok": True, "text": text, "html": str(Markup("<p>{}</p>").format(text)), "screens": {}, **extra}
 
@@ -347,9 +396,9 @@ async def ask(request: Request, db: Session = Depends(get_db)):
     if not page.startswith("/"):
         page = "/"
     cfg = settings()
-    if not cfg["api_key"]:
-        return _reply("Asystent nie jest jeszcze podłączony. Napisz do nas, a odpowiemy.", unavailable=True)
     org_id = request.session.get("org_id")
+    if cfg["mode"] == "szukaj":
+        return _search_reply(db, request, org_id, question, page)
     if _today_count(db, org_id) >= cfg["daily_limit"]:
         return _reply("Na dziś wykorzystano limit pytań do asystenta. Spróbuj jutro albo napisz do nas.", limited=True)
 
@@ -391,13 +440,9 @@ async def ask(request: Request, db: Session = Depends(get_db)):
         cost_usd=cost_usd(model, usage),
     )
     db.add(row)
-    # Pytania moga zawierac dane wpisane przez klienta: trzymamy je tylko przez KEEP_DAYS dni.
-    db.execute(delete(AssistantMessage).where(
-        AssistantMessage.organisation_id == org_id,
-        AssistantMessage.created_at < dt.datetime.now() - dt.timedelta(days=KEEP_DAYS)))
+    _purge(db, org_id)
     db.commit()
-    return {"ok": True, "id": row.id, "text": text, "html": html,
-            "screens": {sid: {"page": screens[sid].get("page", ""), "steps": screens[sid].get("steps", [])} for sid in used}}
+    return {"ok": True, "id": row.id, "text": text, "html": html, "mode": "ai", "screens": _screens_payload(screens, used)}
 
 
 @router.post("/pomoc/ocena/{msg_id}")
@@ -423,6 +468,51 @@ def screenshot(name: str):
     if not path.exists():
         raise HTTPException(404)
     return FileResponse(path, media_type="image/png", headers={"Cache-Control": "private, max-age=3600"})
+
+
+@router.get("/pomoc/obraz/{name}")
+def kb_image(name: str):
+    if not re.fullmatch(r"[a-z0-9-]{1,60}\.(png|jpg)", name):
+        raise HTTPException(404)
+    path = KNOWLEDGE_DIR / "moduly" / "img" / name
+    if not path.exists():
+        raise HTTPException(404)
+    return FileResponse(path, headers={"Cache-Control": "private, max-age=3600"})
+
+
+@router.get("/pomoc/artykuly", response_class=HTMLResponse)
+def articles(request: Request, db: Session = Depends(get_db)):
+    """Spis wszystkich instrukcji dla klientow."""
+    from .main import render
+
+    if not is_enabled(db, request):
+        raise HTTPException(404)
+    items = []
+    for p in knowledge_files():
+        title = next((l[2:].strip() for l in p.read_text(encoding="utf-8").splitlines() if l.startswith("# ")), p.stem)
+        items.append({"slug": p.stem, "title": title, "kind": p.parent.name})
+    return render(request, db, "assistant_articles.html", items=items)
+
+
+@router.get("/pomoc/artykul/{slug}", response_class=HTMLResponse)
+def article(slug: str, request: Request, db: Session = Depends(get_db)):
+    """Pelna instrukcja z bazy wiedzy, ze zrzutami i przyciskami „Pokaż na ekranie”."""
+    from . import help_search
+    from .main import render
+
+    if not is_enabled(db, request) or not re.fullmatch(r"[a-z0-9-]{1,60}", slug):
+        raise HTTPException(404)
+    path = help_search.find_article(slug)
+    if path is None:
+        raise HTTPException(404)
+    lines = path.read_text(encoding="utf-8").splitlines()
+    title = next((l[2:].strip() for l in lines if l.startswith("# ")), slug)
+    body = "\n".join(l for l in lines if not l.startswith("# ") and not re.match(r"^(Moduł|Dla klientów|Aktualizacja):", l))
+    screens = {s["id"]: s for s in load_screens()}
+    html, used = render_answer(body, screens, max_screens=50)
+    return render(request, db, "assistant_article.html", title=title, body=Markup(html),
+                  screens_json=json.dumps(_screens_payload(screens, used), ensure_ascii=False)
+                  .replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026"))
 
 
 @router.get("/pomoc/historia", response_class=HTMLResponse)

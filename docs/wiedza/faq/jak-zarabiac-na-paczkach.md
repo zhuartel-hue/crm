@@ -1,5 +1,6 @@
 # Czy Sygnavo może zarabiać na paczkach klientów?
 Aktualizacja: 2026-11-27
+Dla klientów: nie
 
 **Pytanie:** Czy możemy odsprzedawać usługi kurierskie naszym klientom?
 

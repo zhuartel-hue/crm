@@ -235,3 +235,4 @@ table.cols-fixed td,table.cols-fixed th{overflow:hidden;text-overflow:ellipsis}
 .pz-hl span{position:absolute;left:-13px;top:-13px;width:22px;height:22px;border-radius:50%;background:#e11d48;color:#fff;font:700 12px/22px ui-sans-serif,system-ui,sans-serif;text-align:center}
 @media (max-width:900px){.pz{bottom:calc(70px + env(safe-area-inset-bottom));right:10px}.pz-panel{position:fixed;right:6px;left:6px;width:auto;bottom:calc(66px + env(safe-area-inset-bottom));height:calc(100vh - 140px)}}
 .pz-hist{font-size:13px;color:var(--muted);padding:2px 6px}
+.pz-article{max-width:860px;line-height:1.55}.pz-article .pz-fig{max-width:760px}.pz-article h4{font-size:15px;margin:14px 0 4px}

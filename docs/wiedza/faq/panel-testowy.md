@@ -1,5 +1,6 @@
 # Co to jest panel testowy i czy coś tam może pójść do klienta?
 Moduł: wdrożenia · Aktualizacja: 2026-11-27
+Dla klientów: nie
 
 Panel testowy (test.sygnavo.com) to ten sam program z kopią Twoich danych z chwili wgrania nowej wersji.
 Logujesz się tym samym e-mailem i hasłem. Na górze jest pomarańczowy pasek „PANEL TESTOWY”.

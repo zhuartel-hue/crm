@@ -91,17 +91,44 @@ def test_answer_with_screenshot_and_log(client, kb, monkeypatch):
     assert "Jak wystawić fakturę?" in page and "nie pomogło" in page
 
 
-def test_no_key_and_daily_limit(client, kb, monkeypatch):
+def test_no_key_uses_free_search(client, kb, monkeypatch):
+    """Bez klucza API: darmowa wyszukiwarka instrukcji, bez wywolania modelu."""
     from app import assistant
 
     _enable()
     monkeypatch.setenv("ANTHROPIC_API_KEY", "")
-    assert client.post("/pomoc/pytanie", json={"question": "x"}).json()["unavailable"]
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+    monkeypatch.setattr(assistant, "call_model", lambda *a: (_ for _ in ()).throw(AssertionError("bez AI")))
+    j = client.post("/pomoc/pytanie", json={"question": "Jak wystawić nową fakturę?"}).json()
+    assert j["mode"] == "szukaj" and "Nowa faktura" in j["html"] and "/pomoc/artykul/faktury" in j["html"]
+    assert "Tajna wiedza" not in j["html"]
+    miss = client.post("/pomoc/pytanie", json={"question": "pogoda w Krakowie"}).json()
+    assert "Nie znalazłem" in miss["html"]
+    # strona instrukcji i spis
+    assert "Kliknij <b>Nowa faktura</b>" in client.get("/pomoc/artykul/faktury").text
+    assert client.get("/pomoc/artykul/serwer").status_code == 404  # strona wewnetrzna
+    assert client.get("/pomoc/artykul/..").status_code == 404
+    assert "/pomoc/artykul/faktury" in client.get("/pomoc/artykuly").text
+    assert "instrukcjach Sygnavo" in client.get("/").text  # stopka trybu bez AI
+
+
+def test_daily_limit_for_ai(client, kb, monkeypatch):
+    from app import assistant
+
+    _enable()
     monkeypatch.setenv("AI_DAILY_LIMIT", "1")
     monkeypatch.setattr(assistant, "call_model", _fake([]))
-    assert client.post("/pomoc/pytanie", json={"question": "a"}).json().get("id")
+    assert client.post("/pomoc/pytanie", json={"question": "a"}).json()["mode"] == "ai"
     assert client.post("/pomoc/pytanie", json={"question": "b"}).json()["limited"]
+
+
+def test_real_search_finds_common_questions():
+    from app import help_search
+
+    for q, slug in (("jak dodać logo na fakturze", "ustawienia-firmy"), ("jak podłączyć KSeF", "ksef"),
+                    ("jak dodać pracownika", "uzytkownicy"), ("podłączyć gmaila", "poczta-skrzynki"),
+                    ("raport dla księgowej", "raporty")):
+        hits = help_search.search(q)
+        assert hits and hits[0][1].slug == slug, (q, [h[1].slug for h in hits])
 
 
 def test_other_organisation_cannot_see_or_rate(client, kb, monkeypatch):
@@ -127,11 +154,12 @@ def test_render_is_safe():
     from app.assistant import render_answer
 
     html, used = render_answer(
-        "<script>x</script> **ok** [zła](https://evil.example) [dobra](/faktury)\n1. jeden\n2. dwa\n[[zrzut:abc]]",
+        "<script>x</script> **ok** [zła](https://evil.example) [dobra](/faktury) [inna](../faq/sms.md)\n1. jeden\n   dalej\n2. dwa\n[[zrzut:abc]]",
         {"abc": {"image": "abc.png", "title": "T"}})
     assert "<script>" not in html and "&lt;script&gt;" in html
     assert '<a href="/faktury">dobra</a>' in html and "evil.example\"" not in html and 'href="https' not in html
-    assert "<ol><li>jeden</li><li>dwa" in html and used == ["abc"]
+    assert "<ol><li>jeden dalej</li><li>dwa" in html and used == ["abc"]
+    assert '<a href="/pomoc/artykul/sms">inna</a>' in html
     assert html.index("pz-fig") < html.index("</ol>")  # zrzut pod ostatnim krokiem
 
 

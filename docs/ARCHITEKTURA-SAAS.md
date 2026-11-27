@@ -317,6 +317,8 @@ Stan od 27.11.2026 (`app/assistant.py`, okienko „Pomoc”, funkcja `asystent_a
   na żywo („Pokaż na ekranie”);
 - asystent dostaje tylko ogólny stan ustawień firmy (bez nazw, NIP, kontrahentów, dokumentów) i niczego nie zmienia;
   akcje w imieniu klienta (przez `/mcp`) dopiero po osobnej decyzji właściciela i zawsze z potwierdzeniem klienta;
+- bez klucza API (albo `AI_MODE=szukaj`) okienko działa jako darmowa wyszukiwarka instrukcji (`app/help_search.py`),
+  bez wysyłania czegokolwiek na zewnątrz; spis instrukcji: `/pomoc/artykuly` (decyzja właściciela 27.11.2026: na razie bez płatnego AI);
 - później ten sam asystent na stronie sygnavo.com, bez kontekstu firmy.
 
 ## 11. Kolejność prac
@@ -340,6 +342,7 @@ Stan od 27.11.2026 (`app/assistant.py`, okienko „Pomoc”, funkcja `asystent_a
 | 26.11.2026 | Rekomendacja: osobny serwer Hetzner CX33 + Volume + Storage Box; czeka na zgodę | Claude |
 | 26.11.2026 | Zgoda: osobny serwer w Hetznerze; przeprowadzka jak najszybciej, wykonana tej samej nocy (CX23, później CX33) | właściciel |
 | 26.11.2026 | Zostajemy w Hetznerze; Cloudflare tylko do domeny sygnavo.com i ochrony | właściciel |
+| 27.11.2026 | Pomoc w programie na razie bez płatnego AI: darmowa wyszukiwarka instrukcji; AI (Sonnet 5.5) dopiero po dodaniu klucza | właściciel |
 | 26.11.2026 | Etap B: oddzielenie danych w aplikacji w jednym miejscu (filtr ORM), RLS w Postgresie jako druga warstwa później | Claude |
 | 27.11.2026 | Program pod adresem app.sygnavo.com; crm.margotsystem.com przekierowuje | właściciel |
 | 27.11.2026 | Loginem jest adres e-mail; jedno konto widzi wszystkie firmy organizacji | właściciel |
