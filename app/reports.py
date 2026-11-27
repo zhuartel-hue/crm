@@ -74,7 +74,19 @@ def _add(target: dict, rate: str, net, vat, gross) -> None:
 
 
 def _rates_sorted(d: dict) -> list[dict]:
-    return calc._sort_rates(list(d.values()))
+    return calc._sort_rates([r for r in d.values() if r["net"] or r["vat"] or r["gross"]])
+
+
+def _guess_rate(net: Decimal, vat: Decimal) -> str:
+    """Koszt bez XML (dodany recznie): stawka z proporcji VAT/netto, gdy pasuje do jednej stawki; inaczej "—"."""
+    if not net:
+        return "—"
+    if not vat:
+        return "0"
+    for rate in ("23", "8", "5"):
+        if abs(net * Decimal(rate) / 100 - vat) <= Decimal("0.02"):
+            return rate
+    return "—"
 
 
 def _paid_state(inv: Invoice) -> str:
@@ -145,7 +157,7 @@ def costs(db: Session, company_id: int, start: dt.date, end: dt.date, scope: str
                     parsed = incoming.parse(p.xml).get("rates") or []
                 except Exception:  # noqa: BLE001
                     parsed = []
-            for r in parsed or [{"rate": "—", "net": p.net, "vat": p.vat, "gross": p.gross}]:
+            for r in parsed or [{"rate": _guess_rate(p.net, p.vat), "net": p.net, "vat": p.vat, "gross": p.gross}]:
                 _add(rates, r["rate"], r["net"], r["vat"], r["gross"])
         items.append(dict(pi=p, number=p.invoice_number or p.ksef_number, issue_date=p.issue_date, seller=p.seller_name,
                           nip=p.seller_nip, net=p.net, vat=p.vat, gross=p.gross, currency=p.currency,

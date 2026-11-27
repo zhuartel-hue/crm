@@ -20,7 +20,7 @@
   <span class="muted" style="font-size:13px">{% if company.ksef_purchase_synced_at %}KSeF: {{ company.ksef_purchase_synced_at.strftime('%d.%m %H:%M') }}{% endif %}</span>
   {% endif %}
 </form>
-{% if folder == 'new' and rows %}<p class="muted" style="margin:0 0 6px">Nowe faktury kosztowe trafiają tutaj. Otwórz fakturę, porównaj z załącznikiem i kliknij <b>Zweryfikuj</b>: przejdzie do folderu Zweryfikowane.</p>{% endif %}
+{% if folder == 'new' and rows %}<p class="muted" style="margin:0 0 4px;font-size:13px">Nowe faktury kosztowe trafiają tutaj. Otwórz fakturę, porównaj z załącznikiem i kliknij <b>Zweryfikuj</b>: przejdzie do folderu Zweryfikowane.</p>{% endif %}
 {% if ksef_on %}
 <div class="card no-print" style="padding:8px 10px">
 <form method="post" action="/koszty/pobierz" class="row" style="margin:0">
