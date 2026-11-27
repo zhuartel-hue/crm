@@ -90,6 +90,19 @@ Do zrobienia w etapie B (kolejność):
 6. Koniec danych Margot/ARI w `app/seed.py`: nowa organizacja startuje pusta (rejestracja po NIP).
 7. Szyfrowanie sekretów kluczem organizacji (envelope encryption, sekcja 3).
 
+### Bank (PSD2) przy wielu klientach
+
+- Połączenie z bankiem jest przypisane do firmy (`bank_connections.company_id`): każda firma podłącza
+  swój bank sama, inne firmy i organizacje go nie widzą (filtr organizacji obejmuje tę tabelę).
+  Etap B nie zmienia tabel banku; połączenie Margot działa dalej bez ponownego łączenia.
+- Aplikacja Enable Banking (identyfikator i klucz .pem w `app_settings`) jest wspólna dla całej
+  platformy. Działa dziś w trybie „restricted” (tylko nasze własne rachunki, do użytku niekomercyjnego).
+  **Przed pierwszym klientem zewnętrznym** potrzebna jest umowa produkcyjna z Enable Banking (albo inny
+  dostawca AIS, np. Kontomatik), inaczej klienci nie podłączą swoich banków.
+- Adres powrotu z banku (`/bank/powrot`) musi być zarejestrowany w aplikacji Enable Banking dla każdego
+  adresu programu (dziś crm.margotsystem.com; po przejściu dopisać app.sygnavo.com).
+- Zgoda bankowa wygasa (ok. 180 dni); program ostrzega 14 dni wcześniej, każda firma odnawia swoją.
+
 ## 3. Sekrety klientów
 
 Tokeny KSeF, certyfikaty, dostęp do banku, hasła do skrzynek, Allegro, sklepów:

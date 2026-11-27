@@ -245,3 +245,28 @@ def test_feature_flags_per_organisation(client):
         assert not features.enabled(ours, "dwuetapowe_wymuszone")
     finally:
         features.FEATURES["dwuetapowe_wymuszone"] = old
+
+
+def test_bank_connection_invisible_to_other_organisation(client):
+    from app.db import SessionLocal
+    from app.main import app
+    from app.models import BankConnection, Company
+
+    with SessionLocal() as db:
+        _second_org(db)
+        ours = db.scalar(sa.select(Company).order_by(Company.id))
+        cols = {c.name for c in BankConnection.__table__.columns}
+        row = {"company_id": ours.id}
+        for name, val in (("aspsp_name", "PKO BP Tajny Bank"), ("state", "active"), ("auth_state", "x")):
+            if name in cols:
+                row[name] = val
+        db.add(BankConnection(**row))
+        db.commit()
+    c2 = TestClient(app)
+    _login(c2, "obcy", "obce-haslo-123")
+    with SessionLocal() as db:
+        from app import tenancy
+        other_ids = [c.id for c in db.scalars(sa.select(Company).where(Company.short_name == "Obca"))]
+        with tenancy.scope(other_ids):
+            assert db.scalars(sa.select(BankConnection)).all() == []
+    assert "PKO BP Tajny Bank" not in c2.get("/bank/polaczenie").text
