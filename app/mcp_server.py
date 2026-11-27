@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse, Response
 from sqlalchemy.orm import Session
 
+from . import mail_tools
 from . import products as prod
 from . import services as svc
 from .auth import Principal, authenticate, base_url, unauthorized
@@ -27,7 +28,8 @@ INSTRUCTIONS = (
     "końcowa (rozlicza zaliczki) i korygująca. "
     "Zasady: najpierw create_invoice_draft, pokaż użytkownikowi nabywcę, pozycje, kwoty netto, VAT i brutto, "
     "a issue_invoice wywołaj dopiero po wyraźnym potwierdzeniu użytkownika w tej rozmowie. "
-    "Gdy nie wiesz, której firmy dotyczy prośba, zapytaj."
+    "Gdy nie wiesz, której firmy dotyczy prośba, zapytaj. "
+    "Maile do klientów wysyłaj narzędziem send_email ze skrzynki firmy, tylko po potwierdzeniu użytkownika."
 )
 
 router = APIRouter()
@@ -223,6 +225,43 @@ TOOLS = [
          "Liczba faktur, sprzedaż netto/VAT/brutto i zysk na sprzedanych autach (netto minus cena zakupu) w miesiącu.", "read",
          _obj({"company": COMPANY, "month": {"type": "string", "description": "RRRR-MM"}}, ["company", "month"]),
          _t_summary),
+]
+def _t_mailboxes(db, p, a, base):
+    return {"mailboxes": mail_tools.list_mailboxes(db, a.get("company"))}
+
+
+def _t_search_mails(db, p, a, base):
+    return {"mails": mail_tools.search_mails(db, a.get("company"), a.get("query", ""), a.get("contractor_id"),
+                                             a.get("limit", 20))}
+
+
+def _t_get_mail(db, p, a, base):
+    return {"mail": mail_tools.get_mail(db, a["mail_id"])}
+
+
+def _t_send_email(db, p, a, base):
+    return mail_tools.send_email(db, p.actor, a)
+
+
+TOOLS += [
+    Tool("list_mailboxes", "Skrzynki pocztowe", "Skrzynki pocztowe firmy podłączone w Sygnavo (z nich wysyłamy maile).",
+         "read", _obj({"company": COMPANY}, ["company"]), _t_mailboxes),
+    Tool("search_mails", "Szukaj maili",
+         "Maile firmy (odebrane i wysłane) po temacie, nadawcy lub odbiorcy, najnowsze najpierw; "
+         "contractor_id zawęża do kontrahenta.", "read",
+         _obj({"company": COMPANY, "query": {"type": "string"}, "contractor_id": {"type": "integer"},
+               "limit": {"type": "integer", "default": 20}}, ["company"]), _t_search_mails),
+    Tool("get_mail", "Mail", "Pełna treść maila.", "read", _obj({"mail_id": {"type": "integer"}}, ["mail_id"]), _t_get_mail),
+    Tool("send_email", "Wyślij maila",
+         "Wysyła maila ze skrzynki firmy podłączonej w Sygnavo (zapisuje się w historii kontrahenta). "
+         "invoice_id: dołącza PDF wystawionej faktury. Najpierw pokaż użytkownikowi nadawcę, odbiorców, temat "
+         "i treść; wywołuj tylko po jego wyraźnym potwierdzeniu w tej rozmowie. Nieodwracalne.", "issue",
+         _obj({"company": COMPANY, "mailbox": {"type": "string", "description": "Adres skrzynki; domyślnie pierwsza."},
+               "to": {"type": "string", "description": "Adresy oddzielone przecinkami."}, "cc": {"type": "string"},
+               "subject": {"type": "string"}, "body": {"type": "string"},
+               "invoice_id": {"type": "integer"}, "attach_pdf": {"type": "boolean", "default": True},
+               "in_reply_to": {"type": "string", "description": "message_id maila, na który odpowiadamy."}},
+              ["company", "to", "subject", "body"]), _t_send_email, read_only=False, destructive=True),
 ]
 TOOLS_BY_NAME = {t.name: t for t in TOOLS}
 
