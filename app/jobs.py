@@ -48,12 +48,18 @@ def _bank(db):
     bank_connect.sync_all(db)
 
 
+def _integrations(db):
+    from .integrations import service as integrations
+    integrations.sync_all(db)
+
+
 def all_jobs() -> list[Job]:
     return [
         Job("mail-sync", config.MAIL_SYNC_MINUTES * 60, None, _mail),
         Job("recurring", config.RECURRING_CHECK_MINUTES * 60, 0, _recurring),
         Job("ksef-purchases", config.KSEF_PURCHASE_SYNC_HOURS * 3600, None, _purchases),
         Job("bank-sync", config.BANK_SYNC_HOURS * 3600, 120, _bank),
+        Job("integrations-sync", config.INTEGRATIONS_SYNC_MINUTES * 60, 180, _integrations),
     ]
 
 

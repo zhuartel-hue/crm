@@ -198,6 +198,9 @@ def _check_session(request: Request) -> list[int] | None:
 app.include_router(auth.router)
 app.include_router(users_mod.router)
 app.include_router(mcp_server.router)
+from .integrations import web as integrations_web  # noqa: E402
+
+app.include_router(integrations_web.router)
 api.install(app)
 
 # SessionMiddleware musi byc dodany po require_login, zeby dzialal przed nim.

@@ -31,3 +31,7 @@ Dostosuj**.
 ## Z Firmao
 Zamówienia z Firmao (w eksporcie to oferty z typem ORDER) przenosi import z Firmao, razem z numerami, statusami,
 pozycjami i powiązaniem z ofertą.
+
+## Ze sklepu i z Allegro
+Zamówienia ze sklepu Shopify i z Allegro wpadają same, a z każdego zamówienia nadasz paczkę przyciskiem
+**Nadaj paczkę**. Szczegóły: [Integracje](integracje.md).
