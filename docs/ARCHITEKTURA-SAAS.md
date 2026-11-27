@@ -230,16 +230,26 @@ gdy pojawią się klienci zewnętrzni (etap E).
 
 ## 8. Wdrożenia (bez iMaca)
 
-1. Każda zmiana przez pull request; GitHub uruchamia testy (w tym testy izolacji organizacji).
-2. Po scaleniu GitHub Actions buduje obraz i zapisuje w GitHub Container Registry.
-3. Wdrożenie: kopia bazy, pobranie obrazu, migracje, restart, test zdrowia (`/health`).
-   Brak odpowiedzi = automatyczny powrót do poprzedniego obrazu.
-4. Gdy będą klienci zewnętrzni: wdrożenie produkcyjne wymaga zatwierdzenia w GitHubie (jeden przycisk).
-5. Migracje bazy zawsze w dwóch krokach (najpierw dodaj, potem usuń stare, w osobnym wdrożeniu), żeby
-   poprzednia wersja aplikacji działała na nowej bazie i powrót był możliwy.
-6. Klucz SSH do wdrożeń ma uprawnienia tylko do wdrożeń; sekrety w GitHub Secrets.
+Serwer sam pobiera nowe wersje z GitHuba (`deploy/serwer/wydania.sh`, co 2 minuty, `sygnavo-wydania.timer`).
+Do serwera nic nie łączy się z zewnątrz i nie trzymamy kluczy do serwera w GitHubie.
 
-Do czasu przejścia: wdrożenia jak dotąd przez iMaca, zawsze z kopią przed zmianą.
+1. Każda zmiana przez pull request; GitHub uruchamia testy (w tym testy izolacji organizacji).
+2. Serwer czyta repozytorium kluczem „deploy key” **tylko do odczytu** (GitHub, Settings → Deploy keys).
+3. Panel testowy dostaje automatycznie najnowszy kod z gałęzi wdrożeń (`DEPLOY_BRANCH` w
+   `/etc/sygnavo/serwer.env`), ze świeżą kopią danych (sekcja 8.1).
+4. Produkcja dostaje tylko wersję wpisaną w pliku `deploy/wydanie/produkcja`. Claude zmienia ten plik
+   dopiero po „zatwierdzam” właściciela i tylko na wersję, która już działała na panelu testowym
+   (skrypt to sprawdza i inaczej nie wgra).
+5. Wdrożenie produkcji: kopia bazy, nowy kod i skrypty serwera, migracje, restart, test zdrowia (`/health`).
+   Gdy program nie wstanie: automatyczny powrót do poprzedniego kodu, a gdy migracje zmieniły bazę,
+   także do bazy sprzed zmiany.
+6. Migracje bazy zawsze w dwóch krokach (najpierw dodaj, potem usuń stare, w osobnym wdrożeniu), żeby
+   poprzednia wersja aplikacji działała na nowej bazie i powrót był możliwy.
+7. Stan (wersja produkcji, panelu testowego, ostatnie wpisy) widać w `/var/lib/sygnavo/stan` i przez
+   narzędzie `system_status` konektora Claude (tylko organizacja właściciela platformy).
+
+Wcześniejszy pomysł (GitHub Actions buduje obraz i łączy się z serwerem przez SSH) odłożony: wymagałby
+klucza do serwera w GitHubie i otwartego SSH z adresów GitHuba.
 
 ### 8.1 Panel testowy i akceptacja właściciela (decyzja 27.11.2026)
 
@@ -247,17 +257,20 @@ Margot i ARI pracują na co dzień na tym samym, stabilnym programie co klienci 
 Każda zmiana, także wygląd (szerokość kolumn, czcionki), trafia najpierw na **panel testowy**
 `test.sygnavo.com`, a do wszystkich dopiero po akceptacji właściciela („zatwierdzam”).
 
-- Panel testowy: osobna kopia aplikacji i osobna baza na tym samym serwerze (koszt 0 zł; przy CX23
-  ok. 1 GB RAM więcej, przy braku miejsca przenosimy go na najmniejszy osobny serwer).
-- Dane: kopia produkcji odświeżana na żądanie (z kopii restic), więc test wygląda jak prawdziwy program.
-- Bezpieczniki testu (wymuszone w konfiguracji, nie do wyłączenia z poziomu strony):
-  bez wysyłki maili do klientów (poczta wychodząca tylko na adres właściciela), KSeF wyłączony albo
-  środowisko testowe KSeF, bank tylko do odczytu, bez zadań w tle, wyraźny pasek „PANEL TESTOWY”.
-- Przepływ: zmiana → testy automatyczne → wdrożenie na `test.sygnavo.com` → właściciel ogląda →
-  „zatwierdzam” → kopia bazy → wdrożenie tej samej wersji na produkcję dla wszystkich.
-- Migracje muszą działać na obu wersjach (sekcja 8 pkt 5), żeby powrót był zawsze możliwy.
-- Termin: przed pierwszym klientem zewnętrznym. Dopóki są tylko nasze firmy, zmiany oglądamy na
-  produkcji jak dotąd, zawsze z kopią przed wdrożeniem.
+- Panel testowy: osobna kopia aplikacji i osobna baza na tym samym serwerze (projekt compose `crm-test`,
+  `deploy/serwer/docker-compose.test.yml`, ok. 0,3–0,6 GB RAM; przy braku miejsca przenosimy go na
+  najmniejszy osobny serwer). Do czasu rekordu DNS `test.sygnavo.com` działa pod
+  `test.188-245-222-137.sslip.io`.
+- Dane: świeża kopia produkcji przy każdym wgraniu na panel testowy (`pg_dump` z produkcji, tylko odczyt).
+- Bezpieczniki testu (wymuszone w kodzie przez `TRYB_TESTOWY=1`, nie do wyłączenia z poziomu strony):
+  bez wysyłki i pobierania maili, bez KSeF, bez banku, bez zadań w tle, wyraźny pasek „PANEL TESTOWY”.
+  Dodatkowo z kopii usuwane są hasła skrzynek, tokeny i certyfikaty KSeF, sesje banku, klucze API i 2FA,
+  a panel ma własny `SECRET_KEY`, więc nic zaszyfrowanego z produkcji nie da się w nim odczytać.
+  Logowanie: te same konta i hasła co w programie.
+- Przepływ: zmiana → testy automatyczne → sama trafia na panel testowy → właściciel ogląda →
+  „zatwierdzam” → Claude wpisuje wersję w `deploy/wydanie/produkcja` → serwer robi kopię bazy i wgrywa
+  tę samą wersję na produkcję dla wszystkich.
+- Migracje muszą działać na obu wersjach (sekcja 8 pkt 6), żeby powrót był zawsze możliwy.
 
 ### 8.2 Przełączniki funkcji per organizacja
 
@@ -322,3 +335,4 @@ tylko w zakresie organizacji zalogowanego użytkownika.
 | 27.11.2026 | Program pod adresem app.sygnavo.com; crm.margotsystem.com przekierowuje | właściciel |
 | 27.11.2026 | Loginem jest adres e-mail; jedno konto widzi wszystkie firmy organizacji | właściciel |
 | 27.11.2026 | Nasze firmy pracują na stabilnym programie jak klienci; zmiany najpierw na test.sygnavo.com, do wszystkich po „zatwierdzam” | właściciel |
+| 27.11.2026 | Wdrożenia: serwer sam pobiera kod z GitHuba (klucz tylko do odczytu) zamiast GitHub Actions z SSH; produkcja tylko z pliku `deploy/wydanie/produkcja` po „zatwierdzam” | Claude, czeka na zgodę właściciela |

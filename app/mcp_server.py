@@ -239,6 +239,14 @@ def _t_get_mail(db, p, a, base):
     return {"mail": mail_tools.get_mail(db, a["mail_id"])}
 
 
+def _t_system_status(db, p, a, base):
+    from . import system_status
+
+    if p.organisation_id != system_status.platform_org_id(db):
+        raise PermissionError("Stan serwera widzi tylko właściciel platformy.")
+    return system_status.status()
+
+
 def _t_send_email(db, p, a, base):
     return mail_tools.send_email(db, p.actor, a)
 
@@ -252,6 +260,9 @@ TOOLS += [
          _obj({"company": COMPANY, "query": {"type": "string"}, "contractor_id": {"type": "integer"},
                "limit": {"type": "integer", "default": 20}}, ["company"]), _t_search_mails),
     Tool("get_mail", "Mail", "Pełna treść maila.", "read", _obj({"mail_id": {"type": "integer"}}, ["mail_id"]), _t_get_mail),
+    Tool("system_status", "Stan serwera",
+         "Wersja programu na produkcji i na panelu testowym oraz ostatnie wpisy wdrożeń (tylko właściciel platformy).",
+         "read", _obj({}), _t_system_status),
     Tool("send_email", "Wyślij maila",
          "Wysyła maila ze skrzynki firmy podłączonej w Sygnavo (zapisuje się w historii kontrahenta). "
          "invoice_id: dołącza PDF wystawionej faktury. Najpierw pokaż użytkownikowi nadawcę, odbiorców, temat "

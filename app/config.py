@@ -25,5 +25,12 @@ RECURRING_CHECK_MINUTES = int(os.environ.get("RECURRING_CHECK_MINUTES", "60"))
 # Banki zwykle pozwalaja na ok. 4 pobrania w tle dziennie.
 BANK_SYNC_HOURS = float(os.environ.get("BANK_SYNC_HOURS", "6"))
 
+# Panel testowy (test.sygnavo.com): kopia danych, ale ZERO kontaktu ze swiatem - bez wysylki maili, bez
+# pobierania poczty, bez KSeF, bez banku i bez zadan w tle. Ustawiane tylko w .env instancji testowej.
+TEST_PANEL = os.environ.get("TRYB_TESTOWY", "").strip().lower() in ("1", "true", "tak")
+TEST_PANEL_MSG = "Panel testowy: ta operacja jest wyłączona (bez maili, KSeF i banku)."
+# Wersja kodu (skrot commita), ustawiana przez skrypt wdrozenia; widoczna w /health.
+APP_VERSION = os.environ.get("APP_VERSION", "")
+
 # Zadania w tle: "app" - watki w procesie aplikacji (jeden proces), "off" - osobny proces app.worker.
 BACKGROUND_JOBS = os.environ.get("BACKGROUND_JOBS", "app").strip().lower()

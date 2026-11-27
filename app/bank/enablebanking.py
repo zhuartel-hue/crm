@@ -19,7 +19,7 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 from sqlalchemy.orm import Session
 
-from .. import secretbox
+from .. import config, secretbox
 from ..models import AppSetting
 
 API = "https://api.enablebanking.com"
@@ -95,6 +95,8 @@ def save_config(db: Session, app_id: str, pem: str | None) -> None:
 
 class Client:
     def __init__(self, app_id: str, pem: str):
+        if config.TEST_PANEL:
+            raise BankApiError(config.TEST_PANEL_MSG)
         if not app_id or not pem:
             raise BankApiError("Połączenie z bankiem nie jest skonfigurowane (Bank → Połączenie z bankiem).")
         self.app_id, self.pem = app_id, pem

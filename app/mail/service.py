@@ -27,7 +27,7 @@ from html.parser import HTMLParser
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .. import secretbox
+from .. import config, secretbox
 from ..models import Company, Contact, Contractor, Invoice, MailAccount, MailAttachment, MailMessage
 
 from zoneinfo import ZoneInfo
@@ -178,6 +178,8 @@ def _state(acc: MailAccount) -> dict:
 # ------------------------------------------------------------------ IMAP
 
 def connect_imap(acc: MailAccount):
+    if config.TEST_PANEL:
+        raise MailError(config.TEST_PANEL_MSG)
     if imap_factory is not None:
         return imap_factory(acc)
     try:
@@ -368,6 +370,8 @@ def sync_all(db: Session) -> int:
 # ------------------------------------------------------------------ SMTP
 
 def connect_smtp(acc: MailAccount):
+    if config.TEST_PANEL:
+        raise MailError(config.TEST_PANEL_MSG)
     if smtp_factory is not None:
         return smtp_factory(acc)
     ctx = ssl.create_default_context()

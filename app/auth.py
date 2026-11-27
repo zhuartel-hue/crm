@@ -82,8 +82,9 @@ def revoke_grant(db: Session, grant_id: str) -> None:
 
 
 class Principal:
-    def __init__(self, token: ApiToken):
+    def __init__(self, token: ApiToken, organisation_id: int | None = None):
         self.token = token
+        self.organisation_id = organisation_id
         self.scopes = set(token.scope_list)
         who = token.name or "API"
         self.actor = f"Claude ({who})" if token.kind != "key" else f"API ({who})"
@@ -116,7 +117,7 @@ def authenticate(db: Session, request: Request) -> Principal | None:
         db.commit()
     # Reszta tego zapytania widzi tylko firmy organizacji tokenu (app/tenancy.py).
     tenancy.set_scope(db.scalars(select(Company.id).where(Company.organisation_id == org.id)).all())
-    return Principal(row)
+    return Principal(row, org.id)
 
 
 def unauthorized(request: Request) -> JSONResponse:

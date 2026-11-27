@@ -1,0 +1,8 @@
+[Unit]
+Description=Sygnavo: nowe wersje z GitHuba (panel testowy i zatwierdzona produkcja)
+After=docker.service network-online.target
+[Service]
+Type=oneshot
+ExecStart=/bin/bash @SERWER_DIR@/wydania.sh
+TimeoutStartSec=45min
+Nice=5

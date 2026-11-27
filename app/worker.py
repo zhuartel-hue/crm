@@ -9,7 +9,7 @@ import signal
 import threading
 import time
 
-from . import jobs
+from . import config, jobs
 
 
 def _db_ready() -> bool:
@@ -39,6 +39,9 @@ def main() -> None:
     done = threading.Event()
     signal.signal(signal.SIGTERM, lambda *_: done.set())
     signal.signal(signal.SIGINT, lambda *_: done.set())
+    if config.TEST_PANEL:
+        log.warning("Panel testowy: worker nie uruchamia zadan w tle.")
+        return
     stop = jobs.start()
     log.info("Worker działa")
     done.wait()

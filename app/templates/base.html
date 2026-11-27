@@ -15,6 +15,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 </head>
 <body>
+{% if TEST_PANEL %}<div style="background:#b45309;color:#fff;text-align:center;font-size:12px;padding:3px 8px;position:sticky;top:0;z-index:1000">PANEL TESTOWY · kopia danych · maile, KSeF i bank wyłączone · zmiany tutaj nie trafiają do programu</div>{% endif %}
 {% set p = request.url.path %}
 {% set groups = [
   ('', [('/', 'Start', 'home', p == '/')]),

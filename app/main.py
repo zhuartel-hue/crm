@@ -116,6 +116,7 @@ templates.env.globals["ksef_cert_info"] = ksef.cert_info
 templates.env.globals["ksef_can_send"] = ksef.can_send
 templates.env.globals["wz_payment"] = wz.payment_state
 templates.env.globals["CUSTOMER_TYPES"] = CUSTOMER_TYPES
+templates.env.globals["TEST_PANEL"] = config.TEST_PANEL
 
 
 def _klink(contractor_id, name, cls: str = "klink"):
@@ -139,7 +140,7 @@ async def lifespan(_app: FastAPI):
         seed(db)
         users_mod.ensure_default_org(db)
     # Zadania w tle w tym procesie (BACKGROUND_JOBS=app) albo w osobnym workerze (off), app/jobs.py.
-    stop = jobs.start() if config.BACKGROUND_JOBS == "app" else None
+    stop = jobs.start() if config.BACKGROUND_JOBS == "app" and not config.TEST_PANEL else None
     yield
     if stop is not None:
         stop.set()
@@ -270,7 +271,7 @@ def flash(request: Request, text: str) -> None:
 
 @app.get("/health")
 def health():
-    return {"ok": True}
+    return {"ok": True, "version": config.APP_VERSION, "test": config.TEST_PANEL}
 
 
 @app.get("/login", response_class=HTMLResponse)

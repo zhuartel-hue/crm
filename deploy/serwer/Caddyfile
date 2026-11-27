@@ -25,3 +25,14 @@
 {$OLD_DOMAINS:http://brak.invalid} {
 	redir https://{$APP_DOMAIN}{uri} 308
 }
+
+# TEST_DOMAIN (opcjonalnie, w /etc/sygnavo/serwer.env): panel testowy, np. test.sygnavo.com albo
+# test.188-245-222-137.sslip.io. Kontener test-app uruchamia panel-testowy.sh (projekt crm-test).
+{$TEST_DOMAIN:http://brak-test.invalid} {
+	encode gzip
+	reverse_proxy test-app:8000
+	header {
+		X-Robots-Tag "noindex, nofollow"
+		Strict-Transport-Security "max-age=31536000"
+	}
+}

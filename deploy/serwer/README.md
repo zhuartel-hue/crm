@@ -9,6 +9,8 @@ potem zmiana, potem sprawdzenie. Nic nie robimy ręcznie „na żywo” poza tym
 | `zainstaluj.sh` | instalacja i każda aktualizacja programu (kopia przed zmianą, test zdrowia) |
 | `kopia.sh` | kopia bazy: lokalnie + zaszyfrowana na Storage Box (co godzinę) |
 | `test-odtwarzania.sh` | co tydzień odtwarza kopię w osobnej bazie i porównuje z produkcją |
+| `wydania.sh` | co 2 minuty: nowy kod z GitHuba na panel testowy, zatwierdzona wersja na produkcję |
+| `panel-testowy.sh` | panel testowy ze świeżą kopią danych, bez maili, KSeF i banku |
 | `przenies.sh` | uruchamiany na iMacu: przeniesienie danych ze starego serwera (próba lub końcowe) |
 | `docker-compose.yml`, `Caddyfile`, `systemd/` | konfiguracja usług |
 
@@ -85,6 +87,27 @@ przestanie działać, dopóki DNS nie wskazuje nowego serwera.
 5. Konektor Claude połączyć ponownie pod `https://app.sygnavo.com/mcp`; w panelu Enable Banking dodać
    adres powrotu `https://app.sygnavo.com/bank/powrot` (potrzebny dopiero przy ponownym łączeniu banku).
 Powrót: przywrócić poprzednie wartości w obu plikach i `zainstaluj.sh`.
+
+## 4a. Panel testowy i wdrożenia z GitHuba (bez iMaca)
+
+Raz (Claude przez iMaca, po zgodzie właściciela):
+1. Na serwerze klucz tylko do odczytu: `ssh-keygen -t ed25519 -N '' -C sygnavo-1-wdrozenia -f /root/.ssh/github-deploy`.
+2. Klucz publiczny dodać w GitHubie: repozytorium → Settings → Deploy keys → Add deploy key,
+   **bez** „Allow write access” (albo `gh repo deploy-key add /root/.ssh/github-deploy.pub -R zhuartel-hue/crm -t sygnavo-1`).
+3. W `/etc/sygnavo/serwer.env`:
+   `DEPLOY_REPO=git@github.com:zhuartel-hue/crm.git`, `DEPLOY_BRANCH=<galaz wdrozen>`,
+   `TEST_DOMAIN=test.188-245-222-137.sslip.io` (po rekordzie DNS: `test.sygnavo.com`).
+4. Skopiować `deploy/serwer` do `/opt/sygnavo-serwer` i `bash zainstaluj.sh` (włącza `sygnavo-wydania.timer`).
+5. `bash wydania.sh` (pierwszy panel testowy), potem `bash wydania.sh --stan`.
+
+Na co dzień nic nie robimy na serwerze:
+- nowy kod na gałęzi wdrożeń → po ok. 2 min sam jest na panelu testowym (świeża kopia danych),
+- „zatwierdzam” właściciela → Claude wpisuje skrót commita w `deploy/wydanie/produkcja` → serwer robi
+  kopię bazy i wgrywa produkcję; gdy nie wstanie, wraca do poprzedniej wersji (i bazy sprzed zmiany).
+- Logi: `/var/lib/sygnavo/stan/wydania.log`, szczegóły `/var/log/sygnavo/`. Stan także w konektorze Claude
+  (`system_status`).
+- Wyłączenie panelu testowego: `bash panel-testowy.sh --wylacz`; wyłączenie wdrożeń z GitHuba:
+  `systemctl disable --now sygnavo-wydania.timer`.
 
 ## 5. Rozbudowa
 
