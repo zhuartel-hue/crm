@@ -1,22 +1,20 @@
 {% extends "base.html" %}
 {% block title %}Poczta{% endblock %}
 {% block content %}
-<div class="row"><h1>Poczta · {{ company.short_name }}</h1><span class="spacer"></span>
-  {% if accounts %}<form method="post" action="/poczta/odswiez"><button class="btn">Odśwież</button></form>
-  <a class="btn primary" href="/poczta/nowa">+ Nowa wiadomość</a>{% endif %}
-</div>
+{% if not accounts %}<div class="row"><h1>Poczta · {{ company.short_name }}</h1></div>{% endif %}
 {% if not accounts %}
 <div class="card">Nie ma jeszcze skrzynki dla {{ company.short_name }}. <a href="/ustawienia/poczta">Dodaj skrzynkę →</a></div>
 {% else %}
-<form class="row" style="margin-bottom:12px" method="get">
-  <select name="konto" style="max-width:260px"><option value="0">Wszystkie skrzynki</option>
+<form class="row" style="margin-bottom:6px" method="get"><h1 style="margin:0 6px 0 0">Poczta · {{ company.short_name }}</h1><button type="submit" hidden tabindex="-1" aria-hidden="true"></button>
+  <select name="konto" style="max-width:240px" onchange="this.form.submit()" aria-label="Skrzynka"><option value="0">Wszystkie skrzynki</option>
     {% for a in accounts %}<option value="{{ a.id }}" {{ 'selected' if a.id == konto }}>{{ a.email }}</option>{% endfor %}</select>
-  <select name="kierunek" style="max-width:160px">
+  <select name="kierunek" style="max-width:160px" onchange="this.form.submit()" aria-label="Kierunek">
     <option value="">odebrane i wysłane</option>
     <option value="in" {{ 'selected' if kierunek == 'in' }}>odebrane</option>
     <option value="out" {{ 'selected' if kierunek == 'out' }}>wysłane</option></select>
-  <input name="q" value="{{ q }}" placeholder="Temat albo nadawca" style="max-width:240px">
-  <button class="btn">Pokaż</button>
+  <input name="q" value="{{ q }}" type="search" placeholder="Temat albo nadawca" style="max-width:240px" aria-label="Szukaj">
+  <span class="spacer"></span><button class="btn small" formaction="/poczta/odswiez" formmethod="post">Odśwież</button>
+  <a class="btn primary small" href="/poczta/nowa">+ Nowa wiadomość</a>
 </form>
 {% for a in accounts %}{% if a.last_error %}<div class="error">{{ a.email }}: {{ a.last_error }}</div>{% endif %}{% endfor %}
 <div class="card tbl"><table>

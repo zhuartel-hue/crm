@@ -40,7 +40,7 @@
 {% endif %}{% endmacro %}
 
 <div class="row"><h1>{{ company.short_name }}</h1><span class="spacer"></span>
-<button type="button" class="btn small" id="dash-edit">Dostosuj</button><a class="btn primary only-sm" href="/faktury/nowa">+ Faktura</a><a class="btn only-sm" href="/wz/nowa">+ WZ</a></div>
+<button type="button" class="btn small" id="dash-edit">Dostosuj</button><a class="btn primary small" href="/faktury/nowa">+ Faktura</a><a class="btn small" href="/wz/nowa">+ WZ</a></div>
 {% for w in bank_warnings %}<div class="flash warn"><a href="/bank/polaczenie">{{ w }}</a></div>{% endfor %}
 <div id="dash-bar" class="card dash-bar" hidden>
   <b>Układ strony Start</b> <span class="muted">Przeciągnij kafelek za ⠿. Przyciskami ↔ i ↕ zmieniasz szerokość i wysokość, a ✕ chowa kafelek.</span>

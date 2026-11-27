@@ -1,9 +1,9 @@
 {% extends "base.html" %}
 {% block title %}Kontrahenci{% endblock %}
 {% block content %}
-<div class="row"><h1>Kontrahenci</h1><span class="spacer"></span><a class="btn primary" href="/kontrahenci/nowy">+ Kontrahent</a></div>
-<p class="muted">Kontrahenci bieżącej firmy. Wyniki pojawiają się w trakcie pisania.</p>
-<form class="card row" method="get"><div style="flex:1"><input name="q" value="{{ q }}" placeholder="nazwa, NIP, miasto"></div><button class="btn">Szukaj</button></form>
+<form class="row" method="get" style="margin-bottom:6px"><h1 style="margin:0 6px 0 0">Kontrahenci</h1><button type="submit" hidden tabindex="-1" aria-hidden="true"></button>
+  <input type="search" name="q" value="{{ q }}" placeholder="nazwa, NIP, miasto" style="max-width:320px" aria-label="Szukaj">
+  <span class="spacer"></span><a class="btn primary small" href="/kontrahenci/nowy">+ Kontrahent</a></form>
 <div class="card tbl"><table>
 <tr><th title="KSeF: zielony ptaszek = faktury idą automatycznie, czerwona firma = czekają na zatwierdzenie" style="width:40px">KSeF</th><th>Nazwa</th><th>NIP</th><th class="hide-sm">Miasto</th><th class="hide-sm">Telefon</th></tr>
 {% for c in contractors %}

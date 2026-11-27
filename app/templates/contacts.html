@@ -1,8 +1,9 @@
 {% extends "base.html" %}
 {% block title %}Osoby kontaktowe{% endblock %}
 {% block content %}
-<div class="row"><h1>Osoby kontaktowe</h1><span class="spacer"></span><a class="btn primary" href="/kontakty/nowy">+ Osoba</a></div>
-<form class="card row" method="get"><div style="flex:1"><input name="q" value="{{ q }}" placeholder="imię, nazwisko, firma, e-mail, telefon"></div><button class="btn">Szukaj</button></form>
+<form class="row" method="get" style="margin-bottom:6px"><h1 style="margin:0 6px 0 0">Osoby kontaktowe</h1><button type="submit" hidden tabindex="-1" aria-hidden="true"></button>
+  <input type="search" name="q" value="{{ q }}" placeholder="imię, nazwisko, firma, e-mail, telefon" style="max-width:320px" aria-label="Szukaj">
+  <span class="spacer"></span><a class="btn primary small" href="/kontakty/nowy">+ Osoba</a></form>
 <div class="card tbl"><table>
 <tr><th>Osoba</th><th>Firma</th><th class="hide-sm">Stanowisko</th><th>Telefon</th><th class="hide-sm">E-mail</th></tr>
 {% for p in rows %}

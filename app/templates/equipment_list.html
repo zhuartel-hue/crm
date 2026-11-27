@@ -1,17 +1,16 @@
 {% extends "base.html" %}
 {% block title %}Sprzęt i serwis{% endblock %}
 {% block content %}
-<div class="row"><h1>Sprzęt i serwis</h1><span class="spacer"></span><a class="btn primary" href="/sprzet/nowy">+ Sprzęt</a></div>
-<form class="card row" method="get">
-  <div style="flex:2;min-width:180px"><label>Szukaj</label><input type="search" name="q" value="{{ q }}" placeholder="nazwa, nr seryjny, nr inwentarzowy, kod, klient, lokalizacja"></div>
-  {% if categories %}<div style="flex:1;min-width:120px"><label>Rodzaj</label><select name="kategoria"><option value="">wszystkie</option>
-    {% for c in categories %}<option {{ 'selected' if c == kategoria }}>{{ c }}</option>{% endfor %}</select></div>{% endif %}
-  <div style="flex:1;min-width:140px"><label>Pokaż</label><select name="widok">
+<form class="row" method="get" style="margin-bottom:6px"><h1 style="margin:0 6px 0 0">Sprzęt i serwis</h1><button type="submit" hidden tabindex="-1" aria-hidden="true"></button>
+  <input type="search" name="q" value="{{ q }}" placeholder="nazwa, nr seryjny, inwentarzowy, kod, klient, lokalizacja" style="max-width:320px" aria-label="Szukaj">
+  {% if categories %}<select name="kategoria" style="max-width:160px" aria-label="Rodzaj" onchange="this.form.submit()"><option value="">wszystkie rodzaje</option>
+    {% for c in categories %}<option {{ 'selected' if c == kategoria }}>{{ c }}</option>{% endfor %}</select>{% endif %}
+  <select name="widok" style="max-width:230px" aria-label="Pokaż" onchange="this.form.submit()">
     <option value="">w użyciu</option>
     <option value="przeglady" {{ 'selected' if widok == 'przeglady' }}>przeglądy do zrobienia (30 dni)</option>
     <option value="gwarancje" {{ 'selected' if widok == 'gwarancje' }}>kończące się gwarancje (60 dni)</option>
-    <option value="wycofane" {{ 'selected' if widok == 'wycofane' }}>wycofane</option></select></div>
-  <div><label>&nbsp;</label><button class="btn">Pokaż</button></div>
+    <option value="wycofane" {{ 'selected' if widok == 'wycofane' }}>wycofane</option></select>
+  <span class="spacer"></span><a class="btn primary small" href="/sprzet/nowy">+ Sprzęt</a>
 </form>
 <div class="card tbl"><table>
 <tr><th>Urządzenie</th><th>Klient</th><th class="hide-sm">Nr seryjny</th><th class="hide-sm">Lokalizacja</th><th class="hide-sm">Gwarancja</th><th>Przegląd</th></tr>

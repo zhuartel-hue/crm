@@ -1,22 +1,21 @@
 {% extends "base.html" %}
 {% block title %}Oferty{% endblock %}
 {% block content %}
-<div class="row"><h1>Oferty</h1><span class="spacer"></span>
-{% if offer_templates %}<form method="get" action="/oferty/nowa" class="row"><select name="wzor" style="max-width:220px" onchange="if(this.value)this.form.submit()"><option value="">+ Nowa ze wzoru…</option>
-  {% for t in offer_templates %}<option value="{{ t.id }}">{{ t.name }}</option>{% endfor %}</select></form>{% endif %}
-<a class="btn" href="/oferty/wzory">Wzory</a>
-<a class="btn" href="/ustawienia/statusy-ofert">Statusy</a>
-<a class="btn primary" href="/oferty/nowa">+ Oferta</a></div>
+<form class="row" method="get" style="margin-bottom:6px"><h1 style="margin:0 6px 0 0">Oferty</h1><button type="submit" hidden tabindex="-1" aria-hidden="true"></button>
+  <select name="status" style="max-width:180px" onchange="this.form.submit()"><option value="">wszystkie</option>
+    <option value="otwarte" {{ 'selected' if status == 'otwarte' }}>otwarte (czekają na klienta)</option>
+    {% for k, v in ALL_STATUSES.items() %}<option value="{{ k }}" {{ 'selected' if status == k }}>{{ v }}</option>{% endfor %}</select>
+  <input name="q" value="{{ q }}" placeholder="Numer, klient albo tytuł" type="search" style="max-width:260px" aria-label="Szukaj">
+  <span class="spacer"></span>
+  {% if offer_templates %}<select style="max-width:200px" aria-label="Nowa ze wzoru" onchange="if(this.value)location.href='/oferty/nowa?wzor='+this.value"><option value="">+ Nowa ze wzoru…</option>
+  {% for t in offer_templates %}<option value="{{ t.id }}">{{ t.name }}</option>{% endfor %}</select>{% endif %}
+  <a class="btn primary small" href="/oferty/nowa">+ Oferta</a>
+</form>
 <div class="grid stats">
   <div class="card stat"><div class="l">Otwarte oferty</div><div class="v"><a href="/oferty?status=otwarte">{{ stats.open_count }}</a></div></div>
   <div class="card stat"><div class="l">Wartość otwartych (brutto)</div><div class="v">{{ stats.open_gross|money }} zł</div></div>
 </div>
-<form class="row" style="margin-bottom:12px" method="get">
-  <select name="status" style="max-width:180px" onchange="this.form.submit()"><option value="">wszystkie</option>
-    <option value="otwarte" {{ 'selected' if status == 'otwarte' }}>otwarte (czekają na klienta)</option>
-    {% for k, v in ALL_STATUSES.items() %}<option value="{{ k }}" {{ 'selected' if status == k }}>{{ v }}</option>{% endfor %}</select>
-  <input name="q" value="{{ q }}" placeholder="Numer, klient albo tytuł" style="max-width:320px"><button class="btn">Szukaj</button>
-</form>
+
 <div class="card tbl"><table>
 <tr><th>Numer</th><th>Tytuł</th><th>Data</th><th>Klient</th><th class="hide-sm">Ważna do</th><th class="n">Netto</th><th class="n">VAT</th><th class="n">Brutto</th><th>Status</th></tr>
 {% for o in rows %}

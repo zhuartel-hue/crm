@@ -1,18 +1,18 @@
 {% extends "base.html" %}
 {% block title %}Magazyn{% endblock %}
 {% block content %}
-<div class="row"><h1>Magazyn · WZ i PZ</h1><span class="spacer"></span><a class="btn primary" href="/wz/nowa">+ WZ</a><a class="btn" href="/wz/nowa?rodzaj=pz">+ PZ</a></div>
-<form class="row" style="margin-bottom:8px" method="get">
-  <select name="rodzaj" style="max-width:180px" onchange="this.form.submit()"><option value="">WZ i PZ</option>
+<form class="row" method="get" style="margin-bottom:6px"><h1 style="margin:0 6px 0 0">Magazyn · WZ i PZ</h1><button type="submit" hidden tabindex="-1" aria-hidden="true"></button>
+  <select name="rodzaj" style="max-width:170px" aria-label="Rodzaj" onchange="this.form.submit()"><option value="">WZ i PZ</option>
     <option value="wz" {{ 'selected' if rodzaj == 'wz' }}>tylko WZ</option><option value="pz" {{ 'selected' if rodzaj == 'pz' }}>tylko PZ</option>
     <option value="bez-faktury" {{ 'selected' if rodzaj == 'bez-faktury' }}>WZ bez faktury</option></select>
-  <input name="q" value="{{ q }}" placeholder="Numer albo odbiorca" style="max-width:320px"><button class="btn">Szukaj</button>
+  <input type="search" name="q" value="{{ q }}" placeholder="Numer albo odbiorca" style="max-width:260px" aria-label="Szukaj">
+  <span class="spacer"></span><a class="btn primary small" href="/wz/nowa">+ WZ</a><a class="btn small" href="/wz/nowa?rodzaj=pz">+ PZ</a>
 </form>
-<form id="wz-inv" method="post" action="/wz/faktura" class="row" style="margin-bottom:8px"
+<form id="wz-inv" method="post" action="/wz/faktura" class="row" style="margin-bottom:6px"
   onsubmit="var n=document.querySelectorAll('input[name=ids]:checked').length; if(!n){alert('Zaznacz WZ.');return false;} return true">
   <input type="hidden" name="back" value="{{ request.url.path }}{{ '?' + request.url.query if request.url.query }}">
   <button class="btn small primary">Faktura z zaznaczonych WZ</button>
-  <span class="muted">Zaznacz wystawione WZ jednego odbiorcy. Powstanie jeden szkic faktury, a WZ dostaną link do niej.</span>
+  <span class="muted hide-sm">Zaznacz wystawione WZ jednego odbiorcy. Powstanie jeden szkic faktury, a WZ dostaną link do niej.</span>
 </form>
 <div class="card tbl"><table>
 <tr><th style="width:28px"></th><th>Numer</th><th>Data</th><th>Odbiorca / dostawca</th><th class="n">Netto</th><th class="n">VAT</th><th class="n">Brutto</th><th class="hide-sm">Faktura</th><th>Zapłata</th></tr>

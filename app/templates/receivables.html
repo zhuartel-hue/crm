@@ -1,16 +1,16 @@
 {% extends "base.html" %}
 {% block title %}Należności{% endblock %}
 {% block content %}
-<div class="row"><h1>Należności · {{ company.short_name }}</h1></div>
+<form class="row" style="margin-bottom:6px" method="get"><h1 style="margin:0 6px 0 0">Należności · {{ company.short_name }}</h1><button type="submit" hidden tabindex="-1" aria-hidden="true"></button>
+  {% for key, label in FILTERS.items() %}<a class="btn small {{ 'primary' if filtr == key }}" href="/naleznosci?filtr={{ key }}{% if q %}&amp;q={{ q|urlencode }}{% endif %}">{{ label }}</a>{% endfor %}
+  <input type="hidden" name="filtr" value="{{ filtr }}">
+  <input name="q" value="{{ q }}" placeholder="Numer, nabywca albo NIP" type="search" style="max-width:240px" aria-label="Szukaj">
+</form>
 <div class="grid">
   <div class="card"><div class="muted">Nieopłacone</div><b style="font-size:1.3em">{{ total.total|money }} zł</b><br>{{ total.count }} faktur</div>
   <div class="card"><div class="muted">Po terminie</div><b style="font-size:1.3em;color:#b42318">{{ total.overdue_total|money }} zł</b><br>{{ total.overdue_count }} faktur</div>
 </div>
-<form class="row" style="margin:12px 0" method="get">
-  {% for key, label in FILTERS.items() %}<a class="btn small {{ 'primary' if filtr == key }}" href="/naleznosci?filtr={{ key }}{% if q %}&amp;q={{ q|urlencode }}{% endif %}">{{ label }}</a>{% endfor %}
-  <input type="hidden" name="filtr" value="{{ filtr }}">
-  <input name="q" value="{{ q }}" placeholder="Numer, nabywca albo NIP" style="max-width:280px"><button class="btn">Szukaj</button>
-</form>
+
 {% if not has_mail %}<p class="muted">Przypomnienia mailem wyślesz po dodaniu skrzynki w <a href="/ustawienia/poczta">Ustawieniach poczty</a>.</p>{% endif %}
 <div class="card tbl"><table>
 <tr><th>Faktura</th><th>Nabywca</th><th>Termin</th><th class="n">Do zapłaty</th><th class="hide-sm">Przypomnienia</th><th></th></tr>

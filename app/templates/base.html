@@ -6,7 +6,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <title>{% block title %}Sygnavo{% endblock %} · {{ company.short_name }}</title>
-<link rel="stylesheet" href="/static/app.css?v=6">
+<link rel="stylesheet" href="/static/app.css?v=7">
 <link rel="manifest" href="/static/manifest.webmanifest">
 <link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
 <link rel="icon" href="/static/icons/icon-192.png">
@@ -47,7 +47,8 @@
 ] %}
 <div class="app">
 <aside class="side" id="side">
-  <a class="brand" href="/" title="Start"><img src="/static/icons/icon-192.png" alt=""><span>Sygnavo</span></a>
+  <div class="row" style="flex-wrap:nowrap"><a class="brand" href="/" title="Start"><img src="/static/icons/icon-192.png" alt=""><span>Sygnavo</span></a>
+  <span class="spacer"></span><button class="iconbtn hide-sm" type="button" onclick="location.reload()" aria-label="Odśwież" title="Odśwież">{{ icon('refresh') }}</button></div>
   <div class="switch">
     {% for c in companies %}
     <form method="post" action="/firma/{{ c.id }}"><button title="{{ c.name }}" class="{{ 'on' if c.id == company.id }}">{{ c.short_name }}</button></form>
@@ -63,13 +64,11 @@
 </aside>
 <div class="scrim" id="scrim"></div>
 <div class="content">
-<header class="top">
+<header class="top only-sm-block">
   <button class="iconbtn only-sm" id="menu-btn" aria-label="Menu">{{ icon('menu') }}</button>
   <a class="brand only-sm" href="/" title="Start"><img src="/static/icons/icon-192.png" alt=""><span>Sygnavo</span></a>
   <span class="co only-sm">{{ company.short_name }}</span>
   <span class="spacer"></span>
-  <a class="btn primary small hide-sm" href="/faktury/nowa">{{ icon('plus') }} Faktura</a>
-  <a class="btn small hide-sm" href="/wz/nowa">{{ icon('plus') }} WZ</a>
   <button class="iconbtn" id="reload-btn" aria-label="Odśwież" title="Odśwież">{{ icon('refresh') }}</button>
 </header>
 <main>

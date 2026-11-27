@@ -1,16 +1,16 @@
 {% extends "base.html" %}
 {% block title %}Umowy{% endblock %}
 {% block content %}
-<div class="row"><h1>Umowy i faktury cykliczne</h1><span class="spacer"></span><a class="btn" href="/ustawienia/statusy-umow">Statusy</a><a class="btn primary" href="/umowy/nowa">+ Umowa</a></div>
+<form class="row" method="get" style="margin-bottom:6px"><h1 style="margin:0 6px 0 0">Umowy i faktury cykliczne</h1><button type="submit" hidden tabindex="-1" aria-hidden="true"></button>
+  <input type="search" name="q" value="{{ q }}" placeholder="numer, nazwa, klient" style="max-width:240px" aria-label="Szukaj">
+  <select name="status" style="width:auto" aria-label="Status" onchange="this.form.submit()"><option value="">aktywne</option><option value="wszystkie" {{ 'selected' if status == 'wszystkie' }}>wszystkie</option><option value="zakonczone" {{ 'selected' if status == 'zakonczone' }}>zakończone</option>
+  <optgroup label="status umowy">{% for k, v in CSTATUSES.items() %}<option value="s:{{ k }}" {{ 'selected' if status == 's:' ~ k }}>{{ v }}</option>{% endfor %}</optgroup></select>
+  <span class="spacer"></span><a class="btn primary small" href="/umowy/nowa">+ Umowa</a></form>
 <div class="grid stats">
   <div class="card stat"><div class="l">Aktywne umowy</div><div class="v">{{ active_count }}</div></div>
   <div class="card stat"><div class="l">Faktury cykliczne średnio miesięcznie (brutto)</div><div class="v">{{ monthly|money }} zł</div></div>
 </div>
-<form class="card row" method="get">
-  <div style="flex:1"><input name="q" value="{{ q }}" placeholder="numer, nazwa, klient"></div>
-  <select name="status" style="width:auto"><option value="">aktywne</option><option value="wszystkie" {{ 'selected' if status == 'wszystkie' }}>wszystkie</option><option value="zakonczone" {{ 'selected' if status == 'zakonczone' }}>zakończone</option>
-  <optgroup label="status umowy">{% for k, v in CSTATUSES.items() %}<option value="s:{{ k }}" {{ 'selected' if status == 's:' ~ k }}>{{ v }}</option>{% endfor %}</optgroup></select>
-  <button class="btn">Pokaż</button></form>
+
 <p class="muted">Umowa z włączonymi fakturami cyklicznymi sama tworzy fakturę w wyznaczonym dniu (szkic, wystawioną albo wystawioną i wysłaną mailem), z numerem umowy na fakturze.
 Bez daty końca faktury idą, dopóki nie zakończysz umowy.</p>
 <div class="card tbl"><table>
