@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}{{ m.subject or 'Wiadomość' }}{% endblock %}
+{% block content %}
+<div class="row"><h1>{{ m.subject or '(bez tematu)' }}</h1></div>
+<div class="row" style="margin-bottom:12px">
+  <a class="btn primary" href="/poczta/nowa?odpowiedz={{ m.id }}">Odpowiedz</a>
+  <a class="btn" href="/poczta">← Poczta</a>
+</div>
+<div class="card">
+  <b>{{ m.from_name or m.from_addr }}</b> &lt;{{ m.from_addr }}&gt;<br>
+  <span class="muted">do {{ m.to_addrs }}{% if m.cc_addrs %}, dw {{ m.cc_addrs }}{% endif %} · {{ m.date.strftime('%d.%m.%Y %H:%M') if m.date }} · skrzynka {{ m.account.email }}</span>
+  {% if m.contractor %}<br>Kontrahent: <a href="/kontrahenci/{{ m.contractor_id }}">{{ m.contractor.name }}</a>{% endif %}
+  <form method="post" action="/poczta/{{ m.id }}/przypisz" class="row" style="gap:4px;margin-top:6px">
+    Faktura: {% if m.invoice %}<a href="/faktury/{{ m.invoice_id }}">{{ m.invoice.number }}</a>{% endif %}
+    <input name="invoice" placeholder="numer faktury" value="" style="max-width:160px">
+    <button class="btn small">{{ 'Zmień' if m.invoice else 'Przypisz' }}</button>
+  </form>
+</div>
+{% if m.attachments %}<div class="card"><div class="muted">Załączniki</div>
+{% for a in m.attachments %}{% if a.data is not none %}<a href="/poczta/zalacznik/{{ a.id }}">{{ a.filename }}</a>{% else %}{{ a.filename }} <span class="muted">(za duży, otwórz w poczcie)</span>{% endif %}
+ <span class="muted">{{ (a.size / 1024)|round|int }} KB</span><br>{% endfor %}</div>{% endif %}
+<div class="card"><div style="white-space:pre-wrap;word-break:break-word">{{ m.body_text }}</div>
+{% if m.body_html %}<details style="margin-top:12px"><summary>Pokaż oryginalny wygląd (HTML)</summary>
+<iframe src="/poczta/{{ m.id }}/html" sandbox="allow-popups" style="width:100%;height:70vh;border:1px solid #ddd;background:#fff"></iframe>
+<p class="muted">Obrazki z internetu są zablokowane, żeby nadawca nie wiedział, że wiadomość została otwarta.</p></details>{% endif %}
+</div>
+{% endblock %}

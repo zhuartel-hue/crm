@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Połączenia{% endblock %}
+{% block content %}
+<form class="row" style="margin-bottom:6px" method="get"><h1 style="margin:0 6px 0 0">Połączenia</h1><button type="submit" hidden tabindex="-1" aria-hidden="true"></button>
+  <select name="kierunek" style="max-width:170px" onchange="this.form.submit()"><option value="">wszystkie</option>{% for k, v in DIRECTIONS.items() %}<option value="{{ k }}" {{ 'selected' if kierunek == k }}>{{ v }}</option>{% endfor %}</select>
+  <select name="wynik" style="max-width:160px" onchange="this.form.submit()"><option value="">każdy wynik</option>{% for k, v in CALL_STATUSES.items() %}<option value="{{ k }}" {{ 'selected' if wynik == k }}>{{ v }}</option>{% endfor %}</select>
+  <input name="q" value="{{ q }}" placeholder="Klient, numer albo notatka" type="search" style="max-width:300px" aria-label="Szukaj">
+</form>
+<p class="muted" style="font-size:13px">Historia rozmów przy klientach. Historia z Firmao jest bez numerów (Firmao ich nie udostępnia), klient jest przypisany przez zadanie. Nową rozmowę zapisujesz niżej albo na karcie klienta.</p>
+{% set call_contractor = none %}
+<details {{ 'open' if not rows }}><summary class="btn" style="display:inline-block;margin-bottom:8px">+ Zapisz rozmowę</summary>
+{% include "_call_form.html" %}</details>
+
+<div class="card tbl"><table>
+<tr><th>Kiedy</th><th></th><th>Klient</th><th class="hide-sm">Numer</th><th class="n">Czas</th><th class="hide-sm">Kto</th><th>Notatka</th></tr>
+{% for c in rows %}
+<tr><td style="white-space:nowrap">{{ c.started_at.strftime('%d.%m.%Y %H:%M') }}</td>
+<td style="white-space:nowrap" title="{{ c.direction_label }}, {{ c.status_label }}">{{ '↙' if c.direction == 'in' else ('↗' if c.direction == 'out' else '↔') }} {% if c.status != 'answered' %}<span class="badge {{ 'due' if c.status == 'missed' and c.direction == 'in' else '' }}">{{ c.status_label }}</span>{% endif %}</td>
+<td>{% if c.contractor %}{{ klink(c.contractor_id, c.contractor.name) }}{% else %}<span class="muted">—</span>{% endif %}{% if c.task %}<br><a class="muted" style="font-size:12px" href="/zadania/{{ c.task_id }}">{{ c.task.title }}</a>{% endif %}</td>
+<td class="hide-sm">{% if c.phone %}<a href="tel:{{ c.phone }}">{{ c.phone }}</a>{% endif %}</td>
+<td class="n">{{ c.duration if c.seconds else '' }}</td><td class="hide-sm">{{ c.user_label }}</td>
+<td style="min-width:200px"><form method="post" action="/polaczenia/{{ c.id }}" style="margin:0"><input type="hidden" name="back" value="{{ request.url.path }}{{ '?' ~ request.url.query if request.url.query }}"><input name="note" value="{{ c.note }}" placeholder="dodaj notatkę…" onchange="this.form.submit()" style="padding:5px 8px;font-size:14px" aria-label="Notatka do rozmowy"></form></td></tr>
+{% else %}<tr><td colspan="7" class="muted">Brak połączeń.</td></tr>{% endfor %}
+</table></div>
+{% endblock %}

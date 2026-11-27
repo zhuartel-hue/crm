@@ -18,9 +18,9 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from . import config
+from . import config, tenancy
 from .db import get_db
-from .models import SCOPES, ApiToken, AuthCode, OAuthClient
+from .models import SCOPES, ApiToken, AuthCode, Company, OAuthClient, Organisation
 
 ACCESS_TTL = dt.timedelta(hours=1)
 REFRESH_TTL = dt.timedelta(days=60)
@@ -52,24 +52,25 @@ def normalize_scopes(requested: str | None, allowed=None) -> list[str]:
 # --- tokeny -------------------------------------------------------------------
 
 
-def issue_tokens(db: Session, client: OAuthClient, scopes: list[str], grant_id: str | None = None) -> dict:
+def issue_tokens(db: Session, client: OAuthClient, scopes: list[str], grant_id: str | None = None,
+                 organisation_id: int | None = None) -> dict:
     grant_id = grant_id or secrets.token_hex(8)
     access = "crm_at_" + secrets.token_urlsafe(32)
     refresh = "crm_rt_" + secrets.token_urlsafe(32)
     scope_str = " ".join(scopes)
     db.add(ApiToken(kind="access", token_hash=sha(access), name=client.name, client_id=client.client_id,
-                    grant_id=grant_id, scopes=scope_str, expires_at=now() + ACCESS_TTL))
+                    grant_id=grant_id, scopes=scope_str, expires_at=now() + ACCESS_TTL, organisation_id=organisation_id))
     db.add(ApiToken(kind="refresh", token_hash=sha(refresh), name=client.name, client_id=client.client_id,
-                    grant_id=grant_id, scopes=scope_str, expires_at=now() + REFRESH_TTL))
+                    grant_id=grant_id, scopes=scope_str, expires_at=now() + REFRESH_TTL, organisation_id=organisation_id))
     db.commit()
     return {"access_token": access, "token_type": "Bearer", "expires_in": int(ACCESS_TTL.total_seconds()),
             "refresh_token": refresh, "scope": scope_str}
 
 
-def create_api_key(db: Session, name: str, scopes: list[str]) -> str:
+def create_api_key(db: Session, name: str, scopes: list[str], organisation_id: int | None = None) -> str:
     key = "crm_key_" + secrets.token_urlsafe(32)
     db.add(ApiToken(kind="key", token_hash=sha(key), name=name or "Klucz API", grant_id=secrets.token_hex(8),
-                    scopes=" ".join(scopes)))
+                    scopes=" ".join(scopes), organisation_id=organisation_id))
     db.commit()
     return key
 
@@ -81,8 +82,9 @@ def revoke_grant(db: Session, grant_id: str) -> None:
 
 
 class Principal:
-    def __init__(self, token: ApiToken):
+    def __init__(self, token: ApiToken, organisation_id: int | None = None):
         self.token = token
+        self.organisation_id = organisation_id
         self.scopes = set(token.scope_list)
         who = token.name or "API"
         self.actor = f"Claude ({who})" if token.kind != "key" else f"API ({who})"
@@ -104,10 +106,18 @@ def authenticate(db: Session, request: Request) -> Principal | None:
         return None
     if row.expires_at is not None and row.expires_at < now():
         return None
+    org_id = row.organisation_id
+    if org_id is None:  # token sprzed etapu B: pierwsza organizacja
+        org_id = db.scalar(select(Organisation.id).order_by(Organisation.id))
+    org = db.get(Organisation, org_id) if org_id is not None else None
+    if org is None or org.status != "active":
+        return None
     if row.last_used_at is None or now() - row.last_used_at > dt.timedelta(minutes=5):
         row.last_used_at = now()
         db.commit()
-    return Principal(row)
+    # Reszta tego zapytania widzi tylko firmy organizacji tokenu (app/tenancy.py).
+    tenancy.set_scope(db.scalars(select(Company.id).where(Company.organisation_id == org.id)).all())
+    return Principal(row, org.id)
 
 
 def unauthorized(request: Request) -> JSONResponse:
@@ -212,6 +222,8 @@ def authorize_form(request: Request, db: Session = Depends(get_db)):
     if not request.session.get("user"):
         request.session["next"] = str(request.url.path) + "?" + str(request.url.query)
         return RedirectResponse("/login", status_code=303)
+    if request.session.get("role", "wlasciciel") != "wlasciciel":
+        raise HTTPException(403, "Połączenie z Claude zatwierdza właściciel organizacji.")
     requested = normalize_scopes(p.get("scope") or "read write")
     return render(request, db, "oauth_consent.html", client=client, params=dict(p), scopes=SCOPES, requested=requested)
 
@@ -220,6 +232,8 @@ def authorize_form(request: Request, db: Session = Depends(get_db)):
 async def authorize_decide(request: Request, db: Session = Depends(get_db)):
     if not request.session.get("user"):
         raise HTTPException(401)
+    if request.session.get("role", "wlasciciel") != "wlasciciel":
+        raise HTTPException(403, "Połączenie z Claude zatwierdza właściciel organizacji.")
     form = await request.form()
     client = _client(db, form.get("client_id", ""))
     redirect_uri = form.get("redirect_uri", "")
@@ -234,7 +248,8 @@ async def authorize_decide(request: Request, db: Session = Depends(get_db)):
     code = secrets.token_urlsafe(32)
     db.add(AuthCode(code_hash=sha(code), client_id=client.client_id, redirect_uri=redirect_uri,
                     code_challenge=form.get("code_challenge", ""), scopes=" ".join(scopes),
-                    resource=form.get("resource", ""), expires_at=now() + CODE_TTL))
+                    resource=form.get("resource", ""), expires_at=now() + CODE_TTL,
+                    organisation_id=request.session.get("org_id")))
     db.commit()
     q = {"code": code}
     if state:
@@ -278,7 +293,8 @@ async def token(
             return _token_error("invalid_grant", "Niezgodny adres powrotu.")
         if not code_verifier or not pkce_ok(code_verifier, row.code_challenge):
             return _token_error("invalid_grant", "Błędny code_verifier (PKCE).")
-        return JSONResponse(issue_tokens(db, client, row.scopes.split()), headers={"Cache-Control": "no-store"})
+        return JSONResponse(issue_tokens(db, client, row.scopes.split(), organisation_id=row.organisation_id),
+                            headers={"Cache-Control": "no-store"})
 
     if grant_type == "refresh_token":
         row = db.scalar(select(ApiToken).where(ApiToken.token_hash == sha(refresh_token), ApiToken.kind == "refresh"))
@@ -292,7 +308,8 @@ async def token(
             return _token_error("invalid_grant", "Token odświeżania wygasł.")
         row.revoked = True
         db.commit()
-        return JSONResponse(issue_tokens(db, client, row.scope_list, grant_id=row.grant_id),
+        return JSONResponse(issue_tokens(db, client, row.scope_list, grant_id=row.grant_id,
+                                         organisation_id=row.organisation_id),
                             headers={"Cache-Control": "no-store"})
 
     return _token_error("unsupported_grant_type")

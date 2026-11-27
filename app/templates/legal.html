@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="pl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ 'Regulamin' if kind == 'regulamin' else 'Polityka prywatności' }} · Sygnavo</title><link rel="stylesheet" href="/static/app.css"></head>
+<body><main style="max-width:760px;margin:32px auto;padding:0 16px"><div class="card">
+{% set op = operator.name if operator else 'operator programu' %}
+{% if kind == 'regulamin' %}
+<h1>Regulamin programu Sygnavo</h1>
+<p>Sygnavo to program do faktur i obsługi klientów prowadzony przez {{ op }}{% if operator and operator.nip %} (NIP {{ operator.nip }}){% endif %}.
+Z programu korzystają wyłącznie upoważnieni użytkownicy operatora, po zalogowaniu.</p>
+<p>Połączenie z bankiem służy tylko do odczytu sald i operacji na rachunkach operatora, żeby oznaczać zapłacone faktury.
+Program nie zleca przelewów. Zgodę na dostęp użytkownik wydaje w swoim banku i może ją w każdej chwili cofnąć w banku albo w programie.</p>
+{% else %}
+<h1>Polityka prywatności</h1>
+<p>Administratorem danych przetwarzanych w programie Sygnavo jest {{ op }}{% if operator and operator.nip %} (NIP {{ operator.nip }}){% endif %}{% if operator and operator.street %}, {{ operator.street }}, {{ operator.postal_code }} {{ operator.city }}{% endif %}.</p>
+<p>Przetwarzamy dane kontrahentów, faktur i operacji bankowych wyłącznie w celu prowadzenia sprzedaży, rozliczeń i księgowości
+(art. 6 ust. 1 lit. b, c i f RODO). Dane z banku pobieramy za zgodą posiadacza rachunku przez licencjonowanego dostawcę usługi
+dostępu do informacji o rachunku (Enable Banking Oy) i używamy ich tylko do oznaczania zapłaconych faktur.</p>
+<p>Dane przechowujemy na serwerze operatora w Unii Europejskiej przez okres wymagany przepisami podatkowymi. Nie sprzedajemy ich
+i nie przekazujemy innym podmiotom poza dostawcami usług technicznych. Każdej osobie przysługuje prawo dostępu do danych,
+ich sprostowania, usunięcia lub ograniczenia przetwarzania oraz skarga do Prezesa UODO.</p>
+<p>Pytania wpisane w okienku „Pomoc” (asystent AI) przekazujemy dostawcy modelu AI (Anthropic) wyłącznie w celu
+przygotowania odpowiedzi, razem z ogólnym stanem ustawień firmy (np. czy podłączono KSeF). Nie przekazujemy mu danych
+kontrahentów ani dokumentów. Pytania przechowujemy w programie 90 dni, żeby poprawiać instrukcje.</p>
+{% endif %}
+</div></main></body></html>

@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}{{ e.name if e.id else 'Nowy sprzęt' }}{% endblock %}
+{% block content %}
+<div class="row"><h1>{{ e.name if e.id else 'Nowy sprzęt' }}</h1>{% if e.id %}<span>{% include "_equipment_badges.html" %}</span>{% endif %}
+<span class="spacer"></span><a class="btn" href="{{ '/kontrahenci/%d' % e.contractor_id if e.contractor_id and not e.id else '/sprzet' }}">Wróć</a></div>
+<div class="split">
+<form method="post" action="{{ '/sprzet/%d' % e.id if e.id else '/sprzet/nowy' }}">
+<div class="card"><div class="grid">
+  <div style="grid-column:1/-1"><label>Produkt z bazy (opcjonalnie)</label><input name="product" list="product-list" autocomplete="off" value="{{ e.product.label if e.product else '' }}" placeholder="wpisz kod lub nazwę produktu"></div>
+  <div style="grid-column:1/-1"><label>Nazwa urządzenia</label><input name="name" value="{{ e.name or '' }}" placeholder="np. Rejestrator Hikvision 16 kan."></div>
+  <div><label>Rodzaj</label><input name="category" list="cat-list" value="{{ e.category or '' }}" placeholder="np. kamera, rejestrator, alarm"></div>
+  <div><label>Numer seryjny</label><input name="serial_no" value="{{ e.serial_no or '' }}"></div>
+  <div><label>Numer inwentarzowy</label><input name="inventory_no" value="{{ e.inventory_no or '' }}"></div>
+  <div><label>Kod kreskowy</label><input name="barcode" value="{{ e.barcode or '' }}" inputmode="numeric"></div>
+  <div style="grid-column:1/-1"><label>Klient</label><select name="contractor_id"><option value="">—</option>
+    {% for c in contractors %}<option value="{{ c.id }}" data-search="{{ c.nip }} {{ c.city }}" {{ 'selected' if c.id == e.contractor_id }}>{{ c.name }}</option>{% endfor %}</select></div>
+  {% if contacts %}<div><label>Osoba kontaktowa</label><select name="contact_id"><option value="">—</option>
+    {% for p in contacts %}<option value="{{ p.id }}" {{ 'selected' if p.id == e.contact_id }}>{{ p.name }}</option>{% endfor %}</select></div>{% endif %}
+  <div style="grid-column:1/-1"><label>Lokalizacja (gdzie stoi)</label><input name="location" value="{{ e.location or '' }}" placeholder="np. ul. Długa 10, Chojnice – magazyn, wejście od podwórza"></div>
+</div></div>
+<div class="card"><h2 style="margin-top:0">Gwarancja i przeglądy</h2><div class="grid">
+  <div><label>Data zakupu</label><input type="date" name="purchase_date" value="{{ e.purchase_date.isoformat() if e.purchase_date }}"></div>
+  <div><label>Data montażu</label><input type="date" name="install_date" value="{{ e.install_date.isoformat() if e.install_date }}"></div>
+  <div><label>Gwarancja do</label><input type="date" name="warranty_until" value="{{ e.warranty_until.isoformat() if e.warranty_until }}"></div>
+  <div><label>Przypomnij przed końcem (dni)</label><input type="number" min="0" name="warranty_remind_days" value="{{ e.warranty_remind_days if e.warranty_remind_days is not none else 30 }}"></div>
+  <div><label>Przegląd co (miesięcy, 0 = bez)</label><input type="number" min="0" max="60" name="service_interval_months" value="{{ e.service_interval_months or 0 }}"></div>
+  <div><label>Następny przegląd</label><input type="date" name="next_service" value="{{ e.next_service.isoformat() if e.next_service }}"></div>
+  <div><label>Dostawca</label><input name="supplier" value="{{ e.supplier or '' }}"></div>
+  <div><label>Cena zakupu</label><input name="price" inputmode="decimal" value="{{ e.price|money if e.price is not none else '' }}"></div>
+  <div style="grid-column:1/-1"><label>Notatki</label><textarea name="notes" rows="3" placeholder="np. hasło do rejestratora jest u klienta, dostęp przez kierownika">{{ e.notes or '' }}</textarea></div>
+  {% if e.id %}<div style="grid-column:1/-1"><input type="hidden" name="active" value="1"><label><input type="checkbox" name="active" value="0" {{ 'checked' if not e.active }}> Wycofany (zdemontowany, sprzedany, zezłomowany)</label></div>{% endif %}
+</div></div>
+<datalist id="product-list">{% for pr in products %}<option value="{{ pr.label }}"></option>{% endfor %}</datalist>
+<datalist id="cat-list">{% for c in categories %}<option value="{{ c }}"></option>{% endfor %}</datalist>
+<div class="row" style="margin-bottom:16px"><button class="btn primary">Zapisz</button></div>
+</form>
+<div>
+{% if e.id %}
+  <div class="card" id="serwis"><h2 style="margin-top:0">Dodaj wpis serwisowy</h2>
+  <form method="post" action="/sprzet/{{ e.id }}/serwis"><div class="grid">
+    <div><label>Data</label><input type="date" name="date" value="{{ today.isoformat() }}"></div>
+    <div><label>Rodzaj</label><select name="kind">{% for k, v in KINDS.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select></div>
+    <div style="grid-column:1/-1"><label>Co zrobiono</label><textarea name="description" rows="3" placeholder="np. wymiana dysku 4 TB, aktualizacja oprogramowania"></textarea></div>
+    {% if deliveries %}<div style="grid-column:1/-1"><label>WZ (opcjonalnie)</label><select name="delivery_id"><option value="">—</option>
+      {% for d in deliveries %}<option value="{{ d.id }}">{{ d.display_number }} · {{ d.issue_date|date }}</option>{% endfor %}</select></div>{% endif %}
+  </div>
+  {% if e.service_interval_months %}<p class="muted" style="font-size:13px">Przegląd przesunie następny termin o {{ e.service_interval_months }} mies.</p>{% endif %}
+  <p class="row"><button class="btn primary">Dodaj wpis</button>
+  {% if e.contractor_id %}<a class="btn" href="/wz/nowa?kontrahent={{ e.contractor_id }}">+ WZ dla klienta</a>{% endif %}</p></form></div>
+  <div class="row"><h2>Zlecenia serwisowe</h2><span class="spacer"></span><a class="btn small" href="/zadania/nowe?sprzet={{ e.id }}">+ Zlecenie</a></div>
+  {% set rows = task_rows %}{% set back = '/sprzet/%d' % e.id %}{% set empty = 'Brak zleceń.' %}{% include "_task_rows.html" %}
+  <h2>Historia serwisu</h2>
+  {% for s in e.services %}<div class="card" style="padding:12px 14px">
+    <div class="row"><b>{{ s.date|date }}</b> <span class="badge">{{ s.kind_label }}</span><span class="spacer"></span>
+      <form method="post" action="/sprzet/{{ e.id }}/serwis/{{ s.id }}/usun" onsubmit="return confirm('Usunąć wpis?')"><button class="btn small">Usuń</button></form></div>
+    {% if s.description %}<div style="white-space:pre-line;margin-top:6px">{{ s.description }}</div>{% endif %}
+    <div class="muted" style="font-size:12px;margin-top:4px">{{ s.author }}{% if s.delivery %} · <a href="/wz/{{ s.delivery_id }}">{{ s.delivery.display_number }}</a>{% endif %}{% if s.invoice %} · <a href="/faktury/{{ s.invoice_id }}">{{ s.invoice.display_number }}</a>{% endif %}</div>
+  </div>{% else %}<p class="muted">Brak wpisów. Dodaj pierwszy przegląd albo naprawę.</p>{% endfor %}
+  <form method="post" action="/sprzet/{{ e.id }}/usun" onsubmit="return confirm('Usunąć urządzenie razem z historią serwisu? Zamiast tego możesz oznaczyć je jako wycofane.')" style="margin-top:16px"><button class="btn danger small">Usuń urządzenie</button></form>
+{% else %}
+  <div class="card muted">Po zapisaniu dodasz tu przeglądy i naprawy. Program przypomni o końcu gwarancji i o kolejnym przeglądzie.</div>
+{% endif %}
+</div>
+</div>
+{% endblock %}

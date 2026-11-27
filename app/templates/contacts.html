@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Osoby kontaktowe{% endblock %}
+{% block content %}
+<form class="row" method="get" style="margin-bottom:6px"><h1 style="margin:0 6px 0 0">Osoby kontaktowe</h1><button type="submit" hidden tabindex="-1" aria-hidden="true"></button>
+  <input type="search" name="q" value="{{ q }}" placeholder="imię, nazwisko, firma, e-mail, telefon" style="max-width:320px" aria-label="Szukaj">
+  <span class="spacer"></span><a class="btn primary small" href="/kontakty/nowy">+ Osoba</a></form>
+<div class="card tbl"><table>
+<tr><th>Osoba</th><th>Firma</th><th class="hide-sm">Stanowisko</th><th>Telefon</th><th class="hide-sm">E-mail</th></tr>
+{% for p in rows %}
+<tr><td><a href="/kontakty/{{ p.id }}">{{ p.name }}</a></td>
+<td>{% if p.contractor %}{{ klink(p.contractor_id, p.contractor.name) }}{% endif %}</td>
+<td class="hide-sm">{{ p.position }}</td><td>{% if p.phone %}<a href="tel:{{ p.phone }}">{{ p.phone }}</a>{% endif %}</td>
+<td class="hide-sm">{% if p.email %}<a href="/poczta/nowa?kontakt={{ p.id }}">{{ p.email }}</a>{% endif %}</td></tr>
+{% else %}<tr><td colspan="5" class="muted">Brak osób kontaktowych.</td></tr>{% endfor %}
+</table></div>
+{% endblock %}

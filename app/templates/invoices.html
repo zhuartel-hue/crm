@@ -1,13 +1,26 @@
 {% extends "base.html" %}
 {% block title %}Faktury{% endblock %}
 {% block content %}
-<div class="row"><h1>Faktury</h1><span class="spacer"></span>
-<a class="btn primary" href="/faktury/nowa">+ Faktura</a></div>
-<form class="card row" method="get">
-  <div style="flex:2;min-width:160px"><label>Szukaj</label><input name="q" value="{{ q }}" placeholder="numer, nabywca, NIP"></div>
-  <div style="flex:1;min-width:120px"><label>Miesiąc</label><input type="month" name="miesiac" value="{{ miesiac }}"></div>
-  <div><label>&nbsp;</label><button class="btn">Pokaż</button></div>
+<form class="row" method="get" style="margin-bottom:6px"><h1 style="margin:0 6px 0 0">Faktury</h1><button type="submit" hidden tabindex="-1" aria-hidden="true"></button>
+  <input type="search" name="q" value="{{ q }}" placeholder="numer, nabywca, NIP" style="max-width:240px" aria-label="Szukaj">
+  <input type="month" name="miesiac" value="{{ miesiac }}" style="max-width:150px" aria-label="Miesiąc" onchange="this.form.submit()">
+  <select name="rodzaj" style="max-width:150px" aria-label="Rodzaj" onchange="this.form.submit()"><option value="">wszystkie rodzaje</option>
+    {% for k, v in INVOICE_KINDS.items() %}<option value="{{ k }}" {{ 'selected' if rodzaj == k }}>{{ v }}</option>{% endfor %}</select>
+  {% if ksef_select %}<select name="ksef" style="max-width:150px" aria-label="KSeF" onchange="this.form.submit()"><option value="">KSeF: wszystkie</option>
+    <option value="do-wyslania" {{ 'selected' if ksef_f == 'do-wyslania' }}>do wysłania</option></select>{% endif %}
+  <span class="spacer"></span>
+  <a class="btn primary small" href="/faktury/nowa">+ Faktura</a>
+  <select style="max-width:130px" aria-label="Inny rodzaj faktury" onchange="if(this.value)location.href=this.value"><option value="">+ inna…</option>
+    <option value="/faktury/nowa?rodzaj=proforma">Proforma</option><option value="/faktury/nowa?rodzaj=advance">Zaliczkowa</option></select>
 </form>
+{% if ksef_select %}<form id="ksef-form" method="post" action="/faktury/ksef" class="row" style="margin-bottom:8px"
+  onsubmit="var n=document.querySelectorAll('input[name=ids]:checked').length; if(!n){alert('Zaznacz faktury.');return false;} return confirm('Wysłać do KSeF zaznaczone faktury (' + n + ')? Tego nie da się cofnąć, zmiany robi się korektą.')">
+  <input type="hidden" name="back" value="{{ request.url.path }}{{ '?' + request.url.query if request.url.query }}">
+  <button class="btn primary" {{ 'disabled' if not ksef_on }}>Wyślij zaznaczone do KSeF</button>
+  {% if ksef_on %}<span class="muted">Zielony ptaszek = przyjęta w KSeF, czerwony krzyżyk = do wysłania albo odrzucona (zaznacz, aby wysłać).</span>
+  {% else %}<span class="muted">KSeF jest jeszcze wyłączony dla tej firmy. Wgraj certyfikat w <a href="/ustawienia#ksef">Ustawienia → KSeF</a>, wtedy przycisk zadziała.</span>{% endif %}
+</form>{% endif %}
 {% include "_invoice_rows.html" %}
-<p class="muted">Razem wystawione brutto: <b>{{ total|money }} zł</b></p>
+{% if limited %}<p class="muted">Pokazano {{ invoices|length }} najnowszych z {{ count }}. Zawęź wyszukiwanie albo <a href="?{{ request.url.query }}{{ '&' if request.url.query }}wszystkie=1">pokaż wszystkie</a>.</p>{% endif %}
+<p class="muted">Razem wystawione brutto (bez proform): <b>{{ total|money }} zł</b></p>
 {% endblock %}

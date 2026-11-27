@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Zadania{% endblock %}
+{% block content %}
+<form class="row" method="get" style="margin-bottom:6px"><h1 style="margin:0 6px 0 0">Zadania</h1><button type="submit" hidden tabindex="-1" aria-hidden="true"></button>
+  <a class="btn small {{ 'primary' if widok == 'dzis' and not q }}" href="/zadania">Na dziś ({{ counts.dzis }})</a>
+  <a class="btn small {{ 'primary' if widok == 'otwarte' }}" href="/zadania?widok=otwarte">Otwarte ({{ counts.otwarte }})</a>
+  <a class="btn small {{ 'primary' if widok == 'zrobione' }}" href="/zadania?widok=zrobione">Zrobione</a>
+  <a class="btn small {{ 'primary' if widok == 'wszystkie' }}" href="/zadania?widok=wszystkie">Wszystkie</a>
+<input type="hidden" name="widok" value="{{ widok if widok != 'dzis' else 'wszystkie' }}">
+    <input type="search" name="q" value="{{ q }}" placeholder="szukaj: tytuł, opis, klient, adres" style="max-width:240px" aria-label="Szukaj">
+  <span class="spacer"></span><a class="btn small" href="/kalendarz">Kalendarz</a><a class="btn primary small" href="/zadania/nowe">+ Zadanie</a></form>
+<form class="row" method="post" action="/zadania/szybkie" style="margin-bottom:6px">
+  <input type="hidden" name="back" value="{{ request.url.path }}{{ '?' + request.url.query if request.url.query }}">
+  <div style="flex:3;min-width:180px"><input name="title" placeholder="Szybko dodaj zadanie, np. zadzwonić do klienta w sprawie przeglądu" required></div>
+  <div style="flex:1;min-width:140px"><input type="date" name="due_date" value="{{ today.isoformat() }}" aria-label="Termin"></div>
+  <button class="btn small primary">Dodaj</button>
+</form>
+
+
+{% set back = request.url.path ~ ('?' ~ request.url.query if request.url.query else '') %}
+{% set empty = 'Na dziś nic. Dobra robota.' if widok == 'dzis' and not q else 'Brak zadań.' %}
+{% include "_task_rows.html" %}
+{% endblock %}

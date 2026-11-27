@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}Zamówienie {{ z.display_number }}{% endblock %}
+{% block content %}
+<div class="row"><h1>Zamówienie {{ z.display_number }}</h1>
+<span class="badge {{ z.status_class }}">{{ z.status_label }}</span>
+{% if z.direction != 'sale' %}<span class="badge">do dostawcy</span>{% endif %}
+{% if z.overdue %}<span class="badge due">po terminie</span>{% endif %}
+{% if z.channel %}<span class="badge m">{{ z.channel_label }}</span>{% endif %}
+{% if z.payment_status %}<span class="badge {{ 'ok' if z.payment_status == 'paid' else ('warn' if z.payment_status == 'unpaid' else '') }}">{{ z.payment_label }}</span>{% endif %}</div>
+<div class="row" style="margin-bottom:16px">
+  <a class="btn" href="/zamowienia/{{ z.id }}/edytuj">Edytuj</a>
+  {% if z.direction == 'sale' and not z.invoice_id %}<form method="post" action="/zamowienia/{{ z.id }}/faktura"><button class="btn primary">Faktura z zamówienia</button></form>{% endif %}
+  {% if not z.delivery_id %}<form method="post" action="/zamowienia/{{ z.id }}/wz"><button class="btn">{{ 'WZ' if z.direction == 'sale' else 'PZ' }} z zamówienia</button></form>{% endif %}
+  {% if z.direction == 'sale' %}<a class="btn" href="/zamowienia/{{ z.id }}/paczka">Nadaj paczkę</a>{% endif %}
+  <a class="btn" href="/zamowienia/nowe?kopia={{ z.id }}">Kopiuj jako nowe</a>
+  {% if z.email %}<a class="btn" href="/poczta/nowa?do={{ z.email|urlencode }}">Napisz maila</a>{% endif %}
+  {% if not z.invoice_id and not z.delivery_id %}
+  <form method="post" action="/zamowienia/{{ z.id }}/usun" onsubmit="return confirm('Usunąć zamówienie {{ z.display_number }}? Tego nie da się cofnąć.')"><button class="btn danger">Usuń</button></form>
+  {% else %}<button class="btn" disabled title="Z zamówienia jest faktura albo WZ, więc zostaje w historii. Możesz zmienić jego status.">Usuń</button>{% endif %}
+</div>
+<div class="grid">
+  <div class="card"><div class="muted">{{ 'Klient' if z.direction == 'sale' else 'Dostawca' }}</div><b>{{ klink(z.contractor_id, z.recipient_name) }}</b><br><span style="white-space:pre-line">{{ z.recipient_address }}</span>
+    {% if z.contact_person %}<br>{{ z.contact_person }}{% endif %}{% if z.phone %}<br><a href="tel:{{ z.phone }}">{{ z.phone }}</a>{% endif %}{% if z.email %}<br>{{ z.email }}{% endif %}
+    {% if z.contractor_id %}<br><a href="/kontrahenci/{{ z.contractor_id }}">Karta kontrahenta</a>{% endif %}</div>
+  <div class="card">{% if z.title %}<b>{{ z.title }}</b><br>{% endif %}
+    Data {{ z.issue_date|date }} · termin {{ z.due_date|date if z.due_date else '—' }}
+    {% if z.customer_ref %}<br>Nr zamówienia klienta: {{ z.customer_ref }}{% endif %}
+    {% if z.offer %}<br>Oferta: <a href="/oferty/{{ z.offer_id }}">{{ z.offer.display_number }}</a>{% endif %}
+    {% if z.invoice %}<br>Faktura: <a href="/faktury/{{ z.invoice_id }}">{{ z.invoice.display_number }}</a>{% endif %}
+    {% if z.delivery %}<br>{{ z.delivery.kind|upper }}: <a href="/wz/{{ z.delivery_id }}">{{ z.delivery.display_number }}</a>{% endif %}
+    {% if z.created_by %}<br><span class="muted">Dodał: {{ z.created_by }}</span>{% endif %}</div>
+  {% if z.channel or z.shipping_method or z.delivery_address %}<div class="card"><div class="muted">Dostawa</div>
+    {% if z.shipping_method %}<b>{{ z.shipping_method }}</b>{% endif %}{% if z.pickup_point %}<br>Punkt: {{ z.pickup_point }}{% endif %}
+    {% if z.delivery_address %}<br><span style="white-space:pre-line">{{ z.delivery_address }}</span>{% endif %}
+    {% if z.external_status %}<br><span class="muted">Status w {{ z.channel_label }}: {{ z.external_status }}</span>{% endif %}
+    {% if z.invoice_requested %}<br><span class="badge warn">klient chce fakturę</span>{% if z.buyer_tax_id %} NIP {{ z.buyer_tax_id }}{% endif %}{% endif %}</div>{% endif %}
+</div>
+{% if z.shipments %}<div class="card tbl"><table>
+<tr><th>Przesyłka</th><th>Numer</th><th>Status</th><th class="n">Koszt brutto</th><th></th></tr>
+{% for s in z.shipments %}<tr><td>{{ s.service_name or s.provider }}</td>
+<td>{% if s.tracking_url %}<a href="{{ s.tracking_url }}" target="_blank" rel="noopener">{{ s.waybill }}</a>{% else %}{{ s.waybill or '—' }}{% endif %}</td>
+<td><span class="badge {{ 'ok' if s.state == 'delivered' else ('warn' if s.state == 'problem' else '') }}">{{ s.state_label }}</span>{% if s.status_text and s.status_text != s.state_label %} <span class="muted">{{ s.status_text }}</span>{% endif %}{% if s.last_error %} <span class="muted">{{ s.last_error }}</span>{% endif %}</td>
+<td class="n">{{ s.price_gross|money if s.price_gross is not none else '—' }}</td>
+<td class="row" style="gap:4px;flex-wrap:nowrap">{% if s.external_id %}<a class="btn small" href="/zamowienia/przesylki/{{ s.id }}/etykieta" target="_blank">Etykieta</a>
+<form method="post" action="/zamowienia/przesylki/{{ s.id }}/sledz" style="margin:0"><button class="btn small">Odśwież</button></form>
+{% if s.state == 'ordered' %}<form method="post" action="/zamowienia/przesylki/{{ s.id }}/anuluj" style="margin:0" onsubmit="return confirm('Anulować przesyłkę?')"><button class="btn small">Anuluj</button></form>{% endif %}{% endif %}</td></tr>{% endfor %}
+</table></div>{% endif %}
+<form method="post" action="/zamowienia/{{ z.id }}/status" class="row card" style="gap:8px;flex-wrap:wrap;align-items:center">
+  <span class="muted">Status:</span>
+  <div style="min-width:220px"><select name="status" class="searchable status-pick {{ z.status_class }}" data-placeholder="szukaj statusu" aria-label="Status zamówienia" onchange="this.form.submit()">
+  {% for k, v in STATUSES.items() %}<option value="{{ k }}" {{ 'selected' if z.status == k }}>{{ v }}</option>{% endfor %}</select></div>
+  <a class="muted" style="font-size:13px" href="/ustawienia/statusy-zamowien">Edytuj listę statusów</a>
+</form>
+<div class="card tbl"><table>
+<tr><th>Lp.</th><th>Pozycja</th><th class="n">Ilość</th><th>Jedn.</th><th class="n">Cena {{ 'brutto' if z.prices_gross else 'netto' }}</th><th class="n hide-sm">VAT</th><th class="n">Brutto</th></tr>
+{% for it in z.items %}<tr><td>{{ it.position }}</td><td>{{ it.name }}{% if it.code %}<br><span class="muted">{{ it.code }}</span>{% endif %}</td>
+<td class="n">{{ it.quantity|qty }}</td><td>{{ it.unit }}</td><td class="n">{{ it.unit_price|money if it.unit_price is not none else '—' }}</td>
+<td class="n hide-sm">{{ it.vat_rate }}{{ '%' if it.vat_rate.isdigit() }}</td><td class="n">{{ it.gross|money }}</td></tr>{% endfor %}
+<tr><td colspan="4"></td><td class="n" colspan="2">Netto {{ z.total_net|money }} · VAT {{ z.total_vat|money }}</td><td class="n"><b>{{ z.total_gross|money }} zł</b></td></tr>
+</table></div>
+{% if z.notes %}<div class="card"><div class="muted">Uwagi</div><span style="white-space:pre-line">{{ z.notes }}</span></div>{% endif %}
+{% if z.internal_notes %}<div class="card"><div class="muted">Notatka wewnętrzna</div><span style="white-space:pre-line">{{ z.internal_notes }}</span></div>{% endif %}
+{% endblock %}

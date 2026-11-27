@@ -1,0 +1,38 @@
+# Zarzadzane przez repozytorium (deploy/serwer/Caddyfile). Zmiany tylko przez PR.
+# APP_ALIASES (opcjonalnie, w /etc/sygnavo/serwer.env) to dodatkowe adresy, np. ", 188-245-222-137.sslip.io"
+# na czas przeprowadzki, gdy stary serwer przekazuje ruch na nowy, zanim zmieni sie DNS.
+# TRUSTED_PROXIES (opcjonalnie): adresy serwera przekazujacego ruch (np. chirpstack-1), zeby program widzial
+# prawdziwy adres klienta (dziennik, bank). Bez zmiennej ufamy tylko sobie.
+{
+	servers {
+		trusted_proxies static {$TRUSTED_PROXIES:127.0.0.1/32}
+	}
+}
+
+{$APP_DOMAIN}{$APP_ALIASES} {
+	encode gzip
+	reverse_proxy app:8000
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+	}
+}
+
+# OLD_DOMAINS (opcjonalnie, w /etc/sygnavo/serwer.env): dawne adresy programu, ktore stale przekierowuja
+# na APP_DOMAIN z zachowaniem sciezki, np. "crm.margotsystem.com, 188-245-222-137.sslip.io".
+# Bez zmiennej blok obsluguje tylko nieistniejacy adres http (nic nie robi).
+{$OLD_DOMAINS:http://brak.invalid} {
+	redir https://{$APP_DOMAIN}{uri} 308
+}
+
+# TEST_DOMAIN (opcjonalnie, w /etc/sygnavo/serwer.env): panel testowy, np. test.sygnavo.com albo
+# test.188-245-222-137.sslip.io. Kontener test-app uruchamia panel-testowy.sh (projekt crm-test).
+{$TEST_DOMAIN:http://brak-test.invalid} {
+	encode gzip
+	reverse_proxy test-app:8000
+	header {
+		X-Robots-Tag "noindex, nofollow"
+		Strict-Transport-Security "max-age=31536000"
+	}
+}

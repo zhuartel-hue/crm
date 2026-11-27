@@ -1,0 +1,7 @@
+[Unit]
+Description=Sygnavo: test odtwarzania co niedziele 4:40
+[Timer]
+OnCalendar=Sun *-*-* 04:40:00
+Persistent=true
+[Install]
+WantedBy=timers.target

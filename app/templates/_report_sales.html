@@ -1,0 +1,45 @@
+{# Tabele raportu sprzedazy: wspolne dla strony w programie, druku i PDF. #}
+{% macro rates_table(rows, title) %}
+<table class="rep">
+<tr><th>{{ title }}</th><th class="n">Netto</th><th class="n">VAT</th><th class="n">Brutto</th></tr>
+{% for r in rows %}<tr><td>{{ r.rate }}{{ '%' if r.rate.isdigit() }}</td><td class="n">{{ r.net|money }}</td><td class="n">{{ r.vat|money }}</td><td class="n">{{ r.gross|money }}</td></tr>{% else %}<tr><td colspan="4" class="muted">—</td></tr>{% endfor %}
+</table>
+{% endmacro %}
+{% macro inv_rows(rows, start) %}
+{% for r in rows %}<tr>
+<td class="n">{{ start + loop.index }}</td>
+<td>{% if link %}<a href="/faktury/{{ r.inv.id }}">{{ r.number }}</a>{% else %}{{ r.number }}{% endif %}{% if r.related %}<br><span class="muted">do {{ r.related }}</span>{% endif %}</td>
+<td>{{ r.kind }}</td><td style="white-space:nowrap">{{ r.issue_date|date }}</td><td style="white-space:nowrap" class="hide-sm">{{ r.sale_date|date }}</td>
+<td>{{ r.buyer }}</td><td style="white-space:nowrap">{{ r.nip }}</td>
+<td class="n">{{ r.net|money }}</td><td class="n">{{ r.vat|money }}</td><td class="n">{{ r.gross|money }}</td>
+<td>{{ r.paid_state }}</td><td class="ksef">{{ r.ksef or '—' }}</td>
+</tr>{% endfor %}
+{% endmacro %}
+{% set t = rep.totals %}
+<div class="rep-grid">
+  {{ rates_table(rep.rates.total, 'Razem wg stawek VAT') }}
+  <table class="rep">
+  <tr><th>Podsumowanie</th><th class="n">Liczba</th><th class="n">Netto</th><th class="n">VAT</th><th class="n">Brutto</th></tr>
+  <tr><td>Faktury</td><td class="n">{{ t.invoices.count }}</td><td class="n">{{ t.invoices.net|money }}</td><td class="n">{{ t.invoices.vat|money }}</td><td class="n">{{ t.invoices.gross|money }}</td></tr>
+  <tr><td>Korekty</td><td class="n">{{ t.corrections.count }}</td><td class="n">{{ t.corrections.net|money }}</td><td class="n">{{ t.corrections.vat|money }}</td><td class="n">{{ t.corrections.gross|money }}</td></tr>
+  <tr class="sum"><td>Razem</td><td class="n">{{ t.total.count }}</td><td class="n">{{ t.total.net|money }}</td><td class="n">{{ t.total.vat|money }}</td><td class="n">{{ t.total.gross|money }}</td></tr>
+  <tr><td colspan="4">Zapłacono / do zapłaty</td><td class="n">{{ t.total.paid|money }} / {{ t.total.unpaid|money }}</td></tr>
+  </table>
+</div>
+{% set head %}<tr><th class="n">Lp.</th><th>Numer</th><th>Rodzaj</th><th>Wystawiona</th><th class="hide-sm">Sprzedaż</th><th>Nabywca</th><th>NIP</th><th class="n">Netto</th><th class="n">VAT</th><th class="n">Brutto</th><th>Zapłata</th><th>Nr KSeF</th></tr>{% endset %}
+<h2>Faktury ({{ t.invoices.count }})</h2>
+<table class="rep list">
+{{ head }}
+{{ inv_rows(rep.sections.invoices, 0) }}
+{% if not rep.sections.invoices %}<tr><td colspan="12" class="muted">Brak faktur w tym okresie.</td></tr>{% endif %}
+<tr class="sum"><td colspan="7">Razem faktury</td><td class="n">{{ t.invoices.net|money }}</td><td class="n">{{ t.invoices.vat|money }}</td><td class="n">{{ t.invoices.gross|money }}</td><td colspan="2"></td></tr>
+</table>
+{% if rep.sections.corrections %}
+<h2>Korekty ({{ t.corrections.count }})</h2>
+<table class="rep list">
+{{ head }}
+{{ inv_rows(rep.sections.corrections, 0) }}
+<tr class="sum"><td colspan="7">Razem korekty</td><td class="n">{{ t.corrections.net|money }}</td><td class="n">{{ t.corrections.vat|money }}</td><td class="n">{{ t.corrections.gross|money }}</td><td colspan="2"></td></tr>
+</table>
+<div class="rep-grid">{{ rates_table(rep.rates.invoices, 'Faktury wg stawek') }}{{ rates_table(rep.rates.corrections, 'Korekty wg stawek') }}</div>
+{% endif %}

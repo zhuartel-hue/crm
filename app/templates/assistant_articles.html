@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}Pomoc: instrukcje{% endblock %}
+{% block content %}
+<h1>Instrukcje Sygnavo</h1>
+<p class="muted">Kroki ze zrzutami ekranu. Pytanie możesz też wpisać w okienku Pomoc (przycisk ? w prawym dolnym rogu).</p>
+<div class="card"><h2 style="margin-top:0">Moduły</h2><ul>
+{% for a in items if a.kind == 'moduly' %}<li><a href="/pomoc/artykul/{{ a.slug }}">{{ a.title }}</a></li>{% endfor %}
+</ul><h2>Najczęstsze pytania</h2><ul>
+{% for a in items if a.kind == 'faq' %}<li><a href="/pomoc/artykul/{{ a.slug }}">{{ a.title }}</a></li>{% endfor %}
+</ul></div>
+{% endblock %}

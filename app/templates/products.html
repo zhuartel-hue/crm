@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Produkty{% endblock %}
+{% block content %}
+<form class="row" style="margin-bottom:6px" method="get"><h1 style="margin:0 6px 0 0">Produkty</h1><button type="submit" hidden tabindex="-1" aria-hidden="true"></button>
+  <input name="q" value="{{ q }}" type="search" placeholder="Kod, nazwa albo EAN" style="max-width:260px" aria-label="Szukaj">
+  <a class="btn small {{ 'primary' if pokaz != 'wszystkie' }}" href="/produkty?q={{ q|urlencode }}">aktywne</a>
+  <a class="btn small {{ 'primary' if pokaz == 'wszystkie' }}" href="/produkty?pokaz=wszystkie&q={{ q|urlencode }}">wszystkie</a>
+  <span class="spacer"></span><a class="btn primary small" href="/produkty/nowy">+ Produkt</a>
+</form>
+<div class="card tbl"><table>
+<tr><th>Produkt</th><th class="n">Netto</th><th class="n">VAT</th><th class="n hide-sm">Brutto</th><th class="hide-sm">Dostawca</th><th class="n">Stan</th></tr>
+{% for pr in products %}
+<tr>
+<td><a href="/produkty/{{ pr.id }}">{{ pr.name }}</a>{% if not pr.active %} <span class="badge">nieaktywny</span>{% endif %}
+  <br><span class="muted">{{ pr.code }}{% if pr.ean %} · EAN {{ pr.ean }}{% endif %}</span></td>
+<td class="n">{{ pr.price_net|money if pr.price_net is not none }}</td>
+<td class="n">{{ pr.vat_rate }}{{ '%' if pr.vat_rate.isdigit() }}</td>
+<td class="n hide-sm">{{ pr.price_gross|money if pr.price_gross is not none }}</td>
+<td class="hide-sm">{{ suppliers.get(pr.id, '') }}</td>
+<td class="n">{% if pr.is_service %}<span class="muted">usługa</span>{% else %}<span{% if pr.stock < 0 %} style="color:#b42318"{% endif %}>{{ pr.stock|qty }}</span>{% endif %}</td>
+</tr>
+{% else %}<tr><td colspan="6" class="muted">Brak produktów.</td></tr>{% endfor %}
+</table></div>
+{% endblock %}

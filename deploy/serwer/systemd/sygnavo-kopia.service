@@ -1,0 +1,7 @@
+[Unit]
+Description=Sygnavo: kopia bazy (lokalnie + Storage Box)
+After=docker.service
+[Service]
+Type=oneshot
+ExecStart=/bin/bash @SERWER_DIR@/kopia.sh co-godzine
+Nice=10

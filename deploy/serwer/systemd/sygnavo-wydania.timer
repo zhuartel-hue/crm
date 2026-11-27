@@ -1,0 +1,7 @@
+[Unit]
+Description=Sygnavo: sprawdzanie nowych wersji co 2 minuty
+[Timer]
+OnBootSec=3min
+OnUnitInactiveSec=2min
+[Install]
+WantedBy=timers.target

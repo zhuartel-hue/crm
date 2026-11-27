@@ -1,0 +1,14 @@
+<form method="post" action="/polaczenia/nowe" class="card" style="margin-bottom:10px">
+  <input type="hidden" name="back" value="{{ request.url.path }}{{ '?' ~ request.url.query if request.url.query }}">
+  {% if call_contractor %}<input type="hidden" name="contractor_id" value="{{ call_contractor.id }}">{% endif %}
+  <div class="row" style="gap:6px;flex-wrap:wrap">
+    <select name="direction" style="width:auto">{% for k, v in CALL_DIRECTIONS.items() if k != 'internal' %}<option value="{{ k }}" {{ 'selected' if k == 'out' }}>{{ v }}</option>{% endfor %}</select>
+    <select name="status" style="width:auto"><option value="answered">odebrane</option><option value="missed">nieodebrane</option><option value="busy">zajęte</option></select>
+    <input name="phone" placeholder="numer (opcjonalnie)" inputmode="tel" style="max-width:170px" value="{{ call_contractor.phone if call_contractor else '' }}">
+    {% if not call_contractor and contractors is defined %}<div style="min-width:220px;flex:1"><select name="contractor_id" class="searchable" data-placeholder="klient (szukaj)"><option value="">— klient po numerze —</option>{% for k in contractors %}<option value="{{ k.id }}" data-search="{{ k.nip }} {{ k.phone }}">{{ k.name }}</option>{% endfor %}</select></div>{% endif %}
+    <input name="minutes" placeholder="min" inputmode="decimal" style="max-width:70px" title="czas rozmowy w minutach">
+    <input type="datetime-local" name="started_at" style="width:auto" title="kiedy (puste = teraz)">
+  </div>
+  <textarea name="note" rows="2" placeholder="O czym była rozmowa, co ustaliliście" style="margin-top:6px"></textarea>
+  <button class="btn primary small" style="margin-top:6px">Zapisz rozmowę</button>
+</form>

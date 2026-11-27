@@ -1,36 +1,121 @@
 <!doctype html>
+{% from "_icons.html" import icon %}
 <html lang="pl">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <title>{% block title %}Sygnavo{% endblock %} · {{ company.short_name }}</title>
-<link rel="stylesheet" href="/static/app.css">
+<link rel="stylesheet" href="/static/app.css?v=11">
+<link rel="manifest" href="/static/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
+<link rel="icon" href="/static/icons/icon-192.png">
+<meta name="theme-color" content="#0f172a">
+<meta name="apple-mobile-web-app-title" content="Sygnavo">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 </head>
 <body>
-<header><div class="bar">
-  <span class="brand">Sygnavo</span>
+{% if TEST_PANEL %}<div style="background:#b45309;color:#fff;text-align:center;font-size:12px;padding:3px 8px;position:sticky;top:0;z-index:1000">PANEL TESTOWY · kopia danych · maile, KSeF i bank wyłączone · zmiany tutaj nie trafiają do programu</div>{% endif %}
+{% set p = request.url.path %}
+{% set groups = [
+  ('', [('/', 'Start', 'home', p == '/')]),
+  ('Sprzedaż', [('/faktury', 'Faktury', 'invoice', p.startswith('/faktury')),
+                ('/naleznosci', 'Należności', 'cash', p.startswith('/naleznosci')),
+                ('/oferty', 'Oferty', 'doc', p.startswith('/oferty')),
+                ('/umowy', 'Umowy i cykliczne', 'repeat', p.startswith('/umowy')),
+                ('/zamowienia', 'Zamówienia', 'cart', p.startswith('/zamowienia'))]),
+  ('Zakupy i magazyn', [('/koszty', 'Koszty (KSeF)', 'cost', p.startswith('/koszty')),
+                ('/wz', 'Magazyn WZ / PZ', 'box', p.startswith('/wz')),
+                ('/produkty', 'Produkty', 'tag', p.startswith('/produkty'))]),
+  ('Klienci', [('/kontrahenci', 'Kontrahenci', 'users', p.startswith('/kontrahenci')),
+               ('/kontakty', 'Osoby kontaktowe', 'user', p.startswith('/kontakty')),
+               ('/auta', 'Auta', 'car', p.startswith('/auta')),
+               ('/sprzet', 'Sprzęt i serwis', 'tool', p.startswith('/sprzet')),
+               ('/poczta', 'Poczta', 'mail', p.startswith('/poczta')),
+               ('/polaczenia', 'Połączenia', 'phone', p.startswith('/polaczenia'))]),
+  ('Organizacja', [('/zadania', 'Zadania', 'check', p.startswith('/zadania')),
+               ('/kalendarz', 'Kalendarz', 'calendar', p.startswith('/kalendarz')),
+               ('', 'Projekty', 'folder', False),
+               ('/raporty', 'Raporty', 'chart', p.startswith('/raporty'))]),
+  ('Finanse', [('/bank', 'Bank', 'bank', p.startswith('/bank'))]),
+  ('System', [('/ustawienia', 'Ustawienia', 'gear', p.startswith('/ustawienia') and not p.startswith(('/ustawienia/integracje', '/ustawienia/uzytkownicy'))),
+              ('/ustawienia/integracje', 'Integracje', 'repeat', p.startswith('/ustawienia/integracje')),
+              ('/szablony', 'Szablony maili', 'doc', p.startswith('/szablony')),
+              ('/import/firmao', 'Import z Firmao', 'repeat', p.startswith('/import')),
+              ('/dostep', 'Claude', 'spark', p.startswith('/dostep')),
+              ('/dziennik', 'Dziennik zmian', 'log', p.startswith('/dziennik')),
+              ('/ustawienia/uzytkownicy', 'Użytkownicy', 'user', p.startswith('/ustawienia/uzytkownicy')),
+              ('/konto', 'Konto', 'user', p.startswith('/konto'))]),
+] %}
+<div class="app">
+<aside class="side" id="side">
+  <div class="row" style="flex-wrap:nowrap"><a class="brand" href="/" title="Start"><img src="/static/icons/icon-192.png" alt=""><span>Sygnavo</span></a>
+  <span class="spacer"></span><button class="iconbtn hide-sm" type="button" onclick="location.reload()" aria-label="Odśwież" title="Odśwież">{{ icon('refresh') }}</button></div>
   <div class="switch">
     {% for c in companies %}
-    <form method="post" action="/firma/{{ c.id }}"><button class="{{ 'on' if c.id == company.id }}">{{ c.short_name }}</button></form>
+    <form method="post" action="/firma/{{ c.id }}"><button title="{{ c.name }}" class="{{ 'on' if c.id == company.id }}">{{ c.short_name }}</button></form>
     {% endfor %}
   </div>
-  {% set p = request.url.path %}
   <nav>
-    <a href="/" class="{{ 'on' if p == '/' }}">Pulpit</a>
-    <a href="/faktury" class="{{ 'on' if p.startswith('/faktury') }}">Faktury</a>
-    <a href="/kontrahenci" class="{{ 'on' if p.startswith('/kontrahenci') }}">Kontrahenci</a>
-    <a href="/auta" class="{{ 'on' if p.startswith('/auta') }}">Auta</a>
-    <a href="/dostep" class="{{ 'on' if p.startswith('/dostep') }}">Claude</a>
-    <a href="/dziennik" class="{{ 'on' if p.startswith('/dziennik') }}">Dziennik</a>
-    <a href="/ustawienia" class="{{ 'on' if p.startswith('/ustawienia') }}">Ustawienia</a>
+  {% for title, links in groups %}
+    {% if title %}<div class="nav-h">{{ title }}</div>{% endif %}
+    {% for href, label, ic, on in links %}{% if href and can_open is defined and not can_open(href) %}{% elif href %}<a href="{{ href }}" class="{{ 'on' if on }}">{{ icon(ic) }}<span>{{ label }}</span></a>
+    {%- else %}<span class="soon" title="W budowie">{{ icon(ic) }}<span>{{ label }}</span><em>wkrótce</em></span>{% endif %}{% endfor %}
+  {% endfor %}
   </nav>
-</div></header>
+</aside>
+<div class="scrim" id="scrim"></div>
+<div class="content">
+<header class="top only-sm-block">
+  <button class="iconbtn only-sm" id="menu-btn" aria-label="Menu">{{ icon('menu') }}</button>
+  <a class="brand only-sm" href="/" title="Start"><img src="/static/icons/icon-192.png" alt=""><span>Sygnavo</span></a>
+  <span class="co only-sm">{{ company.short_name }}</span>
+  <span class="spacer"></span>
+  <button class="iconbtn" id="reload-btn" aria-label="Odśwież" title="Odśwież">{{ icon('refresh') }}</button>
+</header>
 <main>
 {% if flash %}<div class="flash">{{ flash }}</div>{% endif %}
 {% if error %}<div class="error">{{ error }}</div>{% endif %}
 {% block content %}{% endblock %}
 </main>
+</div>
+</div>
+<nav class="tabs only-sm">
+  <a href="/" class="{{ 'on' if p == '/' }}">{{ icon('home') }}<span>Start</span></a>
+  <a href="/faktury" class="{{ 'on' if p.startswith('/faktury') }}">{{ icon('invoice') }}<span>Faktury</span></a>
+  <a href="/wz" class="{{ 'on' if p.startswith('/wz') }}">{{ icon('box') }}<span>Magazyn</span></a>
+  <a href="/naleznosci" class="{{ 'on' if p.startswith('/naleznosci') }}">{{ icon('cash') }}<span>Należności</span></a>
+  <a href="#" id="tab-menu">{{ icon('menu') }}<span>Więcej</span></a>
+</nav>
 {% block scripts %}{% endblock %}
+{% if feature is defined and feature('asystent_ai') %}
+<div class="pz no-print" id="pz">
+  <button type="button" class="pz-btn" aria-label="Pomoc" title="Pomoc: zapytaj asystenta">?</button>
+  <section class="pz-panel" aria-label="Pomoc">
+    <header><b>Pomoc Sygnavo</b><a class="pz-hist" href="/pomoc/artykuly" title="Wszystkie instrukcje">Instrukcje</a><span class="spacer"></span>
+      {% if role == 'wlasciciel' %}<a class="pz-hist" href="/pomoc/historia" title="Pytania zespołu i koszt">Historia</a>{% endif %}
+      <button type="button" class="pz-new" title="Nowa rozmowa">Nowa</button>
+      <button type="button" class="pz-close" aria-label="Zamknij">×</button></header>
+    <div class="pz-log" aria-live="polite"></div>
+    <form><textarea rows="2" maxlength="1500" placeholder="Np. jak dodać logo na fakturze?"></textarea><button class="btn primary small">Zapytaj</button></form>
+    <footer>{% if pomoc_ai() %}Asystent AI odpowiada na podstawie instrukcji Sygnavo i może się mylić. Niczego nie zmienia za Ciebie.{% else %}Pomoc wyszukuje odpowiedź w <a href="/pomoc/artykuly">instrukcjach Sygnavo</a>.{% endif %}</footer>
+  </section>
+</div>
+<script src="/static/pomoc.js?v=2" defer></script>
+{% endif %}
+<script src="/static/picker.js?v=2"></script>
+<script src="/static/tables.js?v=1" defer></script>
+<script src="/static/livesearch.js?v=3" defer></script>
+<script>
+(function () {
+  const side = document.getElementById('side'), scrim = document.getElementById('scrim');
+  const toggle = (open) => { document.body.classList.toggle('menu-open', open); };
+  document.getElementById('menu-btn').addEventListener('click', () => toggle(true));
+  document.getElementById('tab-menu').addEventListener('click', (e) => { e.preventDefault(); toggle(true); });
+  scrim.addEventListener('click', () => toggle(false));
+  document.getElementById('reload-btn').addEventListener('click', () => location.reload());
+  if ('serviceWorker' in navigator) { navigator.serviceWorker.register('/sw.js').catch(() => {}); }
+})();
+</script>
 </body>
 </html>

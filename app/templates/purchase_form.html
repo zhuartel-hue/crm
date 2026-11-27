@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Dodaj koszt{% endblock %}
+{% block content %}
+<div class="row" style="margin-bottom:6px"><a class="btn small" href="/koszty">← Koszty</a><h1 style="margin:0">Dodaj koszt · {{ company.short_name }}</h1></div>
+<p class="muted" style="margin:0 0 8px">Faktura spoza KSeF (papierowa, paragon z NIP, zagraniczna). Dodaj skan albo PDF. Koszt trafi do folderu <b>Do weryfikacji</b>.</p>
+{% if error %}<div class="error">{{ error }}</div>{% endif %}
+<form method="post" action="/koszty/nowa" enctype="multipart/form-data" class="card">
+<div class="grid" style="gap:8px">
+  <div><label for="p_number">Numer faktury</label><input id="p_number" name="invoice_number" value="{{ v.invoice_number }}" required></div>
+  <div><label for="p_nip">NIP sprzedawcy</label><div class="row" style="flex-wrap:nowrap"><input id="p_nip" name="seller_nip" value="{{ v.seller_nip }}" inputmode="numeric">
+    <button type="button" class="btn small" data-nip-lookup='{"nip":"p_nip","name":"p_name","info":"p_nip_info"}'>Pobierz</button></div>
+    <div class="muted" id="p_nip_info" style="font-size:12px"></div></div>
+  <div style="grid-column:1/-1"><label for="p_name">Sprzedawca</label><input id="p_name" name="seller_name" value="{{ v.seller_name }}" required></div>
+  <div><label for="p_issue">Data wystawienia</label><input id="p_issue" type="date" name="issue_date" value="{{ v.issue_date or today_iso }}" required></div>
+  <div><label for="p_due">Termin płatności</label><input id="p_due" type="date" name="due_date" value="{{ v.due_date }}"></div>
+  <div><label for="p_net">Netto</label><input id="p_net" name="net" value="{{ v.net }}" inputmode="decimal" placeholder="0,00"></div>
+  <div><label for="p_vat">VAT</label><input id="p_vat" name="vat" value="{{ v.vat }}" inputmode="decimal" placeholder="0,00"></div>
+  <div><label for="p_gross">Brutto</label><input id="p_gross" name="gross" value="{{ v.gross }}" inputmode="decimal" placeholder="0,00"></div>
+  <div><label for="p_cur">Waluta</label><input id="p_cur" name="currency" value="{{ v.currency or 'PLN' }}" maxlength="3" style="max-width:90px"></div>
+  <div style="grid-column:1/-1"><label for="p_acc">Konto do przelewu</label><input id="p_acc" name="bank_account" value="{{ v.bank_account }}"></div>
+  <div style="grid-column:1/-1"><label for="p_notes">Uwagi</label><textarea id="p_notes" name="notes" rows="2">{{ v.notes }}</textarea></div>
+  <div style="grid-column:1/-1"><label for="p_files">Skan / PDF faktury</label><input id="p_files" type="file" name="files" multiple accept="application/pdf,image/*"></div>
+</div>
+<div class="row" style="margin-top:10px"><button class="btn primary">Dodaj do weryfikacji</button><a class="btn" href="/koszty">Anuluj</a></div>
+</form>
+<script>
+(function(){ // brutto = netto + VAT, gdy brutto puste
+  var n=document.getElementById('p_net'), v=document.getElementById('p_vat'), g=document.getElementById('p_gross');
+  function num(e){ var x=parseFloat((e.value||'').replace(/\s/g,'').replace(',','.')); return isNaN(x)?null:x; }
+  function upd(){ if(g.dataset.touched) return; var a=num(n), b=num(v); if(a!==null) g.value=(a+(b||0)).toFixed(2).replace('.',','); }
+  n.addEventListener('input',upd); v.addEventListener('input',upd); g.addEventListener('input',function(){g.dataset.touched=1;});
+})();
+</script>
+{% endblock %}
+{% block scripts %}<script src="/static/nip.js"></script>{% endblock %}

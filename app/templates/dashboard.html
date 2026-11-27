@@ -1,22 +1,73 @@
 {% extends "base.html" %}
-{% block title %}Pulpit{% endblock %}
+{% block title %}Start{% endblock %}
 {% block content %}
+{% macro widget(k) %}
+{% if k == 'stat_month' %}<a class="card stat" href="/faktury?miesiac={{ today.strftime('%Y-%m') }}"><div class="l">Sprzedaż brutto w tym miesiącu ({{ stats.month_count }})</div><div class="v">{{ stats.month_gross|money }} zł</div></a>
+{% elif k == 'stat_unpaid' %}<a class="card stat" href="/naleznosci"><div class="l">Nieopłacone ({{ stats.unpaid_count }})</div><div class="v">{{ stats.unpaid_sum|money }} zł</div></a>
+{% elif k == 'stat_overdue' %}<a class="card stat" href="/naleznosci"><div class="l">Po terminie</div><div class="v" {% if stats.overdue_count %}style="color:var(--danger)"{% endif %}>{{ stats.overdue_count }}</div></a>
+{% elif k == 'stat_ksef' %}{% if stats.ksef_todo is not none %}<a class="card stat" href="/faktury?ksef=do-wyslania"><div class="l">Do zatwierdzenia w KSeF</div><div class="v">{{ stats.ksef_todo }}</div></a>{% else %}<div class="card stat"><div class="l">KSeF</div><div class="v muted" style="font-size:16px">wyłączony</div></div>{% endif %}
+{% elif k == 'tasks' %}<div class="card tile"><div class="tile-h"><h2>Zadania na dziś</h2><a href="/zadania">zadania</a></div>
+    {% for t in tasks_today %}<a class="tile-row" href="/zadania/{{ t.id }}"><span><b>{{ t.title }}</b>{% if t.contractor %} · {{ t.contractor.name }}{% endif %}</span>
+      <span class="n" {% if t.overdue(now) %}style="color:var(--danger)"{% endif %}>{% if t.due_at %}{{ t.due_at|date if t.due_at.date() != today else ('dziś' if t.due_at.strftime('%H:%M') == '00:00' else t.due_at.strftime('%H:%M')) }}{% endif %}</span></a>
+    {% else %}<p class="muted">Na dziś nic. <a href="/zadania/nowe?data={{ today.isoformat() }}">Dodaj zadanie</a></p>{% endfor %}</div>
+{% elif k == 'invoices' %}<div class="card tile"><div class="tile-h"><h2>Ostatnie faktury</h2><a href="/faktury">wszystkie</a></div>
+    {% for i in recent %}<a class="tile-row" href="/faktury/{{ i.id }}"><span><b>{{ i.display_number }}</b> · {{ i.buyer_name }}</span>
+      <span class="n">{{ i.total_gross|money }}{% if i.status == 'draft' %} <span class="badge warn">szkic</span>{% elif i.to_pay <= 0 %} <span class="badge ok">✓</span>{% endif %}</span></a>
+    {% else %}<p class="muted">Brak faktur.</p>{% endfor %}</div>
+{% elif k == 'mails' %}<div class="card tile"><div class="tile-h"><h2>Ostatnie maile</h2><a href="/poczta">poczta</a></div>
+    {% for m in mails %}<a class="tile-row" href="/poczta/{{ m.id }}"><span>{% if not m.seen %}<b>{% endif %}{{ m.from_name or m.from_addr }}{% if not m.seen %}</b>{% endif %}<br><span class="muted">{{ m.subject or '(bez tematu)' }}</span></span>
+      <span class="muted n">{{ m.date.strftime('%d.%m %H:%M') if m.date else '' }}</span></a>
+    {% else %}<p class="muted">Brak maili. <a href="/poczta">Podłącz skrzynkę</a></p>{% endfor %}</div>
+{% elif k == 'wz' %}<div class="card tile"><div class="tile-h"><h2>Ostatnie WZ</h2><a href="/wz">magazyn</a></div>
+    {% for d in deliveries %}<a class="tile-row" href="/wz/{{ d.id }}"><span><b>{{ d.number or 'szkic' }}</b> · {{ d.recipient_name }}</span>
+      <span class="n">{{ d.issue_date|date }}{% if d.kind == 'wz' %} {% if d.invoice_id %}<span class="badge ok">FV</span>{% else %}<span class="badge">bez FV</span>{% endif %}{% endif %}</span></a>
+    {% else %}<p class="muted">Brak dokumentów.</p>{% endfor %}</div>
+{% elif k == 'overdue' %}<div class="card tile"><div class="tile-h"><h2>Po terminie</h2><a href="/naleznosci">należności</a></div>
+    {% for i in overdue %}<a class="tile-row" href="/faktury/{{ i.id }}"><span><b>{{ i.display_number }}</b> · {{ i.buyer_name }}<br><span class="muted">{{ i.days_overdue }} dni po terminie</span></span>
+      <span class="n" style="color:var(--danger)">{{ i.to_pay|money }}</span></a>
+    {% else %}<p class="muted">Nic po terminie.</p>{% endfor %}</div>
+{% elif k == 'offers' %}<div class="card tile"><div class="tile-h"><h2>Oferty do przypomnienia</h2><a href="/oferty?status=otwarte">oferty</a></div>
+    {% for o in offers_expiring %}<a class="tile-row" href="/oferty/{{ o.id }}"><span><b>{{ o.display_number }}</b> · {{ o.recipient_name }}</span>
+      <span class="n {{ 'muted' if not o.expired }}" {% if o.expired %}style="color:var(--danger)"{% endif %}>{{ 'minęła ' if o.expired else 'do ' }}{{ o.valid_until|date }}</span></a>{% else %}<p class="muted">Brak ofert do przypomnienia.</p>{% endfor %}</div>
+{% elif k == 'orders' %}<div class="card tile"><div class="tile-h"><h2>Zamówienia z terminem</h2><a href="/zamowienia?status=otwarte">zamówienia</a></div>
+    {% for z in orders_due %}<a class="tile-row" href="/zamowienia/{{ z.id }}"><span><b>{{ z.display_number }}</b> · {{ z.title or z.recipient_name }}</span>
+      <span class="n {{ 'muted' if not z.overdue }}" {% if z.overdue %}style="color:var(--danger)"{% endif %}>{{ 'po terminie ' if z.overdue else 'do ' }}{{ z.due_date|date }}</span></a>{% else %}<p class="muted">Brak zamówień na najbliższe dni.</p>{% endfor %}</div>
+{% elif k == 'equipment' %}<div class="card tile"><div class="tile-h"><h2>Przeglądy i gwarancje</h2><a href="/sprzet?widok=przeglady">sprzęt</a></div>
+    {% for e in equipment_due %}<a class="tile-row" href="/sprzet/{{ e.id }}"><span><b>{{ e.name }}</b>{% if e.contractor %} · {{ e.contractor.name }}{% endif %}</span>
+      <span class="n">{% if e.service_state(today) in ('over', 'soon') %}<span {% if e.service_state(today) == 'over' %}style="color:var(--danger)"{% endif %}>przegląd {{ e.next_service|date }}</span>{% else %}gwarancja do {{ e.warranty_until|date }}{% endif %}</span></a>{% else %}<p class="muted">Brak zbliżających się przeglądów i gwarancji.</p>{% endfor %}</div>
+{% elif k == 'cars' %}<div class="card tile"><div class="tile-h"><h2>Auta na placu</h2><a href="/auta">auta</a></div>
+    {% for c in cars %}<a class="tile-row" href="/auta/{{ c.id }}"><span>{{ c.label }}</span><span class="n">{{ c.asking_price|money }}</span></a>{% else %}<p class="muted">Brak aut na placu.</p>{% endfor %}</div>
+{% endif %}{% endmacro %}
+
 <div class="row"><h1>{{ company.short_name }}</h1><span class="spacer"></span>
-<a class="btn primary" href="/faktury/nowa">+ Faktura</a></div>
-<div class="grid stats">
-  <div class="card stat"><div class="l">Faktur w tym miesiącu</div><div class="v">{{ stats.month_count }}</div></div>
-  <div class="card stat"><div class="l">Sprzedaż brutto w tym miesiącu</div><div class="v">{{ stats.month_gross|money }} zł</div></div>
-  <div class="card stat"><div class="l">Nieopłacone ({{ stats.unpaid_count }})</div><div class="v">{{ stats.unpaid_sum|money }} zł</div></div>
+<button type="button" class="btn small" id="dash-edit">Dostosuj</button><a class="btn primary small" href="/faktury/nowa">+ Faktura</a><a class="btn small" href="/wz/nowa">+ WZ</a></div>
+{% for w in bank_warnings %}<div class="flash warn"><a href="/bank/polaczenie">{{ w }}</a></div>{% endfor %}
+<div id="dash-bar" class="card dash-bar" hidden>
+  <b>Układ strony Start</b> <span class="muted">Przeciągnij kafelek za ⠿. Przyciskami ↔ i ↕ zmieniasz szerokość i wysokość, a ✕ chowa kafelek.</span>
+  <div class="row" style="margin-top:8px;flex-wrap:wrap;gap:6px">
+    <select id="dash-add" style="max-width:260px"><option value="">+ Dodaj kafelek…</option>
+      {% for k in hidden %}<option value="{{ k }}">{{ WIDGETS[k][0] }}</option>{% endfor %}</select>
+    <span class="spacer"></span>
+    <button type="button" class="btn small" id="dash-reset">Przywróć domyślny</button>
+    <button type="button" class="btn small" id="dash-cancel">Anuluj</button>
+    <button type="button" class="btn small primary" id="dash-save">Zapisz układ</button>
+  </div>
 </div>
-<h2>Ostatnie faktury</h2>
-{% set invoices = recent %}{% include "_invoice_rows.html" %}
-<h2>Auta na placu</h2>
-<div class="card tbl"><table>
-<tr><th>Auto</th><th class="hide-sm">VIN</th><th class="n">Cena zakupu</th><th class="n">Cena sprzedaży</th><th></th></tr>
-{% for c in cars %}
-<tr><td><a href="/auta/{{ c.id }}">{{ c.label }}</a></td><td class="hide-sm">{{ c.vin }}</td>
-<td class="n">{{ c.purchase_price|money }}</td><td class="n">{{ c.asking_price|money }}</td>
-<td><a class="btn small" href="/faktury/nowa?auto={{ c.id }}">Sprzedaj</a></td></tr>
-{% else %}<tr><td colspan="5" class="muted">Brak aut. <a href="/auta/nowe">Dodaj auto</a></td></tr>{% endfor %}
-</table></div>
+<div class="dash" id="dash" data-cols="{{ DASH_COLS }}" data-maxh="{{ DASH_MAX_H }}">
+{% for it in layout %}<div class="dash-w" data-k="{{ it.k }}" data-w="{{ it.w }}" data-h="{{ it.h }}" style="--w:{{ it.w }};--h:{{ it.h }}">
+  <div class="dash-tools"><span class="dash-grip" title="Przeciągnij">⠿</span><span class="dash-name">{{ WIDGETS[it.k][0] }}</span>
+    <button type="button" data-a="w-" title="Węższy">↔−</button><button type="button" data-a="w+" title="Szerszy">↔+</button>
+    <button type="button" data-a="h-" title="Niższy">↕−</button><button type="button" data-a="h+" title="Wyższy">↕+</button>
+    <button type="button" data-a="x" title="Ukryj">✕</button></div>
+  {{ widget(it.k) }}
+</div>
+{% endfor %}</div>
+<template id="dash-hidden">{% for k in hidden %}<div class="dash-w" data-k="{{ k }}" data-w="{{ WIDGETS[k][1] }}" data-h="{{ WIDGETS[k][2] }}" style="--w:{{ WIDGETS[k][1] }};--h:{{ WIDGETS[k][2] }}">
+  <div class="dash-tools"><span class="dash-grip" title="Przeciągnij">⠿</span><span class="dash-name">{{ WIDGETS[k][0] }}</span>
+    <button type="button" data-a="w-" title="Węższy">↔−</button><button type="button" data-a="w+" title="Szerszy">↔+</button>
+    <button type="button" data-a="h-" title="Niższy">↕−</button><button type="button" data-a="h+" title="Wyższy">↕+</button>
+    <button type="button" data-a="x" title="Ukryj">✕</button></div>
+  {{ widget(k) }}
+</div>{% endfor %}</template>
 {% endblock %}
+{% block scripts %}<script src="/static/dashboard.js?v=1"></script>{% endblock %}

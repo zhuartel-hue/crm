@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Oferty{% endblock %}
+{% block content %}
+<form class="row" method="get" style="margin-bottom:6px"><h1 style="margin:0 6px 0 0">Oferty</h1><button type="submit" hidden tabindex="-1" aria-hidden="true"></button>
+  <select name="status" style="max-width:180px" onchange="this.form.submit()"><option value="">wszystkie</option>
+    <option value="otwarte" {{ 'selected' if status == 'otwarte' }}>otwarte (czekają na klienta)</option>
+    {% for k, v in ALL_STATUSES.items() %}<option value="{{ k }}" {{ 'selected' if status == k }}>{{ v }}</option>{% endfor %}</select>
+  <input name="q" value="{{ q }}" placeholder="Numer, klient albo tytuł" type="search" style="max-width:260px" aria-label="Szukaj">
+  <span class="spacer"></span>
+  {% if offer_templates %}<select style="max-width:200px" aria-label="Nowa ze wzoru" onchange="if(this.value)location.href='/oferty/nowa?wzor='+this.value"><option value="">+ Nowa ze wzoru…</option>
+  {% for t in offer_templates %}<option value="{{ t.id }}">{{ t.name }}</option>{% endfor %}</select>{% endif %}
+  <a class="btn primary small" href="/oferty/nowa">+ Oferta</a>
+</form>
+<div class="grid stats">
+  <div class="card stat"><div class="l">Otwarte oferty</div><div class="v"><a href="/oferty?status=otwarte">{{ stats.open_count }}</a></div></div>
+  <div class="card stat"><div class="l">Wartość otwartych (brutto)</div><div class="v">{{ stats.open_gross|money }} zł</div></div>
+</div>
+
+<div class="card tbl"><table>
+<tr><th>Numer</th><th>Tytuł</th><th>Data</th><th>Klient</th><th class="hide-sm">Ważna do</th><th class="n">Netto</th><th class="n">VAT</th><th class="n">Brutto</th><th>Status</th></tr>
+{% for o in rows %}
+<tr><td style="white-space:nowrap"><a href="/oferty/{{ o.id }}">{{ o.display_number }}</a></td>
+<td style="min-width:180px"><form method="post" action="/oferty/{{ o.id }}/tytul" style="margin:0"><input type="hidden" name="back" value="{{ request.url.path }}{{ '?' ~ request.url.query if request.url.query }}"><input name="title" value="{{ o.title }}" maxlength="300" placeholder="dodaj tytuł…" aria-label="Tytuł oferty {{ o.display_number }}" onchange="this.form.submit()" style="padding:5px 8px;font-size:14px"></form></td>
+<td>{{ o.issue_date|date }}</td><td>{{ klink(o.contractor_id, o.recipient_name) }}</td>
+<td class="hide-sm">{{ o.valid_until|date }}{% if o.expired %} <span class="badge warn">minęła</span>{% endif %}</td>
+<td class="n">{{ o.total_net|money }}</td><td class="n">{{ o.total_vat|money }}</td><td class="n">{{ o.total_gross|money }}</td>
+<td><form method="post" action="/oferty/{{ o.id }}/status" style="margin:0"><input type="hidden" name="back" value="{{ request.url.path }}{{ '?' ~ request.url.query if request.url.query }}"><select name="status" class="searchable status-pick {{ o.status_class }}" data-placeholder="szukaj statusu" aria-label="Status oferty {{ o.display_number }}" onchange="this.form.submit()">
+{% for k, v in STATUSES.items() %}<option value="{{ k }}" {{ 'selected' if o.status == k }}>{{ v }}</option>{% endfor %}{% if o.status not in STATUSES %}<option value="{{ o.status }}" selected>{{ o.status_label }}</option>{% endif %}</select></form></td></tr>
+{% else %}<tr><td colspan="9" class="muted">Brak ofert. <a href="/oferty/nowa">Dodaj pierwszą</a></td></tr>{% endfor %}
+</table></div>
+{% endblock %}

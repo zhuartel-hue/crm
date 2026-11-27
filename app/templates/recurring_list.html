@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Umowy{% endblock %}
+{% block content %}
+<form class="row" method="get" style="margin-bottom:6px"><h1 style="margin:0 6px 0 0">Umowy i faktury cykliczne</h1><button type="submit" hidden tabindex="-1" aria-hidden="true"></button>
+  <input type="search" name="q" value="{{ q }}" placeholder="numer, nazwa, klient" style="max-width:240px" aria-label="Szukaj">
+  <select name="status" style="width:auto" aria-label="Status" onchange="this.form.submit()"><option value="">aktywne</option><option value="wszystkie" {{ 'selected' if status == 'wszystkie' }}>wszystkie</option><option value="zakonczone" {{ 'selected' if status == 'zakonczone' }}>zakończone</option>
+  <optgroup label="status umowy">{% for k, v in CSTATUSES.items() %}<option value="s:{{ k }}" {{ 'selected' if status == 's:' ~ k }}>{{ v }}</option>{% endfor %}</optgroup></select>
+  <span class="spacer"></span><a class="btn primary small" href="/umowy/nowa">+ Umowa</a></form>
+<div class="grid stats">
+  <div class="card stat"><div class="l">Aktywne umowy</div><div class="v">{{ active_count }}</div></div>
+  <div class="card stat"><div class="l">Faktury cykliczne średnio miesięcznie (brutto)</div><div class="v">{{ monthly|money }} zł</div></div>
+</div>
+
+<p class="muted">Umowa z włączonymi fakturami cyklicznymi sama tworzy fakturę w wyznaczonym dniu (szkic, wystawioną albo wystawioną i wysłaną mailem), z numerem umowy na fakturze.
+Bez daty końca faktury idą, dopóki nie zakończysz umowy.</p>
+<div class="card tbl"><table>
+<tr><th>Umowa</th><th>Status</th><th>Klient</th><th class="hide-sm">Obowiązuje</th><th class="hide-sm">Faktury</th><th>Następna</th><th class="n">Brutto</th></tr>
+{% for r in rows %}
+<tr><td><a href="/umowy/{{ r.id }}">{{ r.number or r.name }}</a>{% if r.number and r.name and r.name != 'Umowa ' ~ r.number %}<br><span class="muted" style="font-size:12px">{{ r.name }}</span>{% endif %}
+{% if r.status == 'future' %} <span class="badge" title="{{ r.status_hint }}">{{ r.status_label }}</span>{% endif %}
+{% if r.last_error %}<br><span class="badge warn" title="{{ r.last_error }}">błąd przy ostatniej próbie</span>{% endif %}</td>
+<td><form method="post" action="/umowy/{{ r.id }}/status" style="margin:0"><input type="hidden" name="back" value="{{ request.url.path }}{{ '?' ~ request.url.query if request.url.query }}"><select name="status" class="searchable status-pick {{ r.contract_status_class }}" data-placeholder="szukaj statusu" aria-label="Status umowy {{ r.number or r.name }}" onchange="this.form.submit()">
+{% for k, v in CSTATUSES.items() %}<option value="{{ k }}" {{ 'selected' if r.contract_status == k }}>{{ v }}</option>{% endfor %}{% if r.contract_status not in CSTATUSES %}<option value="{{ r.contract_status }}" selected>{{ r.contract_status_label }}</option>{% endif %}</select></form></td>
+<td>{{ klink(r.contractor_id, r.contractor.name if r.contractor else r.buyer_name) }}</td>
+<td class="hide-sm">{{ r.start_date|date if r.start_date else '' }} – {{ r.end_date|date if r.end_date else 'bezterminowo' }}</td>
+<td class="hide-sm" title="{{ r.status_hint }}">{% if not r.active %}<span class="muted">umowa zakończona</span>{% elif r.invoicing %}{{ r.interval_label }} · <span class="badge {{ 'm' if r.mode != 'draft' }}">{{ r.mode_label }}</span>{% else %}<span class="badge warn">nie wystawia faktur</span>{% endif %}</td>
+<td>{{ r.next_date|date if r.active and r.invoicing else '—' }}</td>
+<td class="n">{{ totals[r.id].gross|money }}</td></tr>
+{% else %}<tr><td colspan="7" class="muted">Brak umów.</td></tr>{% endfor %}
+</table></div>
+{% endblock %}

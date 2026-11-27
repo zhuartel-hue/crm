@@ -1,0 +1,22 @@
+{# Tabele raportu kosztow: wspolne dla strony w programie, druku i PDF. #}
+<div class="rep-grid">
+<table class="rep">
+<tr><th>Wg stawek VAT (PLN)</th><th class="n">Netto</th><th class="n">VAT</th><th class="n">Brutto</th></tr>
+{% for r in rep.rates %}<tr><td>{{ r.rate }}{{ '%' if r.rate.isdigit() }}</td><td class="n">{{ r.net|money }}</td><td class="n">{{ r.vat|money }}</td><td class="n">{{ r.gross|money }}</td></tr>{% else %}<tr><td colspan="4" class="muted">—</td></tr>{% endfor %}
+</table>
+<table class="rep">
+<tr><th>Razem</th><th class="n">Liczba</th><th class="n">Netto</th><th class="n">VAT</th><th class="n">Brutto</th></tr>
+{% for t in rep.totals %}<tr class="sum"><td>{{ t.currency }}</td><td class="n">{{ t.count }}</td><td class="n">{{ t.net|money }}</td><td class="n">{{ t.vat|money }}</td><td class="n">{{ t.gross|money }}</td></tr>{% else %}<tr><td colspan="5" class="muted">—</td></tr>{% endfor %}
+</table>
+</div>
+<h2>Faktury kosztowe ({{ rep.rows|length }})</h2>
+<table class="rep list">
+<tr><th class="n">Lp.</th><th>Numer</th><th>Wystawiona</th><th>Sprzedawca</th><th>NIP</th><th class="n">Netto</th><th class="n">VAT</th><th class="n">Brutto</th><th>Status</th><th>Zapłacona</th><th>Nr KSeF</th></tr>
+{% for r in rep.rows %}<tr>
+<td class="n">{{ loop.index }}</td>
+<td>{% if link %}<a href="/koszty/{{ r.pi.id }}">{{ r.number }}</a>{% else %}{{ r.number }}{% endif %}</td>
+<td style="white-space:nowrap">{{ r.issue_date|date }}</td><td>{{ r.seller }}</td><td style="white-space:nowrap">{{ r.nip }}</td>
+<td class="n">{{ r.net|money }}</td><td class="n">{{ r.vat|money }}</td><td class="n">{{ r.gross|money }}{% if r.currency != 'PLN' %} {{ r.currency }}{% endif %}</td>
+<td>{{ r.status }}</td><td style="white-space:nowrap">{{ r.paid_at|date if r.paid_at else 'nie' }}</td><td class="ksef">{{ r.ksef or '—' }}</td>
+</tr>{% else %}<tr><td colspan="11" class="muted">Brak faktur kosztowych w tym okresie.</td></tr>{% endfor %}
+</table>

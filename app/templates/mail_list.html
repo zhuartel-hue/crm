@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Poczta{% endblock %}
+{% block content %}
+{% if not accounts %}<div class="row"><h1>Poczta · {{ company.short_name }}</h1></div>{% endif %}
+{% if not accounts %}
+<div class="card">Nie ma jeszcze skrzynki dla {{ company.short_name }}. <a href="/ustawienia/poczta">Dodaj skrzynkę →</a></div>
+{% else %}
+<form class="row" style="margin-bottom:6px" method="get"><h1 style="margin:0 6px 0 0">Poczta · {{ company.short_name }}</h1><button type="submit" hidden tabindex="-1" aria-hidden="true"></button>
+  <select name="konto" style="max-width:240px" onchange="this.form.submit()" aria-label="Skrzynka"><option value="0">Wszystkie skrzynki</option>
+    {% for a in accounts %}<option value="{{ a.id }}" {{ 'selected' if a.id == konto }}>{{ a.email }}</option>{% endfor %}</select>
+  <select name="kierunek" style="max-width:160px" onchange="this.form.submit()" aria-label="Kierunek">
+    <option value="">odebrane i wysłane</option>
+    <option value="in" {{ 'selected' if kierunek == 'in' }}>odebrane</option>
+    <option value="out" {{ 'selected' if kierunek == 'out' }}>wysłane</option></select>
+  <input name="q" value="{{ q }}" type="search" placeholder="Temat albo nadawca" style="max-width:240px" aria-label="Szukaj">
+  <span class="spacer"></span><button class="btn small" formaction="/poczta/odswiez" formmethod="post">Odśwież</button>
+  <a class="btn primary small" href="/poczta/nowa">+ Nowa wiadomość</a>
+</form>
+{% for a in accounts %}{% if a.last_error %}<div class="error">{{ a.email }}: {{ a.last_error }}</div>{% endif %}{% endfor %}
+<div class="card tbl"><table>
+<tr><th>Data</th><th>{{ 'Do' if kierunek == 'out' else 'Od / do' }}</th><th>Temat</th></tr>
+{% for m in rows %}
+<tr style="{{ '' if m.seen else 'font-weight:600' }}">
+<td style="white-space:nowrap">{{ m.date.strftime('%d.%m %H:%M') if m.date }}</td>
+<td>{% if m.direction == 'out' %}<span class="muted">do</span> {{ m.to_addrs[:60] }}{% else %}{{ m.from_name or m.from_addr }}{% endif %}
+  {% if m.contractor %}<br>{{ klink(m.contractor_id, m.contractor.name) }}{% endif %}</td>
+<td><a href="/poczta/{{ m.id }}">{{ m.subject or '(bez tematu)' }}</a>{% if m.attachments %} 📎{% endif %}
+  {% if m.invoice %} <span class="badge">{{ m.invoice.number }}</span>{% endif %}
+  <br><span class="muted">{{ m.snippet }}</span></td>
+</tr>
+{% else %}<tr><td colspan="3" class="muted">Brak wiadomości. Kliknij „Odśwież”.</td></tr>{% endfor %}
+</table></div>
+{% endif %}
+{% endblock %}

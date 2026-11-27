@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="pl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{{ title }} {{ rep.label }} · {{ company.short_name }}</title>
+<style>
+@page{size:A4 landscape;margin:10mm 9mm 12mm;@bottom-right{content:"strona " counter(page) " z " counter(pages);font-size:8pt;color:#666}}
+*{box-sizing:border-box}
+body{margin:0;padding:14px;font:10.5px/1.35 -apple-system,"Segoe UI",Roboto,"DejaVu Sans",Arial,sans-serif;color:#111;background:#fff}
+h1{font-size:16px;margin:0}h2{font-size:12.5px;margin:12px 0 4px}
+.head{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid #111;padding-bottom:5px;margin-bottom:8px;gap:10px}
+.muted{color:#666}
+table.rep{border-collapse:collapse;margin-bottom:6px}
+table.rep.list{width:100%}
+table.rep th,table.rep td{border:1px solid #d6d6d6;padding:2px 4px;vertical-align:top}
+table.rep th{background:#f1f3f5;font-weight:600;text-align:left}
+.n,table.rep .n{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+tr.sum td{font-weight:700;background:#fafafa}
+td.ksef{font-size:9px;word-break:break-all;max-width:150px}
+tr{break-inside:avoid}
+.rep-grid{display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap}
+.bar{margin-bottom:10px}.bar button,.bar a{font:inherit;font-size:12px;padding:3px 10px;border:1px solid #ccc;border-radius:3px;background:#fff;color:#111;text-decoration:none;cursor:pointer}
+.hide-sm{}
+@media print{.bar{display:none}body{padding:0}}
+</style></head><body>
+{% if not for_pdf %}<div class="bar"><button type="button" onclick="window.print()">Drukuj</button> <a href="{{ pdf_url }}">Pobierz PDF</a> <a href="{{ back_url }}">Wróć</a></div>{% endif %}
+<div class="head">
+  <div><h1>{{ title }}: {{ rep.label }}</h1>
+    <div>{{ company.name }}{% if company.nip %}, NIP {{ company.nip }}{% endif %}</div></div>
+  <div class="muted" style="text-align:right">Okres {{ rep.start|date }} – {{ rep.end|date }}{% if subtitle %}<br>{{ subtitle }}{% endif %}<br>Wygenerowano {{ now.strftime('%d.%m.%Y %H:%M') }}</div>
+</div>
+{% include partial %}
+</body></html>

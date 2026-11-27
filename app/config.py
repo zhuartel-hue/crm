@@ -15,3 +15,24 @@ COOKIE_SECURE = os.environ.get("COOKIE_SECURE", "false").lower() == "true"
 
 if DATABASE_URL.startswith("postgres") and (SECRET_KEY == "dev-secret-zmien-mnie" or ADMIN_PASSWORD == "admin"):
     raise RuntimeError("Na serwerze ustaw SECRET_KEY i ADMIN_PASSWORD (plik .env tworzy deploy/install.sh).")
+# Co ile minut pobierac poczte w tle (0 = wylaczone, np. w testach).
+MAIL_SYNC_MINUTES = int(os.environ.get("MAIL_SYNC_MINUTES", "5"))
+# Pobieranie faktur kosztowych z KSeF w tle co tyle godzin (0 = tylko recznie przyciskiem).
+KSEF_PURCHASE_SYNC_HOURS = float(os.environ.get("KSEF_PURCHASE_SYNC_HOURS", "6"))
+# Sprawdzanie faktur cyklicznych do wystawienia co tyle minut (0 = wylaczone, tylko przycisk).
+RECURRING_CHECK_MINUTES = int(os.environ.get("RECURRING_CHECK_MINUTES", "60"))
+# Pobieranie operacji z podlaczonych bankow (Enable Banking) co tyle godzin (0 = tylko przyciskiem).
+# Banki zwykle pozwalaja na ok. 4 pobrania w tle dziennie.
+BANK_SYNC_HOURS = float(os.environ.get("BANK_SYNC_HOURS", "6"))
+# Zamowienia ze sklepu i Allegro oraz statusy przesylek co tyle minut (0 = tylko przyciskiem).
+INTEGRATIONS_SYNC_MINUTES = int(os.environ.get("INTEGRATIONS_SYNC_MINUTES", "10"))
+
+# Panel testowy (test.sygnavo.com): kopia danych, ale ZERO kontaktu ze swiatem - bez wysylki maili, bez
+# pobierania poczty, bez KSeF, bez banku i bez zadan w tle. Ustawiane tylko w .env instancji testowej.
+TEST_PANEL = os.environ.get("TRYB_TESTOWY", "").strip().lower() in ("1", "true", "tak")
+TEST_PANEL_MSG = "Panel testowy: ta operacja jest wyłączona (bez maili, KSeF i banku)."
+# Wersja kodu (skrot commita), ustawiana przez skrypt wdrozenia; widoczna w /health.
+APP_VERSION = os.environ.get("APP_VERSION", "")
+
+# Zadania w tle: "app" - watki w procesie aplikacji (jeden proces), "off" - osobny proces app.worker.
+BACKGROUND_JOBS = os.environ.get("BACKGROUND_JOBS", "app").strip().lower()

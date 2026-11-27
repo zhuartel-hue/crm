@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="pl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kod logowania · Sygnavo</title><link rel="stylesheet" href="/static/app.css"></head>
+<body><main class="login"><div class="card">
+<h1>Sygnavo</h1><p class="muted">Wpisz 6-cyfrowy kod z aplikacji w telefonie.</p>
+{% if error %}<div class="error">{{ error }}</div>{% endif %}
+<form method="post" action="/login/kod">
+<p><label>Kod</label><input name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9 ]{6,7}" maxlength="7" autofocus required></p>
+<button class="btn primary" style="width:100%">Zaloguj</button>
+</form>
+<p class="muted" style="margin-top:12px">Zgubiony telefon? Poproś właściciela, żeby wyłączył Ci weryfikację w Użytkownikach.</p>
+</div></main></body></html>

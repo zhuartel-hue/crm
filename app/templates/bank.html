@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}Bank{% endblock %}
+{% block content %}
+<div class="row"><h1>Bank · {{ company.short_name }}</h1><span class="spacer"></span>
+<a class="btn {{ '' if conns else 'primary' }}" href="/bank/polaczenie">{{ 'Połączenie z bankiem' if conns else 'Podłącz bank (automatycznie)' }}</a></div>
+{% for w in bank_warnings %}<div class="flash warn"><a href="/bank/polaczenie">{{ w }}</a></div>{% endfor %}
+{% for c in conns if c.state == 'active' %}
+<div class="card row" style="margin-bottom:10px">
+  <div><b>{{ c.aspsp_name }}</b> <span class="badge ok">pobiera automatycznie</span><br>
+  <span class="muted">Ostatnio: {{ c.last_sync|date if c.last_sync else 'jeszcze nie' }} · zgoda do {{ c.valid_until|date if c.valid_until else '—' }}</span></div>
+  <span class="spacer"></span>
+  <form method="post" action="/bank/polaczenie/{{ c.id }}/pobierz"><button class="btn small">Pobierz teraz</button></form>
+</div>
+{% endfor %}
+<div class="card">
+<form method="post" action="/bank/import" enctype="multipart/form-data" class="row">
+  <input type="file" name="files" accept=".txt,.sta,.mt940,.940,text/plain" multiple required style="max-width:360px">
+  <button class="btn primary">Wczytaj wyciąg MT940</button>
+</form>
+<p class="muted" style="margin:8px 0 0">Plik pobierasz w iPKO: Moje sprawy → Raporty → MT940 (raport dzienny albo miesięczny).
+Ten sam plik możesz wczytać kilka razy, powtórzone operacje są pomijane. Wpłata z numerem faktury w tytule albo z kwotą i nadawcą
+pasującymi do jednej faktury księguje się sama. Firma jest rozpoznawana po numerze rachunku z Ustawień{% if not company.bank_account %} (uzupełnij rachunek w <a href="/ustawienia">Ustawieniach</a>){% endif %}.</p>
+</div>
+<div class="row" style="margin:12px 0">
+  {% for key, label in [('do-sprawdzenia', 'Do sprawdzenia'), ('zaksiegowane', 'Zaksięgowane'), ('wplywy', 'Wszystkie wpływy'), ('wszystkie', 'Wszystkie operacje')] %}
+  <a class="btn small {{ 'primary' if pokaz == key }}" href="/bank?pokaz={{ key }}">{{ label }}{% if key == 'do-sprawdzenia' %} ({{ (counts.get('suggested', 0) or 0) + (counts.get('none', 0) or 0) }}){% endif %}</a>
+  {% endfor %}
+</div>
+<datalist id="open-invoices">{% for i in open_invoices %}<option value="{{ i.number }}">{{ i.buyer_name }} · do zapłaty {{ i.to_pay|money }} zł</option>{% endfor %}</datalist>
+<div class="card tbl"><table>
+<tr><th>Data</th><th>Od / tytuł</th><th class="n">Kwota</th><th>Faktura</th></tr>
+{% for t in rows %}
+<tr>
+<td>{{ t.booking_date|date }}</td>
+<td><b>{{ t.counterparty or '—' }}</b><br><span class="muted">{{ t.title }}</span></td>
+<td class="n" style="white-space:nowrap">{{ t.amount|money }} {{ t.currency }}</td>
+<td style="min-width:220px">
+  {% if t.state in ('auto', 'manual') %}
+    <a href="/faktury/{{ t.invoice_id }}">{{ t.invoice.number }}</a> <span class="badge">{{ states[t.state] }}</span>
+    <form method="post" action="/bank/{{ t.id }}/cofnij" style="display:inline"><button class="btn small">Cofnij</button></form>
+  {% elif t.state == 'out' %}<span class="muted">wypływ</span>
+  {% elif t.state == 'ignored' %}<span class="muted">pominięto</span>
+    <form method="post" action="/bank/{{ t.id }}/cofnij" style="display:inline"><button class="btn small">Przywróć</button></form>
+  {% else %}
+    {% if t.state == 'suggested' and t.invoice %}
+    <form method="post" action="/bank/{{ t.id }}/potwierdz" style="display:inline">
+      <button class="btn small primary">✓ {{ t.invoice.number }}</button></form>
+    <span class="muted">{{ t.invoice.buyer_name }}, do zapłaty {{ t.invoice.to_pay|money }} zł</span><br>
+    {% endif %}
+    <form method="post" action="/bank/{{ t.id }}/potwierdz" class="row" style="gap:4px;margin-top:4px">
+      <input name="invoice" list="open-invoices" placeholder="Numer faktury" style="max-width:160px">
+      <button class="btn small">Przypisz</button></form>
+    <form method="post" action="/bank/{{ t.id }}/pomin" style="display:inline"><button class="btn small">Pomiń</button></form>
+  {% endif %}
+</td>
+</tr>
+{% else %}<tr><td colspan="4" class="muted">Brak operacji. Wczytaj wyciąg MT940 z iPKO.</td></tr>{% endfor %}
+</table></div>
+{% endblock %}

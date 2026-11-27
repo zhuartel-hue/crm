@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}{{ i.kind_label }}{% endblock %}
+{% block content %}
+<div class="row"><h1>{{ i.kind_label }} · {{ i.name }}</h1>
+<span class="badge {{ 'ok' if i.state == 'active' else ('warn' if i.state in ('error', 'new') else '') }}">{{ i.state_label }}</span>
+<span class="spacer"></span><a class="btn" href="/ustawienia/integracje">← Integracje</a></div>
+{% if i.last_error %}<div class="flash warn">{{ i.last_error }}</div>{% endif %}
+
+{% if i.kind in ('shopify', 'allegro') %}
+<div class="card row" style="gap:8px;flex-wrap:wrap;align-items:center">
+  <span class="muted">Ostatnie pobranie: {{ i.last_sync.strftime('%d.%m.%Y %H:%M') if i.last_sync else 'jeszcze nie' }} · zamówień: <a href="/zamowienia?q={{ ('Allegro' if i.kind == 'allegro' else i.kind_label)|urlencode }}">{{ stats.orders }}</a>
+  · {{ 'ofert' if i.kind == 'allegro' else 'produktów' }}: {{ stats.links }} (powiązanych {{ stats.linked }})</span>
+  <span class="spacer"></span>
+  {% if i.state in ('active', 'error') %}<form method="post" action="/ustawienia/integracje/{{ i.id }}/pobierz"><button class="btn small primary">Pobierz teraz</button></form>{% endif %}
+  {% if connected %}<a class="btn small" href="/ustawienia/integracje/{{ i.id }}/produkty">{{ 'Oferty i produkty' if i.kind == 'allegro' else 'Produkty sklepu' }}</a>{% endif %}
+</div>
+{% endif %}
+
+<form method="post" action="/ustawienia/integracje/{{ i.id }}/klucze" class="card" autocomplete="off">
+{% if i.kind == 'shopify' %}
+<h2 style="margin-top:0">Klucze sklepu</h2>
+<div class="grid">
+  <div style="grid-column:1/-1"><label>Adres sklepu w Shopify (….myshopify.com)</label><input name="shop" value="{{ s.shop or '' }}" placeholder="nazwa.myshopify.com" required></div>
+  <div><label>Client ID {% if masked.client_id %}<span class="muted">(zapisany {{ masked.client_id }})</span>{% endif %}</label><input name="client_id" placeholder="{{ 'zostaw puste, żeby nie zmieniać' if masked.client_id }}"></div>
+  <div><label>Client secret {% if masked.client_secret %}<span class="muted">(zapisany)</span>{% endif %}</label><input name="client_secret" type="password" placeholder="{{ 'zostaw puste, żeby nie zmieniać' if masked.client_secret }}"></div>
+  <div style="grid-column:1/-1"><label>albo stary token Admin API (shpat_…) {% if masked.admin_token %}<span class="muted">(zapisany)</span>{% endif %}</label><input name="admin_token" type="password"></div>
+  <div><label>Przy pierwszym pobraniu: zamówienia z ostatnich dni</label><input name="first_days" inputmode="numeric" value="{{ s.first_days or 30 }}"></div>
+</div>
+<p><button class="btn primary">Zapisz i sprawdź połączenie</button></p>
+<details><summary><b>Jak zdobyć klucze (5 minut)</b></summary>
+<ol style="line-height:1.7">
+  <li>Zaloguj się do <a href="https://dev.shopify.com/dashboard/" target="_blank" rel="noopener">dev.shopify.com/dashboard</a> tym samym kontem, co do sklepu.</li>
+  <li><b>Apps → Create app → Start from Dev Dashboard</b>, nazwa <b>Sygnavo</b>.</li>
+  <li>W <b>Versions</b>: App URL zostaw domyślny, w <b>Scopes</b> wpisz <code>read_orders,read_products,read_customers,read_inventory</code>, kliknij <b>Release</b>.</li>
+  <li><b>Install app</b> → wybierz swój sklep → <b>Install</b>.</li>
+  <li>W <b>Settings</b> skopiuj <b>Client ID</b> i <b>Client secret</b> i wklej tutaj.</li>
+</ol>
+<p class="muted">Sygnavo ma tylko odczyt: nie zmieni nic w sklepie. Jeśli Shopify zgłosi „shop_not_permitted”, sklep jest w innej organizacji niż aplikacja: w Dev Dashboard przełącz organizację na tę, w której jest sklep.</p>
+</details>
+
+{% elif i.kind == 'allegro' %}
+<h2 style="margin-top:0">Aplikacja Allegro</h2>
+<div class="grid">
+  <div><label>Client ID {% if masked.client_id %}<span class="muted">(zapisany {{ masked.client_id }})</span>{% endif %}</label><input name="client_id" placeholder="{{ 'zostaw puste, żeby nie zmieniać' if masked.client_id }}"></div>
+  <div><label>Client Secret {% if masked.client_secret %}<span class="muted">(zapisany)</span>{% endif %}</label><input name="client_secret" type="password" placeholder="{{ 'zostaw puste, żeby nie zmieniać' if masked.client_secret }}"></div>
+  <div><label>Środowisko</label><select name="env"><option value="prod">Allegro (prawdziwe)</option><option value="sandbox" {{ 'selected' if s.env == 'sandbox' }}>Allegro Sandbox (test)</option></select></div>
+  <div><label>Przy pierwszym pobraniu: zamówienia z ostatnich dni</label><input name="first_days" inputmode="numeric" value="{{ s.first_days or 30 }}"></div>
+</div>
+<p><button class="btn">Zapisz</button></p>
+<details {{ 'open' if not masked.client_id }}><summary><b>Jak założyć aplikację (raz)</b></summary>
+<ol style="line-height:1.7">
+  <li>Zaloguj się na <a href="https://apps.developer.allegro.pl/" target="_blank" rel="noopener">apps.developer.allegro.pl</a> kontem sprzedawcy.</li>
+  <li><b>Dodaj nową aplikację</b>, nazwa <b>Sygnavo</b>, typ: aplikacja ma dostęp do przeglądarki.</li>
+  <li>Adres do przekierowania:
+    <div class="copy"><code id="cp-redirect">{{ redirect_url }}</code><button type="button" class="btn small" onclick="navigator.clipboard.writeText(document.getElementById('cp-redirect').textContent)">Kopiuj</button></div></li>
+  <li>Skopiuj <b>Client ID</b> i <b>Client Secret</b> tutaj, kliknij Zapisz, potem „Połącz z Allegro”.</li>
+</ol></details>
+
+{% elif i.kind == 'apaczka' %}
+<h2 style="margin-top:0">Klucze Apaczki</h2>
+<div class="grid">
+  <div><label>App ID {% if masked.app_id %}<span class="muted">(zapisany {{ masked.app_id }})</span>{% endif %}</label><input name="app_id" placeholder="{{ 'zostaw puste, żeby nie zmieniać' if masked.app_id }}"></div>
+  <div><label>App Secret {% if masked.app_secret %}<span class="muted">(zapisany)</span>{% endif %}</label><input name="app_secret" type="password" placeholder="{{ 'zostaw puste, żeby nie zmieniać' if masked.app_secret }}"></div>
+</div>
+<p class="muted">Klucze: <a href="https://panel.apaczka.pl" target="_blank" rel="noopener">panel.apaczka.pl</a> → Ustawienia → API → dodaj aplikację „Sygnavo”.</p>
+{% set sn = s.sender or {} %}{% set pc = s.parcel or {} %}
+<h2>Nadawca</h2>
+<div class="grid">
+  <div><label>Nazwa</label><input name="sender_name" value="{{ sn.name or '' }}" maxlength="50"></div>
+  <div><label>Osoba kontaktowa</label><input name="sender_contact_person" value="{{ sn.contact_person or '' }}"></div>
+  <div><label>Ulica i numer</label><input name="sender_line1" value="{{ sn.line1 or '' }}"></div>
+  <div><label>Kod i miasto</label><div class="row" style="gap:6px;flex-wrap:nowrap"><input name="sender_postal_code" value="{{ sn.postal_code or '' }}" style="max-width:100px"><input name="sender_city" value="{{ sn.city or '' }}"></div></div>
+  <div><label>Telefon</label><input name="sender_phone" value="{{ sn.phone or '' }}"></div>
+  <div><label>E-mail</label><input name="sender_email" value="{{ sn.email or '' }}"></div>
+  <div><label>Odbiór paczek</label><select name="pickup_type"><option value="SELF">Sam nadaję (paczkomat, punkt)</option><option value="COURIER" {{ 'selected' if s.pickup_type == 'COURIER' }}>Kurier przyjeżdża</option></select></div>
+  <div><label>Konto do pobrań (COD)</label><input name="cod_account" value="{{ s.cod_account or '' }}" placeholder="PL..."></div>
+  <div><label>Domyślna paczka: dł. × szer. × wys. (cm), waga (kg)</label><div class="row" style="gap:6px;flex-wrap:nowrap">
+    <input name="parcel_l" value="{{ pc.l or 30 }}" inputmode="numeric"><input name="parcel_w" value="{{ pc.w or 20 }}" inputmode="numeric"><input name="parcel_h" value="{{ pc.h or 10 }}" inputmode="numeric"><input name="parcel_kg" value="{{ pc.kg or 1 }}" inputmode="decimal"></div></div>
+</div>
+<p><button class="btn primary">Zapisz i sprawdź połączenie</button></p>
+{% endif %}
+</form>
+{% if i.kind == 'allegro' and masked.client_id %}
+<form method="post" action="/ustawienia/integracje/{{ i.id }}/allegro" class="card">
+  <button class="btn primary">{{ 'Połącz ponownie z Allegro' if connected else 'Połącz z Allegro' }}</button>
+  <span class="muted">Zalogujesz się na Allegro i zatwierdzisz dostęp. Sygnavo pobiera zamówienia i oferty; stan w ofercie zmienia tylko po Twoim kliknięciu.</span>
+</form>
+{% endif %}
+
+<div class="card row" style="gap:8px">
+  {% if i.state == 'off' %}<form method="post" action="/ustawienia/integracje/{{ i.id }}/stan"><input type="hidden" name="action" value="on"><button class="btn small">Włącz</button></form>
+  {% elif i.state != 'new' %}<form method="post" action="/ustawienia/integracje/{{ i.id }}/stan"><input type="hidden" name="action" value="off"><button class="btn small">Wyłącz pobieranie</button></form>{% endif %}
+  <form method="post" action="/ustawienia/integracje/{{ i.id }}/stan" onsubmit="return confirm('Usunąć integrację? Pobrane zamówienia i przesyłki zostaną.')"><input type="hidden" name="action" value="delete"><button class="btn small danger">Usuń integrację</button></form>
+</div>
+{% endblock %}

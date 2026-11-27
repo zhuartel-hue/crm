@@ -1,0 +1,4 @@
+{% set ws = e.warranty_state(today) %}{% set ss = e.service_state(today) %}
+{% if ws == 'over' %}<span class="badge">gwarancja minęła</span>{% elif ws == 'soon' %}<span class="badge warn">gwarancja do {{ e.warranty_until|date }}</span>{% endif %}
+{% if ss == 'over' %}<span class="badge warn">przegląd zaległy</span>{% elif ss == 'soon' %}<span class="badge m">przegląd {{ e.next_service|date }}</span>{% endif %}
+{% if not e.active %}<span class="badge">wycofany</span>{% endif %}

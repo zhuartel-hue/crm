@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Integracje{% endblock %}
+{% block content %}
+<div class="row"><h1>Integracje · {{ company.short_name }}</h1></div>
+<div class="card tbl"><table>
+<tr><th>Serwis</th><th>Nazwa</th><th>Stan</th><th class="hide-sm">Ostatnie pobranie</th><th></th></tr>
+{% for i in rows %}
+<tr><td>{{ i.kind_label }}</td><td><a href="/ustawienia/integracje/{{ i.id }}">{{ i.name }}</a></td>
+<td><span class="badge {{ 'ok' if i.state == 'active' else ('warn' if i.state in ('error', 'new') else '') }}">{{ i.state_label }}</span>{% if i.last_error %} <span class="badge warn" title="{{ i.last_error }}">błąd</span>{% endif %}</td>
+<td class="hide-sm">{{ i.last_sync.strftime('%d.%m.%Y %H:%M') if i.last_sync else '—' }}</td>
+<td><a class="btn small" href="/ustawienia/integracje/{{ i.id }}">Ustawienia</a></td></tr>
+{% else %}<tr><td colspan="5" class="muted">Brak integracji. Dodaj sklep, Allegro albo kuriera poniżej.</td></tr>{% endfor %}
+</table></div>
+<div class="card">
+<h2 style="margin-top:0">Dodaj</h2>
+<div class="row" style="gap:8px;flex-wrap:wrap">
+{% for k, label in KINDS.items() %}<form method="post" action="/ustawienia/integracje/nowa"><input type="hidden" name="kind" value="{{ k }}"><button class="btn">+ {{ label }}</button></form>{% endfor %}
+</div>
+<p class="muted" style="margin-bottom:0">Zamówienia ze sklepu i z Allegro wpadają same do <a href="/zamowienia">Zamówień</a> co kilka minut.
+Sygnavo tylko je czyta: nic nie zmienia w sklepie ani na Allegro i nie pisze do klientów bez Twojego kliknięcia.
+Kurier (Apaczka) daje przycisk „Nadaj paczkę” w każdym zamówieniu.</p>
+</div>
+{% endblock %}

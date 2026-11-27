@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Sprzęt i serwis{% endblock %}
+{% block content %}
+<form class="row" method="get" style="margin-bottom:6px"><h1 style="margin:0 6px 0 0">Sprzęt i serwis</h1><button type="submit" hidden tabindex="-1" aria-hidden="true"></button>
+  <input type="search" name="q" value="{{ q }}" placeholder="nazwa, nr seryjny, inwentarzowy, kod, klient, lokalizacja" style="max-width:320px" aria-label="Szukaj">
+  {% if categories %}<select name="kategoria" style="max-width:160px" aria-label="Rodzaj" onchange="this.form.submit()"><option value="">wszystkie rodzaje</option>
+    {% for c in categories %}<option {{ 'selected' if c == kategoria }}>{{ c }}</option>{% endfor %}</select>{% endif %}
+  <select name="widok" style="max-width:230px" aria-label="Pokaż" onchange="this.form.submit()">
+    <option value="">w użyciu</option>
+    <option value="przeglady" {{ 'selected' if widok == 'przeglady' }}>przeglądy do zrobienia (30 dni)</option>
+    <option value="gwarancje" {{ 'selected' if widok == 'gwarancje' }}>kończące się gwarancje (60 dni)</option>
+    <option value="wycofane" {{ 'selected' if widok == 'wycofane' }}>wycofane</option></select>
+  <span class="spacer"></span><a class="btn primary small" href="/sprzet/nowy">+ Sprzęt</a>
+</form>
+<div class="card tbl"><table>
+<tr><th>Urządzenie</th><th>Klient</th><th class="hide-sm">Nr seryjny</th><th class="hide-sm">Lokalizacja</th><th class="hide-sm">Gwarancja</th><th>Przegląd</th></tr>
+{% for e in rows %}
+<tr><td><a href="/sprzet/{{ e.id }}">{{ e.name }}</a>{% if e.category %}<br><span class="muted" style="font-size:12px">{{ e.category }}{% if e.inventory_no %} · {{ e.inventory_no }}{% endif %}</span>{% endif %}
+  <div>{% include "_equipment_badges.html" %}</div></td>
+<td>{% if e.contractor %}{{ klink(e.contractor_id, e.contractor.name) }}{% endif %}</td>
+<td class="hide-sm">{{ e.serial_no }}</td><td class="hide-sm">{{ e.location }}</td>
+<td class="hide-sm">{{ e.warranty_until|date if e.warranty_until }}</td>
+<td>{{ e.next_service|date if e.next_service }}</td></tr>
+{% else %}<tr><td colspan="6" class="muted">{{ 'Nic nie pasuje.' if q or widok else 'Brak sprzętu. Dodaj pierwsze urządzenie przyciskiem „+ Sprzęt”.' }}</td></tr>{% endfor %}
+</table></div>
+{% endblock %}
