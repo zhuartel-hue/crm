@@ -73,6 +73,17 @@ Gdy właściciel nie może od razu zmienić DNS, stary serwer przekazuje ruch na
 Uwaga: bez `APP_ALIASES` w `serwer.env` kolejne wdrożenie usunie adres sslip z Caddy i przekazywanie
 przestanie działać, dopóki DNS nie wskazuje nowego serwera.
 
+### Zmiana adresu programu (np. na app.sygnavo.com)
+
+1. Rekord A nowej nazwy → IP sygnavo-1 (w Cloudflare „DNS only”, szara chmurka, żeby Caddy sam pobrał certyfikat).
+2. Kopia: `bash /opt/sygnavo-serwer/kopia.sh przed-zmiana-adresu`.
+3. W `/etc/sygnavo/serwer.env`: `APP_DOMAIN=app.sygnavo.com`, `APP_ALIASES=` (pusty),
+   `OLD_DOMAINS="crm.margotsystem.com, 188-245-222-137.sslip.io"`; w `/opt/crm/.env` `PUBLIC_URL=https://app.sygnavo.com`.
+4. `zainstaluj.sh`, potem sprawdzić `https://app.sygnavo.com/health` i przekierowanie starego adresu.
+5. Konektor Claude połączyć ponownie pod `https://app.sygnavo.com/mcp`; w panelu Enable Banking dodać
+   adres powrotu `https://app.sygnavo.com/bank/powrot` (potrzebny dopiero przy ponownym łączeniu banku).
+Powrót: przywrócić poprzednie wartości w obu plikach i `zainstaluj.sh`.
+
 ## 5. Rozbudowa
 
 ### Więcej CPU / RAM

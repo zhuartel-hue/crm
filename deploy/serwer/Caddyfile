@@ -10,3 +10,10 @@
 		Referrer-Policy strict-origin-when-cross-origin
 	}
 }
+
+# OLD_DOMAINS (opcjonalnie, w /etc/sygnavo/serwer.env): dawne adresy programu, ktore stale przekierowuja
+# na APP_DOMAIN z zachowaniem sciezki, np. "crm.margotsystem.com, 188-245-222-137.sslip.io".
+# Bez zmiennej blok obsluguje tylko nieistniejacy adres http (nic nie robi).
+{$OLD_DOMAINS:http://brak.invalid} {
+	redir https://{$APP_DOMAIN}{uri} 308
+}
