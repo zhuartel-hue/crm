@@ -222,3 +222,26 @@ def test_owner_logs_in_with_email_after_setting_it(client):
     page = client.post("/ustawienia/uzytkownicy", data={"email": "szef@firma.pl", "role": "handlowiec",
                                                        "password": "jakies-haslo-1"}).text
     assert "ma już konto" in page
+
+
+def test_feature_flags_per_organisation(client):
+    from app import features
+    from app.db import SessionLocal
+    from app.models import Organisation
+
+    with SessionLocal() as db:
+        _second_org(db)
+        ours, other = db.query(Organisation).order_by(Organisation.id).all()
+        features.set_enabled(db, ours, "dwuetapowe_wymuszone", True)
+        db.commit()
+        assert features.enabled(ours, "dwuetapowe_wymuszone")
+        assert not features.enabled(other, "dwuetapowe_wymuszone")
+        assert not features.enabled(ours, "nie_ma_takiej")
+    old = features.FEATURES["dwuetapowe_wymuszone"]
+    try:
+        features.FEATURES["dwuetapowe_wymuszone"] = features.Feature(old.label, "all")
+        assert features.enabled(other, "dwuetapowe_wymuszone")
+        features.FEATURES["dwuetapowe_wymuszone"] = features.Feature(old.label, "off")
+        assert not features.enabled(ours, "dwuetapowe_wymuszone")
+    finally:
+        features.FEATURES["dwuetapowe_wymuszone"] = old

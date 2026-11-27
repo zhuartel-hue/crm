@@ -228,6 +228,30 @@ gdy pojawią się klienci zewnętrzni (etap E).
 
 Do czasu przejścia: wdrożenia jak dotąd przez iMaca, zawsze z kopią przed zmianą.
 
+### 8.1 Panel testowy i akceptacja właściciela (decyzja 27.11.2026)
+
+Margot i ARI pracują na co dzień na tym samym, stabilnym programie co klienci (`app.sygnavo.com`).
+Każda zmiana, także wygląd (szerokość kolumn, czcionki), trafia najpierw na **panel testowy**
+`test.sygnavo.com`, a do wszystkich dopiero po akceptacji właściciela („zatwierdzam”).
+
+- Panel testowy: osobna kopia aplikacji i osobna baza na tym samym serwerze (koszt 0 zł; przy CX23
+  ok. 1 GB RAM więcej, przy braku miejsca przenosimy go na najmniejszy osobny serwer).
+- Dane: kopia produkcji odświeżana na żądanie (z kopii restic), więc test wygląda jak prawdziwy program.
+- Bezpieczniki testu (wymuszone w konfiguracji, nie do wyłączenia z poziomu strony):
+  bez wysyłki maili do klientów (poczta wychodząca tylko na adres właściciela), KSeF wyłączony albo
+  środowisko testowe KSeF, bank tylko do odczytu, bez zadań w tle, wyraźny pasek „PANEL TESTOWY”.
+- Przepływ: zmiana → testy automatyczne → wdrożenie na `test.sygnavo.com` → właściciel ogląda →
+  „zatwierdzam” → kopia bazy → wdrożenie tej samej wersji na produkcję dla wszystkich.
+- Migracje muszą działać na obu wersjach (sekcja 8 pkt 5), żeby powrót był zawsze możliwy.
+- Termin: przed pierwszym klientem zewnętrznym. Dopóki są tylko nasze firmy, zmiany oglądamy na
+  produkcji jak dotąd, zawsze z kopią przed wdrożeniem.
+
+### 8.2 Przełączniki funkcji per organizacja
+
+Dodatkowo (opcjonalnie) nowa funkcja może być włączona tylko wybranym organizacjom
+(`app/features.py`: etap `beta` / `all` / `off`, klucze w `organisations.features`). Ustawienia firmy
+(logo, numeracja, szablony, statusy) zawsze są osobne dla każdej firmy i nie przenoszą się na innych.
+
 ## 9. Bezpieczeństwo
 
 - Serwer: logowanie tylko kluczem SSH, brak logowania hasłem, firewall Hetznera (80, 443, SSH z
@@ -282,3 +306,6 @@ tylko w zakresie organizacji zalogowanego użytkownika.
 | 26.11.2026 | Zgoda: osobny serwer w Hetznerze; przeprowadzka jak najszybciej, wykonana tej samej nocy (CX23, później CX33) | właściciel |
 | 26.11.2026 | Zostajemy w Hetznerze; Cloudflare tylko do domeny sygnavo.com i ochrony | właściciel |
 | 26.11.2026 | Etap B: oddzielenie danych w aplikacji w jednym miejscu (filtr ORM), RLS w Postgresie jako druga warstwa później | Claude |
+| 27.11.2026 | Program pod adresem app.sygnavo.com; crm.margotsystem.com przekierowuje | właściciel |
+| 27.11.2026 | Loginem jest adres e-mail; jedno konto widzi wszystkie firmy organizacji | właściciel |
+| 27.11.2026 | Nasze firmy pracują na stabilnym programie jak klienci; zmiany najpierw na test.sygnavo.com, do wszystkich po „zatwierdzam” | właściciel |

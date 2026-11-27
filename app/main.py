@@ -22,7 +22,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from . import dashboard as dash
 from . import offer_statuses as ost
 from . import calls, orders
-from . import jobs, tenancy
+from . import features, jobs, tenancy
 from . import users as users_mod
 from . import api, auth, calc, config, firmao_import, mail_templates, mcp_server, migrate, nip_lookup, numbering, offers, password, payments, pdf, recurring, secretbox, wz
 from . import products as prod
@@ -233,6 +233,8 @@ def render(request: Request, db: Session, name: str, **ctx) -> HTMLResponse:
     ctx["companies"] = users_mod.org_companies(db, request.session.get("org_id"))
     ctx["role"] = request.session.get("role", "wlasciciel")
     ctx["can_open"] = lambda path: users_mod.can_open(ctx["role"], path)
+    org = db.get(users_mod.Organisation, request.session.get("org_id") or 0)
+    ctx["feature"] = lambda key: features.enabled(org, key)
     ctx["flash"] = request.session.pop("flash", None)
     return templates.TemplateResponse(request, name, ctx)
 

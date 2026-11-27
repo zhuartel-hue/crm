@@ -1422,6 +1422,8 @@ class Organisation(Base):
     name: Mapped[str] = mapped_column(String(200))
     plan: Mapped[str] = mapped_column(String(30), default="wewnetrzny", server_default="wewnetrzny")
     status: Mapped[str] = mapped_column(String(20), default="active", server_default="active")  # active / blocked
+    # Funkcje w fazie wczesnej wlaczone tej organizacji (app/features.py), klucze oddzielone przecinkami.
+    features: Mapped[str] = mapped_column(Text, default="", server_default="")
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
 
 

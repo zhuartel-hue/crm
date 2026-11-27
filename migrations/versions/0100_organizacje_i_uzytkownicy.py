@@ -27,6 +27,7 @@ def upgrade() -> None:
         sa.Column("name", sa.String(length=200), nullable=False),
         sa.Column("plan", sa.String(length=30), nullable=False, server_default="wewnetrzny"),
         sa.Column("status", sa.String(length=20), nullable=False, server_default="active"),
+        sa.Column("features", sa.Text(), nullable=False, server_default=""),
         sa.Column("created_at", sa.DateTime(), server_default=sa.func.now(), nullable=False),
     )
     op.create_table(
