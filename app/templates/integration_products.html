@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Produkty · {{ i.kind_label }}{% endblock %}
+{% block content %}
+<div class="row"><h1>{{ 'Oferty Allegro' if i.kind == 'allegro' else 'Produkty sklepu' }} ↔ magazyn</h1><span class="spacer"></span>
+<a class="btn" href="/ustawienia/integracje/{{ i.id }}">← {{ i.name }}</a></div>
+<div class="card row" style="gap:8px;flex-wrap:wrap;align-items:center">
+  <form method="post" action="/ustawienia/integracje/{{ i.id }}/produkty"><input type="hidden" name="action" value="sync"><button class="btn small primary">Pobierz {{ 'oferty' if i.kind == 'allegro' else 'produkty' }}</button></form>
+  <a class="btn small {{ 'primary' if f == 'brak' }}" href="?f={{ '' if f == 'brak' else 'brak' }}">{{ 'Pokaż wszystkie' if f == 'brak' else 'Tylko niepowiązane' }}</a>
+  <form method="post" action="/ustawienia/integracje/{{ i.id }}/produkty" onsubmit="return confirm('Dodać do magazynu wszystkie niepowiązane pozycje jako nowe produkty?')"><input type="hidden" name="action" value="create"><button class="btn small">Dodaj niepowiązane do magazynu</button></form>
+  <span class="muted">Powiązanie robi się samo, gdy {{ 'sygnatura oferty' if i.kind == 'allegro' else 'SKU' }} = kod produktu w magazynie.</span>
+</div>
+<div class="card tbl"><table>
+<tr><th>{{ 'Oferta' if i.kind == 'allegro' else 'Wariant' }}</th><th>{{ 'Sygnatura' if i.kind == 'allegro' else 'SKU' }}</th><th class="n">Stan tam</th><th class="n">Cena brutto</th><th>Produkt w magazynie</th><th class="n">Stan u nas</th>{% if i.kind == 'allegro' %}<th></th>{% endif %}</tr>
+{% for l in rows %}
+<tr><td>{{ l.external_name }}{% if l.external_status and l.external_status != 'active' %} <span class="badge">{{ l.external_status }}</span>{% endif %}</td>
+<td>{{ l.external_sku or '—' }}</td><td class="n">{{ l.external_stock|qty if l.external_stock is not none else '—' }}</td>
+<td class="n">{{ l.external_price|money if l.external_price is not none else '—' }}</td>
+<td style="min-width:220px"><form method="post" action="/ustawienia/integracje/{{ i.id }}/produkty" style="margin:0"><input type="hidden" name="action" value="link"><input type="hidden" name="link_id" value="{{ l.id }}"><input type="hidden" name="f" value="{{ f }}">
+<select name="product_id" class="searchable" data-placeholder="szukaj produktu" onchange="this.form.submit()"><option value="">— brak —</option>
+{% for p in products %}<option value="{{ p.id }}" {{ 'selected' if l.product_id == p.id }}>{{ p.label }}</option>{% endfor %}</select></form></td>
+<td class="n">{{ l.product.stock|qty if l.product and not l.product.is_service else '—' }}</td>
+{% if i.kind == 'allegro' %}<td>{% if l.product and not l.product.is_service %}<form method="post" action="/ustawienia/integracje/{{ i.id }}/produkty" style="margin:0" onsubmit="return confirm('Ustawić w ofercie Allegro stan {{ l.product.stock|qty }}?')"><input type="hidden" name="action" value="stock"><input type="hidden" name="link_id" value="{{ l.id }}"><button class="btn small" title="Wyślij stan magazynu do oferty">Wyślij stan</button></form>{% endif %}</td>{% endif %}</tr>
+{% else %}<tr><td colspan="7" class="muted">Brak pozycji. Kliknij „Pobierz”.</td></tr>{% endfor %}
+</table></div>
+{% endblock %}

@@ -9,6 +9,7 @@ os.environ["MAIL_SYNC_MINUTES"] = "0"
 os.environ["KSEF_PURCHASE_SYNC_HOURS"] = "0"
 os.environ["RECURRING_CHECK_MINUTES"] = "0"
 os.environ["BANK_SYNC_HOURS"] = "0"
+os.environ["INTEGRATIONS_SYNC_MINUTES"] = "0"
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import pytest  # noqa: E402
