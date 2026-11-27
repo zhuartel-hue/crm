@@ -120,37 +120,78 @@ def adjust_stock(db: Session, product: Product, new_stock: Decimal, note: str = 
 
 
 def to_invoice(db: Session, actor: str, d: Delivery) -> Invoice:
-    """Szkic faktury VAT z pozycji WZ (ceny z WZ, a gdy brak, z katalogu produktow)."""
+    """Szkic faktury VAT z pozycji jednej WZ."""
+    return to_invoice_many(db, actor, [d])
+
+
+def _buyer_key(d: Delivery):
+    if d.contractor_id:
+        return ("c", d.contractor_id)
+    return ("n", " ".join(d.recipient_name.lower().split()))
+
+
+def to_invoice_many(db: Session, actor: str, docs: list[Delivery]) -> Invoice:
+    """Jeden szkic faktury VAT z kilku WZ tego samego odbiorcy i tej samej firmy.
+
+    Ceny z WZ, a gdy brak, z katalogu produktow. Na fakturze sama nazwa pozycji (bez kodu produktu).
+    Po utworzeniu szkicu kazda WZ wskazuje te fakture (jest „zafakturowana”); usuniecie szkicu to zwalnia.
+    """
     from .services import ServiceError, create_invoice_draft
 
-    if d.kind != "wz":
-        raise ValueError("Fakturę wystawia się z WZ.")
-    if d.status != "issued":
-        raise ValueError("Najpierw wystaw WZ.")
-    if d.invoice_id:
-        raise ValueError("Ta WZ ma już fakturę.")
+    if not docs:
+        raise ValueError("Zaznacz co najmniej jedną WZ.")
+    docs = sorted({d.id: d for d in docs}.values(), key=lambda d: (d.issue_date, d.id))
+    for d in docs:
+        if d.kind != "wz":
+            raise ValueError(f"{d.display_number}: fakturę wystawia się tylko z WZ.")
+        if d.status != "issued":
+            raise ValueError(f"{d.display_number}: najpierw wystaw WZ.")
+        if d.invoice_id:
+            raise ValueError(f"{d.display_number} ma już fakturę.")
+    if len({d.company_id for d in docs}) > 1:
+        raise ValueError("Zaznaczone WZ są z różnych firm.")
+    if len({_buyer_key(d) for d in docs}) > 1:
+        raise ValueError("Zaznaczone WZ mają różnych odbiorców. Jedna faktura może objąć WZ tylko jednego kontrahenta.")
+    if len({bool(d.prices_gross) for d in docs}) > 1:
+        raise ValueError("Zaznaczone WZ mają ceny raz netto, raz brutto. Wystaw je osobnymi fakturami.")
     items = []
-    for it in d.items:
-        row = dict(name=it.name, quantity=str(it.quantity), unit=it.unit, vat_rate=it.vat_rate)
-        if it.product_id:
-            row["product_id"] = it.product_id
-        if it.unit_price is not None:
-            row["unit_price"] = str(it.unit_price)
-        elif not it.product_id:
-            raise ValueError(f"Pozycja {it.position} ({it.name}) nie ma ceny: uzupełnij ją na fakturze ręcznie "
-                             "albo dopisz cenę w produkcie.")
-        items.append(row)
-    buyer = {"contractor_id": d.contractor_id} if d.contractor_id else \
-        {"name": d.recipient_name, "address": d.recipient_address}
+    for d in docs:
+        for it in d.items:
+            row = dict(name=it.name, quantity=str(it.quantity), unit=it.unit, vat_rate=it.vat_rate)
+            if it.product_id:
+                row["product_id"] = it.product_id
+            if it.unit_price is not None:
+                row["unit_price"] = str(it.unit_price)
+            elif not it.product_id:
+                raise ValueError(f"{d.display_number}, pozycja {it.position} ({it.name}) nie ma ceny: uzupełnij ją "
+                                 "na fakturze ręcznie albo dopisz cenę w produkcie.")
+            items.append(row)
+    first = docs[0]
+    buyer = {"contractor_id": first.contractor_id} if first.contractor_id else \
+        {"name": first.recipient_name, "address": first.recipient_address}
+    numbers = ", ".join(d.number for d in docs)
     try:
-        inv = create_invoice_draft(db, actor, dict(company=d.company_id, kind="vat", buyer=buyer, items=items,
-                                                   prices_gross=bool(d.prices_gross),
-                                                   notes=f"Do {d.number}"))
+        inv = create_invoice_draft(db, actor, dict(company=first.company_id, kind="vat", buyer=buyer, items=items,
+                                                   prices_gross=bool(first.prices_gross),
+                                                   notes=f"Do {numbers}"[:2000]))
     except ServiceError as e:
         raise ValueError(str(e)) from None
-    d.invoice_id = inv.id
+    for d in docs:
+        d.invoice_id = inv.id
     db.commit()
     return inv
+
+
+def payment_state(d: Delivery) -> str:
+    """Stan zaplaty WZ wg powiazanej faktury: paid / partial / unpaid / draft (szkic faktury) / none (bez faktury)."""
+    inv = d.invoice
+    if inv is None:
+        return "none"
+    if inv.status != "issued":
+        return "draft"
+    if inv.to_pay <= 0:
+        return "paid"
+    return "partial" if (inv.paid or 0) > 0 else "unpaid"
 
 
 def sign(d: Delivery, data_url: str, name: str) -> None:

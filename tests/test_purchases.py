@@ -74,6 +74,17 @@ def test_fetch_and_verify_purchase_invoices(client, monkeypatch):
     assert "zatwierdzona" in r.text and "zapłacona 25.11.2026" in r.text
     assert client.get(f"/koszty/{pid}/xml").content.startswith(b"<?xml")
     assert "AAA111" not in client.get("/koszty?status=nieoplacone").text
+    # reczne odhaczenie z listy (kolumny KSeF i Zapłacona)
+    page = client.get("/koszty").text
+    assert "W KSeF: 5551859956-20261120-AAA111-01" in page and "/zaplacona" in page
+    r = client.post(f"/koszty/{pid}/zaplacona", data={"paid": "0", "back": "/koszty?status=nieoplacone"},
+                    follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == "/koszty?status=nieoplacone"
+    with SessionLocal() as db:
+        assert db.get(PurchaseInvoice, pid).paid_at is None
+    client.post(f"/koszty/{pid}/zaplacona", data={"paid": "1", "back": "https://zly.example"})
+    with SessionLocal() as db:
+        assert db.get(PurchaseInvoice, pid).paid_at == dt.date.today()
     # ponowne pobranie: od kursora, bez dubli
     FakeKsef.pages = [{"hasMore": False, "isTruncated": False,
                        "invoices": [_meta("5551859956-20261121-BBB222-02", "2026-11-21T10:00:00Z")]}]

@@ -15,7 +15,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, or_, select, update
-from sqlalchemy.orm import Session, defer
+from sqlalchemy.orm import Session, defer, selectinload
 from starlette.concurrency import run_in_threadpool
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -109,6 +109,7 @@ templates.env.globals.update(
 
 templates.env.globals["ksef_cert_info"] = ksef.cert_info
 templates.env.globals["ksef_can_send"] = ksef.can_send
+templates.env.globals["wz_payment"] = wz.payment_state
 templates.env.globals["INVOICE_TEMPLATES"] = INVOICE_TEMPLATES
 templates.env.globals["OFFER_PDF_TEMPLATES"] = OFFER_PDF_TEMPLATES
 templates.env.globals["ksef_status_label"] = ksef.status_label
@@ -2073,14 +2074,42 @@ def _wz_form(request: Request, db: Session, d: Delivery, error: str | None = Non
 @app.get("/wz", response_class=HTMLResponse)
 def wz_list(request: Request, q: str = "", rodzaj: str = "", db: Session = Depends(get_db)):
     company = current_company(request, db)
-    stmt = select(Delivery).where(Delivery.company_id == company.id)
+    stmt = select(Delivery).where(Delivery.company_id == company.id).options(selectinload(Delivery.invoice))
     if rodzaj in DELIVERY_KINDS:
         stmt = stmt.where(Delivery.kind == rodzaj)
+    elif rodzaj == "bez-faktury":
+        stmt = stmt.where(Delivery.kind == "wz", Delivery.status == "issued", Delivery.invoice_id.is_(None))
     if q:
         like = f"%{q}%"
         stmt = stmt.where(or_(Delivery.number.ilike(like), Delivery.recipient_name.ilike(like)))
     rows = db.scalars(stmt.order_by(Delivery.issue_date.desc(), Delivery.id.desc()).limit(200)).all()
     return render(request, db, "wz_list.html", rows=rows, q=q, rodzaj=rodzaj)
+
+
+@app.post("/wz/faktura")
+async def wz_many_to_invoice(request: Request, db: Session = Depends(get_db)):
+    """Jeden szkic faktury z kilku zaznaczonych WZ (ten sam odbiorca, ta sama firma)."""
+    company = current_company(request, db)
+    form = await request.form()
+    ids = {int(x) for x in form.getlist("ids") if str(x).isdigit()}
+    docs = db.scalars(select(Delivery).where(Delivery.company_id == company.id, Delivery.id.in_(ids))).all() \
+        if ids else []
+    back = form.get("back") or "/wz"
+    if not back.startswith("/wz"):
+        back = "/wz"
+    try:
+        if len(docs) != len(ids):
+            raise ValueError("Nie znaleziono części zaznaczonych WZ.")
+        inv = wz.to_invoice_many(db, web_actor(request), list(docs))
+    except ValueError as e:
+        db.rollback()
+        flash(request, str(e))
+        return redirect(back)
+    audit(db, web_actor(request), "wz.invoice", f"Szkic faktury z {len(docs)} WZ: "
+          + ", ".join(d.number for d in docs)[:400], company_id=company.id, entity="invoice", entity_id=inv.id)
+    db.commit()
+    flash(request, f"Utworzono szkic faktury z {len(docs)} WZ. Sprawdź i wystaw.")
+    return redirect(f"/faktury/{inv.id}/edytuj")
 
 
 @app.get("/wz/nowa", response_class=HTMLResponse)
@@ -3398,6 +3427,20 @@ async def purchase_update(pid: int, request: Request, db: Session = Depends(get_
     db.commit()
     flash(request, "Zapisano.")
     return redirect(f"/koszty/{p.id}")
+
+
+@app.post("/koszty/{pid}/zaplacona")
+async def purchase_toggle_paid(pid: int, request: Request, db: Session = Depends(get_db)):
+    """Reczne odhaczenie zaplaty z listy kosztow (np. zaplacone prywatnie, bank tego nie pokaze)."""
+    p = _get_purchase(db, request, pid)
+    form = await request.form()
+    p.paid_at = dt.date.today() if form.get("paid") == "1" else None
+    audit(db, web_actor(request), "purchase.update",
+          f"Koszt {p.invoice_number} od {p.seller_name[:80]}: {'zapłacona (ręcznie)' if p.paid_at else 'cofnięto zapłatę'}",
+          company_id=p.company_id, entity="purchase", entity_id=p.id)
+    db.commit()
+    back = form.get("back") or "/koszty"
+    return redirect(back if back.startswith("/koszty") else "/koszty")
 
 
 @app.get("/koszty/{pid}/xml")

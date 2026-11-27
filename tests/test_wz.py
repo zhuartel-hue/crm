@@ -140,3 +140,58 @@ def test_service_has_no_stock_and_nnn_pattern(client):
     assert "2027/02/001/WZ" in client.get(f"/wz/{wid}").text
     with SessionLocal() as db:
         assert db.get(Product, pid).stock == 0
+
+
+def test_invoice_from_several_wz_and_payment_column(client):
+    from app.db import SessionLocal
+    from app.models import Delivery, Invoice
+    pid = _new_product(client, stock="100")
+    w1 = _doc(client, "wz", pid, "10")
+    w2 = _doc(client, "wz", pid, "5", extra_names=["Dojazd"], extra_qty=["20"], extra_units=["km"], extra_prices=["1,50"])
+    lst = client.get("/wz").text
+    assert "Faktura z zaznaczonych WZ" in lst and "bez faktury" in lst
+    assert f'name="ids" value="{w1}"' in lst
+    # inny odbiorca nie przejdzie razem
+    data = {"kind": "wz", "issue_date": "2027-02-04", "contractor_id": "", "recipient_name": "Inna Firma",
+            "recipient_address": "", "item_name": ["Kabel C6"], "item_qty": ["1"], "item_unit": ["m"],
+            "item_product": [str(pid)], "item_price": ["2,00"], "item_rate": ["23"], "notes": "", "action": "issue"}
+    w3 = int(client.post("/wz/nowa", data=data, follow_redirects=False).headers["location"].rsplit("/", 1)[1])
+    r = client.post("/wz/faktura", data={"ids": [str(w1), str(w3)]})
+    assert "różnych odbiorców" in r.text
+    with SessionLocal() as db:
+        assert db.get(Delivery, w1).invoice_id is None
+    # dwie WZ tego samego odbiorcy -> jeden szkic
+    r = client.post("/wz/faktura", data={"ids": [str(w1), str(w2)], "back": "/wz?rodzaj=bez-faktury"},
+                    follow_redirects=False)
+    assert r.status_code == 303 and "/faktury/" in r.headers["location"], r.text
+    with SessionLocal() as db:
+        d1, d2 = db.get(Delivery, w1), db.get(Delivery, w2)
+        assert d1.invoice_id and d1.invoice_id == d2.invoice_id
+        inv = db.get(Invoice, d1.invoice_id)
+        assert inv.status == "draft" and inv.buyer_name == "Hurtownia Y"
+        assert [it.name for it in inv.items] == ["Kabel C6", "Kabel C6", "Dojazd"]
+        assert all("C6-1" not in it.name for it in inv.items)  # bez kodu produktu na fakturze
+        assert d1.number in inv.notes and d2.number in inv.notes
+        # (10+5)*2 + 20*1,5 = 60 netto
+        assert inv.total_net == 60
+        inv_id = inv.id
+    assert "ma już fakturę" in client.post("/wz/faktura", data={"ids": [str(w1)]}).text
+    lst = client.get("/wz").text
+    assert "szkic faktury" in lst and f'name="ids" value="{w1}"' not in lst
+    assert f'name="ids" value="{w3}"' in client.get("/wz?rodzaj=bez-faktury").text
+    assert f'value="{w1}"' not in client.get("/wz?rodzaj=bez-faktury").text
+    # po wystawieniu i zaplacie: zapłacono
+    with SessionLocal() as db:
+        inv = db.get(Invoice, inv_id)
+        inv.status, inv.number = "issued", "FV/TEST/1"
+        db.commit()
+    assert "nie zapłacono" in client.get("/wz").text
+    with SessionLocal() as db:
+        inv = db.get(Invoice, inv_id)
+        inv.paid = inv.total_gross
+        db.commit()
+    assert ">zapłacono<" in client.get("/wz").text
+    # inna firma nie wystawi faktury z cudzych WZ
+    client.post("/firma/2")
+    assert "Nie znaleziono" in client.post("/wz/faktura", data={"ids": [str(w3)]}).text
+    client.post("/firma/1")

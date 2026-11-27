@@ -27,7 +27,7 @@
   <input name="q" value="{{ q }}" placeholder="Numer, sprzedawca albo NIP" style="max-width:260px"><button class="btn">Szukaj</button>
 </form>
 <div class="card tbl"><table>
-<tr><th>Faktura</th><th>Sprzedawca</th><th class="hide-sm">Termin</th><th class="n">Netto</th><th class="n">VAT</th><th class="n">Brutto</th><th>Status</th></tr>
+<tr><th>Faktura</th><th>Sprzedawca</th><th class="hide-sm">Termin</th><th class="n">Netto</th><th class="n">VAT</th><th class="n">Brutto</th><th>Status</th><th title="Faktura w KSeF">KSeF</th><th title="Zaznacz, gdy zapłacona (np. zapłaciłeś sam, poza kontem firmy)">Zapłacona</th></tr>
 {% for pi in rows %}
 <tr>
 <td><a href="/koszty/{{ pi.id }}">{{ pi.invoice_number or pi.ksef_number }}</a><br><span class="muted">{{ pi.issue_date|date if pi.issue_date }}{% if pi.invoice_type and pi.invoice_type != 'Vat' %} · {{ pi.invoice_type }}{% endif %}</span></td>
@@ -36,8 +36,14 @@
 <td class="n">{{ pi.net|money }}</td><td class="n">{{ pi.vat|money }}</td>
 <td class="n" style="white-space:nowrap">{{ pi.gross|money }} {{ 'zł' if pi.currency == 'PLN' else pi.currency }}</td>
 <td><span class="badge {{ 'warn' if pi.status == 'new' else ('ok' if pi.status == 'accepted' else '') }}">{{ pi.status_label }}</span>
-{% if pi.paid_at %}<br><span class="badge ok">zapłacona</span>{% endif %}</td>
+</td>
+<td>{% if pi.ksef_number %}<span title="W KSeF: {{ pi.ksef_number }}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1a9b4b" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12l5 5L20 6"/></svg></span>{% else %}<span title="Brak numeru KSeF"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#d33" stroke-width="3" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></span>{% endif %}</td>
+<td style="white-space:nowrap"><form method="post" action="/koszty/{{ pi.id }}/zaplacona" style="display:inline;margin:0">
+<input type="hidden" name="back" value="{{ request.url.path }}{{ '?' + request.url.query if request.url.query }}">
+<input type="hidden" name="paid" value="{{ '0' if pi.paid_at else '1' }}">
+<input type="checkbox" {{ 'checked' if pi.paid_at }} onchange="this.form.submit()" title="{{ 'Zapłacona ' + pi.paid_at|date + '. Odznacz, aby cofnąć.' if pi.paid_at else 'Zaznacz: zapłacona dziś' }}" aria-label="zapłacona {{ pi.invoice_number }}"></form>
+{% if pi.paid_at %}<span class="muted">{{ pi.paid_at|date }}</span>{% endif %}</td>
 </tr>
-{% else %}<tr><td colspan="7" class="muted">Brak faktur kosztowych{{ ' w tym widoku' if status or q }}.</td></tr>{% endfor %}
+{% else %}<tr><td colspan="9" class="muted">Brak faktur kosztowych{{ ' w tym widoku' if status or q }}.</td></tr>{% endfor %}
 </table></div>
 {% endblock %}
