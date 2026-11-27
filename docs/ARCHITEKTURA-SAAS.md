@@ -335,4 +335,4 @@ tylko w zakresie organizacji zalogowanego użytkownika.
 | 27.11.2026 | Program pod adresem app.sygnavo.com; crm.margotsystem.com przekierowuje | właściciel |
 | 27.11.2026 | Loginem jest adres e-mail; jedno konto widzi wszystkie firmy organizacji | właściciel |
 | 27.11.2026 | Nasze firmy pracują na stabilnym programie jak klienci; zmiany najpierw na test.sygnavo.com, do wszystkich po „zatwierdzam” | właściciel |
-| 27.11.2026 | Wdrożenia: serwer sam pobiera kod z GitHuba (klucz tylko do odczytu) zamiast GitHub Actions z SSH; produkcja tylko z pliku `deploy/wydanie/produkcja` po „zatwierdzam” | Claude, czeka na zgodę właściciela |
+| 27.11.2026 | Wdrożenia: serwer sam pobiera kod z GitHuba (klucz tylko do odczytu) zamiast GitHub Actions z SSH; produkcja tylko z pliku `deploy/wydanie/produkcja` po „zatwierdzam” | właściciel (zgoda na klucz GitHub tylko do odczytu) |
