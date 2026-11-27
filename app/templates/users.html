@@ -2,11 +2,11 @@
 {% block title %}Użytkownicy{% endblock %}
 {% block content %}
 <h1>Użytkownicy</h1>
-<p class="muted">Każda osoba loguje się swoim loginem i hasłem. Rola decyduje, co widzi w programie. Wszyscy użytkownicy widzą firmy tej organizacji.</p>
+<p class="muted">Każda osoba loguje się swoim adresem e-mail i hasłem. Rola decyduje, co widzi w programie. Wszyscy użytkownicy widzą firmy tej organizacji.</p>
 {% if error %}<p class="card" style="border-color:#c0392b;color:#c0392b">{{ error }}</p>{% endif %}
 <div class="card">
 <table class="tbl">
-<thead><tr><th>Login</th><th>Imię i nazwisko</th><th>E-mail</th><th>Rola</th><th>Aktywny</th><th>Ostatnie logowanie</th><th></th></tr></thead>
+<thead><tr><th>Login</th><th>Imię i nazwisko</th><th>E-mail (do logowania)</th><th>Rola</th><th>Aktywny</th><th>Ostatnie logowanie</th><th></th></tr></thead>
 <tbody>
 {% for u in people %}
 <tr>
@@ -36,9 +36,8 @@
 <form method="post" action="/ustawienia/uzytkownicy" class="card">
 <h2 style="margin-top:0">Dodaj użytkownika</h2>
 <div class="grid">
-  <div><label>Login</label><input name="login" value="{{ form.login if form }}" required autocomplete="off"></div>
+  <div><label>E-mail (login)</label><input name="email" type="email" value="{{ form.email if form }}" required autocomplete="off"></div>
   <div><label>Imię i nazwisko</label><input name="name" value="{{ form.name if form }}"></div>
-  <div><label>E-mail</label><input name="email" type="email" value="{{ form.email if form }}"></div>
   <div><label>Rola</label><select name="role">{% for k, v in roles.items() %}<option value="{{ k }}" {{ 'selected' if (form and form.role == k) or (not form and k == 'handlowiec') }}>{{ v }}</option>{% endfor %}</select></div>
   <div><label>Hasło startowe (min. 10 znaków)</label><input type="password" name="password" minlength="10" required autocomplete="new-password"></div>
 </div>

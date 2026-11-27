@@ -5,7 +5,7 @@
 <h1>Sygnavo</h1><p class="muted">Faktury i CRM</p>
 {% if error %}<div class="error">{{ error }}</div>{% endif %}
 <form method="post" action="/login">
-<p><label>Login</label><input name="login" autocomplete="username" autocapitalize="none" required></p>
+<p><label>E-mail</label><input name="login" autocomplete="username" inputmode="email" autocapitalize="none" required></p>
 <p><label>Hasło</label><input name="password" type="password" autocomplete="current-password" required></p>
 <button class="btn primary" style="width:100%">Zaloguj</button>
 </form></div></main></body></html>

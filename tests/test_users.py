@@ -78,11 +78,11 @@ def test_other_organisation_owner_sees_only_own(client):
 def test_roles_and_new_user_flow(client):
     from app.main import app
 
-    r = client.post("/ustawienia/uzytkownicy", data={"login": "Magazynier", "name": "Jan", "role": "magazyn",
+    r = client.post("/ustawienia/uzytkownicy", data={"email": "Magazynier@Firma.pl", "name": "Jan", "role": "magazyn",
                                                     "password": "startowe-haslo"}, follow_redirects=False)
     assert r.status_code == 303
     c2 = TestClient(app)
-    r = _login(c2, "magazynier", "startowe-haslo")
+    r = _login(c2, "magazynier@firma.pl", "startowe-haslo")
     assert r.headers["location"] == "/konto"
     # przed zmiana hasla tylko /konto
     assert c2.get("/wz", follow_redirects=False).headers["location"] == "/konto"
@@ -100,14 +100,14 @@ def test_disabled_user_and_last_owner(client):
     from app.main import app
     from app.models import User
 
-    client.post("/ustawienia/uzytkownicy", data={"login": "ksiegowa", "role": "ksiegowosc", "password": "haslo-ksiegowej"})
+    client.post("/ustawienia/uzytkownicy", data={"email": "ksiegowa@firma.pl", "role": "ksiegowosc", "password": "haslo-ksiegowej"})
     c2 = TestClient(app)
-    _login(c2, "ksiegowa", "haslo-ksiegowej")
+    _login(c2, "ksiegowa@firma.pl", "haslo-ksiegowej")
     c2.post("/konto/haslo", data={"old": "haslo-ksiegowej", "new": "nowe-haslo-ksiegowej", "repeat": "nowe-haslo-ksiegowej"})
     assert c2.get("/faktury").status_code == 200
     assert c2.get("/ustawienia/uzytkownicy").status_code == 403
     with SessionLocal() as db:
-        k = db.scalar(sa.select(User).where(User.login == "ksiegowa"))
+        k = db.scalar(sa.select(User).where(User.login == "ksiegowa@firma.pl"))
         admin = db.scalar(sa.select(User).where(User.login == "admin"))
     client.post(f"/ustawienia/uzytkownicy/{k.id}", data={"role": "ksiegowosc", "active": "0"})
     # wylaczone konto traci dostep od razu, takze w otwartej sesji
@@ -122,11 +122,11 @@ def test_disabled_user_and_last_owner(client):
 def test_lockout_after_failed_logins(client):
     from app.main import app
 
-    client.post("/ustawienia/uzytkownicy", data={"login": "handel", "role": "handlowiec", "password": "dobre-haslo-1"})
+    client.post("/ustawienia/uzytkownicy", data={"email": "handel@firma.pl", "role": "handlowiec", "password": "dobre-haslo-1"})
     c2 = TestClient(app)
     for _ in range(5):
-        assert _login(c2, "handel", "zle").status_code == 401
-    assert _login(c2, "handel", "dobre-haslo-1").status_code == 401  # zablokowane na 15 minut
+        assert _login(c2, "handel@firma.pl", "zle").status_code == 401
+    assert _login(c2, "handel@firma.pl", "dobre-haslo-1").status_code == 401  # zablokowane na 15 minut
 
 
 def test_old_session_without_user_id_still_works(client):
@@ -164,9 +164,9 @@ def test_two_factor_login(client):
     from app import totp
     from app.main import app
 
-    client.post("/ustawienia/uzytkownicy", data={"login": "szef2", "role": "ksiegowosc", "password": "haslo-szefa-2"})
+    client.post("/ustawienia/uzytkownicy", data={"email": "szef2@firma.pl", "role": "ksiegowosc", "password": "haslo-szefa-2"})
     c2 = TestClient(app)
-    _login(c2, "szef2", "haslo-szefa-2")
+    _login(c2, "szef2@firma.pl", "haslo-szefa-2")
     c2.post("/konto/haslo", data={"old": "haslo-szefa-2", "new": "haslo-szefa-22", "repeat": "haslo-szefa-22"})
     c2.post("/konto/2fa/start")
     page = c2.get("/konto").text
@@ -178,7 +178,7 @@ def test_two_factor_login(client):
     assert "Włączona" in c2.get("/konto").text
     # logowanie: haslo nie wystarcza
     c3 = TestClient(app)
-    r = _login(c3, "szef2", "haslo-szefa-22")
+    r = _login(c3, "szef2@firma.pl", "haslo-szefa-22")
     assert r.headers["location"] == "/login/kod"
     assert c3.get("/faktury", follow_redirects=False).headers["location"] == "/login"
     assert c3.post("/login/kod", data={"code": "111111"}).status_code == 401
@@ -188,10 +188,10 @@ def test_two_factor_login(client):
     from app.db import SessionLocal
     from app.models import User
     with SessionLocal() as db:
-        uid = db.scalar(sa.select(User.id).where(User.login == "szef2"))
+        uid = db.scalar(sa.select(User.id).where(User.login == "szef2@firma.pl"))
     client.post(f"/ustawienia/uzytkownicy/{uid}/2fa-reset")
     c4 = TestClient(app)
-    assert _login(c4, "szef2", "haslo-szefa-22").headers["location"] == "/"
+    assert _login(c4, "szef2@firma.pl", "haslo-szefa-22").headers["location"] == "/"
 
 
 def test_totp_known_vector():
@@ -203,3 +203,22 @@ def test_totp_known_vector():
     assert totp.now_code(secret, at=59) == "287082"
     assert totp.verify(secret, "287 082", at=59)
     assert not totp.verify(secret, "287083", at=59)
+
+
+def test_owner_logs_in_with_email_after_setting_it(client):
+    from app.db import SessionLocal
+    from app.main import app
+    from app.models import User
+
+    with SessionLocal() as db:
+        admin = db.scalar(sa.select(User).where(User.login == "admin"))
+    client.post(f"/ustawienia/uzytkownicy/{admin.id}", data={"name": "Szef", "email": "Szef@Firma.pl", "role": "wlasciciel",
+                                                           "active": "1"})
+    c2 = TestClient(app)
+    assert _login(c2, "szef@firma.pl", "test-haslo").headers["location"] == "/"
+    c3 = TestClient(app)
+    assert _login(c3, "admin", "test-haslo").headers["location"] == "/"  # dawny login dalej dziala
+    # ten sam e-mail nie moze miec drugiego konta
+    page = client.post("/ustawienia/uzytkownicy", data={"email": "szef@firma.pl", "role": "handlowiec",
+                                                       "password": "jakies-haslo-1"}).text
+    assert "ma już konto" in page

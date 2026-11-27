@@ -15,7 +15,7 @@ organizacji nie widzi jej danych.
 
 ## Jak zacząć (krok po kroku)
 1. Zaloguj się jako właściciel i wejdź w **System → Użytkownicy**.
-2. W sekcji „Dodaj użytkownika” wpisz login (małe litery), imię i nazwisko, e-mail i wybierz rolę.
+2. W sekcji „Dodaj użytkownika” wpisz adres e-mail (to będzie login tej osoby), imię i nazwisko i wybierz rolę.
 3. Wpisz hasło startowe (co najmniej 10 znaków) i przekaż je tej osobie.
 4. Przy pierwszym logowaniu program poprosi ją o ustawienie własnego hasła.
 

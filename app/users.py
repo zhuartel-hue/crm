@@ -12,7 +12,7 @@ import re
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from . import config
@@ -98,7 +98,22 @@ def org_companies(db: Session, org_id: int | None) -> list[Company]:
 
 
 def _by_login(db: Session, login: str) -> User | None:
-    return db.scalar(select(User).where(func.lower(User.login) == login.strip().lower()))
+    """Logujemy sie adresem e-mail (albo dawnym loginem, np. "admin")."""
+    key = login.strip().lower()
+    if not key:
+        return None
+    user = db.scalar(select(User).where(func.lower(User.login) == key))
+    return user or db.scalar(select(User).where(func.lower(User.email) == key))
+
+
+EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[a-z]{2,}$")
+
+
+def _email_taken(db: Session, email: str, without: int | None = None) -> bool:
+    q = select(User.id).where(or_(func.lower(User.email) == email, func.lower(User.login) == email))
+    if without is not None:
+        q = q.where(User.id != without)
+    return db.scalar(q.limit(1)) is not None
 
 
 def _bootstrap_owner(db: Session, login: str, password: str) -> User | None:
@@ -236,12 +251,14 @@ def users_list(request: Request, db: Session = Depends(get_db)):
 def users_add(request: Request, login: str = Form(""), name: str = Form(""), email: str = Form(""),
               role: str = Form("handlowiec"), password: str = Form(""), db: Session = Depends(get_db)):
     owner = _owner(request, db)
-    login = login.strip().lower()
+    # Loginem jest adres e-mail.
+    email = (email or login).strip().lower()
+    login = email
     error = None
-    if not LOGIN_RE.match(login):
-        error = "Login: 3–80 znaków, małe litery, cyfry, kropka, myślnik, @."
-    elif _by_login(db, login) is not None:
-        error = "Taki login już istnieje."
+    if not EMAIL_RE.match(email) or len(email) > 80:
+        error = "Podaj poprawny adres e-mail: to będzie login tej osoby."
+    elif _email_taken(db, email):
+        error = "Ten adres e-mail ma już konto."
     elif role not in ROLES:
         error = "Wybierz rolę."
     elif len(password) < pw.MIN_LEN:
@@ -261,12 +278,15 @@ def users_edit(user_id: int, request: Request, name: str = Form(""), email: str 
                active: str = Form(""), db: Session = Depends(get_db)):
     owner = _owner(request, db)
     u = _member(db, owner, user_id)
+    email = email.strip().lower()
+    if email and (not EMAIL_RE.match(email) or _email_taken(db, email, without=u.id)):
+        return _page(request, db, owner, error="Ten adres e-mail jest niepoprawny albo ma już inne konto.")
     new_role = role if role in ROLES else u.role
     new_active = active == "1"
     if (u.role == "wlasciciel" and (new_role != "wlasciciel" or not new_active)
             and _owners_left(db, owner.organisation_id, u.id) == 0):
         return _page(request, db, owner, error="Organizacja musi mieć co najmniej jednego aktywnego właściciela.")
-    u.name, u.email, u.role, u.active = name.strip()[:200], email.strip()[:200], new_role, new_active
+    u.name, u.email, u.role, u.active = name.strip()[:200], email[:200], new_role, new_active
     audit(db, f"www ({owner.login})", "user.edit",
           f"Użytkownik {u.login}: rola {ROLES[u.role]}, {'aktywny' if u.active else 'wyłączony'}")
     db.commit()
