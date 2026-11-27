@@ -6,7 +6,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <title>{% block title %}Sygnavo{% endblock %} · {{ company.short_name }}</title>
-<link rel="stylesheet" href="/static/app.css?v=9">
+<link rel="stylesheet" href="/static/app.css?v=10">
 <link rel="manifest" href="/static/manifest.webmanifest">
 <link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
 <link rel="icon" href="/static/icons/icon-192.png">
@@ -15,6 +15,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 </head>
 <body>
+{% if TEST_PANEL %}<div style="background:#b45309;color:#fff;text-align:center;font-size:12px;padding:3px 8px;position:sticky;top:0;z-index:1000">PANEL TESTOWY · kopia danych · maile, KSeF i bank wyłączone · zmiany tutaj nie trafiają do programu</div>{% endif %}
 {% set p = request.url.path %}
 {% set groups = [
   ('', [('/', 'Start', 'home', p == '/')]),
@@ -37,7 +38,8 @@
                ('', 'Projekty', 'folder', False),
                ('/raporty', 'Raporty', 'chart', p.startswith('/raporty'))]),
   ('Finanse', [('/bank', 'Bank', 'bank', p.startswith('/bank'))]),
-  ('System', [('/ustawienia', 'Ustawienia', 'gear', p.startswith('/ustawienia')),
+  ('System', [('/ustawienia', 'Ustawienia', 'gear', p.startswith('/ustawienia') and not p.startswith(('/ustawienia/integracje', '/ustawienia/uzytkownicy'))),
+              ('/ustawienia/integracje', 'Integracje', 'repeat', p.startswith('/ustawienia/integracje')),
               ('/szablony', 'Szablony maili', 'doc', p.startswith('/szablony')),
               ('/import/firmao', 'Import z Firmao', 'repeat', p.startswith('/import')),
               ('/dostep', 'Claude', 'spark', p.startswith('/dostep')),

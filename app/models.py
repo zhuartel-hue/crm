@@ -1392,6 +1392,17 @@ class Order(Base):
     delivery_id: Mapped[int | None] = mapped_column(ForeignKey("deliveries.id", ondelete="SET NULL"), nullable=True)
     created_by: Mapped[str] = mapped_column(String(100), default="")
     source_ref: Mapped[str] = mapped_column(String(120), default="", index=True)
+    # Zamowienia ze sklepu / Allegro (puste dla recznych): kanal, status u zrodla, platnosc, dostawa.
+    channel: Mapped[str] = mapped_column(String(20), default="")  # ORDER_CHANNELS
+    integration_id: Mapped[int | None] = mapped_column(ForeignKey("integrations.id", ondelete="SET NULL"),
+                                                       nullable=True)
+    external_status: Mapped[str] = mapped_column(String(60), default="")
+    payment_status: Mapped[str] = mapped_column(String(20), default="")  # PAYMENT_STATUSES
+    shipping_method: Mapped[str] = mapped_column(String(200), default="")
+    pickup_point: Mapped[str] = mapped_column(String(300), default="")
+    delivery_address: Mapped[str] = mapped_column(Text, default="")
+    buyer_tax_id: Mapped[str] = mapped_column(String(30), default="")
+    invoice_requested: Mapped[bool] = mapped_column(default=False)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
 
     company: Mapped[Company] = relationship()
@@ -1402,6 +1413,15 @@ class Order(Base):
     items: Mapped[list[OrderItem]] = relationship(
         back_populates="order", cascade="all, delete-orphan", order_by="OrderItem.position"
     )
+    shipments: Mapped[list["Shipment"]] = relationship(back_populates="order", order_by="Shipment.id")
+
+    @property
+    def channel_label(self) -> str:
+        return ORDER_CHANNELS.get(self.channel, self.channel)
+
+    @property
+    def payment_label(self) -> str:
+        return PAYMENT_STATUSES.get(self.payment_status, self.payment_status)
 
     @property
     def display_number(self) -> str:
@@ -1563,3 +1583,119 @@ class AssistantMessage(Base):
     cost_usd: Mapped[Decimal] = mapped_column(Numeric(10, 6), default=Decimal("0"))
     rating: Mapped[int] = mapped_column(Integer, default=0)  # 1 pomoglo, -1 nie pomoglo, 0 bez oceny
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+# ---------------------------------------------------------------- integracje (sklep, Allegro, kurierzy)
+
+ORDER_CHANNELS = {"": "ręcznie", "shopify": "sklep", "allegro": "Allegro"}
+PAYMENT_STATUSES = {"": "", "paid": "opłacone", "unpaid": "nieopłacone", "partial": "częściowo", "refunded": "zwrot",
+                    "cod": "za pobraniem"}
+INTEGRATION_KINDS = {"shopify": "Sklep Shopify", "allegro": "Allegro", "apaczka": "Apaczka (kurierzy)"}
+INTEGRATION_STATES = {"new": "do konfiguracji", "active": "działa", "error": "błąd", "off": "wyłączona"}
+
+
+class Integration(Base):
+    """Polaczenie firmy z zewnetrznym serwisem. Wlasciciel: firma. Sekrety (tokeny, klucze) tylko w `secret`,
+    zaszyfrowane (secretbox, JSON). `settings_json` to jawne ustawienia (adres sklepu, domyslne wymiary paczki)."""
+
+    __tablename__ = "integrations"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    kind: Mapped[str] = mapped_column(String(20))  # INTEGRATION_KINDS
+    name: Mapped[str] = mapped_column(String(120), default="")
+    state: Mapped[str] = mapped_column(String(10), default="new")  # INTEGRATION_STATES
+    settings_json: Mapped[str] = mapped_column(Text, default="{}")
+    secret: Mapped[str] = mapped_column(Text, default="")
+    auth_state: Mapped[str] = mapped_column(String(64), default="")  # OAuth state w trakcie podlaczania
+    cursor: Mapped[str] = mapped_column(String(60), default="")  # od kiedy pobierac zmiany (ISO, UTC)
+    last_sync: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+    last_error: Mapped[str] = mapped_column(Text, default="")
+    created_by: Mapped[str] = mapped_column(String(100), default="")
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
+
+    company: Mapped[Company] = relationship()
+
+    @property
+    def settings(self) -> dict:
+        import json
+        try:
+            v = json.loads(self.settings_json or "{}")
+        except ValueError:
+            return {}
+        return v if isinstance(v, dict) else {}
+
+    @settings.setter
+    def settings(self, value: dict) -> None:
+        import json
+        self.settings_json = json.dumps(value or {}, ensure_ascii=False)
+
+    @property
+    def kind_label(self) -> str:
+        return INTEGRATION_KINDS.get(self.kind, self.kind)
+
+    @property
+    def state_label(self) -> str:
+        return INTEGRATION_STATES.get(self.state, self.state)
+
+
+class ProductLink(Base):
+    """Powiazanie produktu z magazynu z ofertą Allegro / wariantem w sklepie (kod i nazwa po obu stronach)."""
+
+    __tablename__ = "product_links"
+    __table_args__ = (UniqueConstraint("integration_id", "external_id", name="uq_product_link"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    integration_id: Mapped[int] = mapped_column(ForeignKey("integrations.id", ondelete="CASCADE"), index=True)
+    product_id: Mapped[int | None] = mapped_column(ForeignKey("products.id", ondelete="SET NULL"), nullable=True,
+                                                   index=True)
+    external_id: Mapped[str] = mapped_column(String(80))
+    external_sku: Mapped[str] = mapped_column(String(120), default="")  # sygnatura Allegro / SKU w sklepie
+    external_name: Mapped[str] = mapped_column(String(300), default="")
+    external_stock: Mapped[Decimal | None] = mapped_column(Numeric(12, 3), nullable=True)
+    external_price: Mapped[Decimal | None] = mapped_column(Money, nullable=True)  # brutto
+    external_status: Mapped[str] = mapped_column(String(20), default="")
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    product: Mapped[Product | None] = relationship()
+
+
+SHIPMENT_STATES = {"draft": "szkic", "ordered": "zamówiona", "in_transit": "w drodze", "delivered": "doręczona",
+                   "problem": "problem", "cancelled": "anulowana"}
+
+
+class Shipment(Base):
+    """Przesylka do zamowienia zamowiona u posrednika kurierskiego (Apaczka). Etykieta PDF w bazie."""
+
+    __tablename__ = "shipments"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    order_id: Mapped[int | None] = mapped_column(ForeignKey("orders.id", ondelete="SET NULL"), nullable=True,
+                                                 index=True)
+    integration_id: Mapped[int | None] = mapped_column(ForeignKey("integrations.id", ondelete="SET NULL"),
+                                                       nullable=True)
+    provider: Mapped[str] = mapped_column(String(20), default="apaczka")
+    service_id: Mapped[str] = mapped_column(String(20), default="")
+    service_name: Mapped[str] = mapped_column(String(120), default="")
+    external_id: Mapped[str] = mapped_column(String(60), default="")
+    waybill: Mapped[str] = mapped_column(String(80), default="", index=True)
+    tracking_url: Mapped[str] = mapped_column(String(300), default="")
+    state: Mapped[str] = mapped_column(String(12), default="draft")  # SHIPMENT_STATES
+    status_text: Mapped[str] = mapped_column(String(200), default="")
+    receiver_json: Mapped[str] = mapped_column(Text, default="{}")
+    parcel_json: Mapped[str] = mapped_column(Text, default="{}")
+    cod_amount: Mapped[Decimal | None] = mapped_column(Money, nullable=True)
+    price_gross: Mapped[Decimal | None] = mapped_column(Money, nullable=True)
+    label: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    last_error: Mapped[str] = mapped_column(Text, default="")
+    created_by: Mapped[str] = mapped_column(String(100), default="")
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    order: Mapped[Order | None] = relationship(back_populates="shipments")
+
+    @property
+    def state_label(self) -> str:
+        return SHIPMENT_STATES.get(self.state, self.state)

@@ -21,7 +21,7 @@
 <div class="card tbl"><table>
 <tr><th>Numer</th><th>Tytuł</th><th>Data</th><th>Klient</th><th>Termin</th><th class="n">Netto</th><th class="n">VAT</th><th class="n">Brutto</th><th>Status</th></tr>
 {% for z in rows %}
-<tr><td style="white-space:nowrap"><a href="/zamowienia/{{ z.id }}">{{ z.display_number }}</a>{% if z.direction != 'sale' %}<br><span class="badge">do dostawcy</span>{% endif %}</td>
+<tr><td style="white-space:nowrap"><a href="/zamowienia/{{ z.id }}">{{ z.display_number }}</a>{% if z.direction != 'sale' %}<br><span class="badge">do dostawcy</span>{% endif %}{% if z.channel %}<br><span class="badge m">{{ z.channel_label }}</span>{% if z.payment_status %} <span class="badge {{ 'ok' if z.payment_status == 'paid' }}">{{ z.payment_label }}</span>{% endif %}{% endif %}</td>
 <td style="min-width:160px"><form method="post" action="/zamowienia/{{ z.id }}/tytul" style="margin:0"><input type="hidden" name="back" value="{{ request.url.path }}{{ '?' ~ request.url.query if request.url.query }}"><input name="title" value="{{ z.title }}" maxlength="300" placeholder="dodaj tytuł…" aria-label="Tytuł zamówienia {{ z.display_number }}" onchange="this.form.submit()" style="padding:5px 8px;font-size:14px"></form></td>
 <td>{{ z.issue_date|date }}</td><td>{{ klink(z.contractor_id, z.recipient_name) }}</td>
 <td>{{ z.due_date|date if z.due_date else '—' }}{% if z.overdue %} <span class="badge due">po terminie</span>{% endif %}</td>

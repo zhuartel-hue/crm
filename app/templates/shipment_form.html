@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Nadaj paczkę · {{ z.display_number }}{% endblock %}
+{% block content %}
+<div class="row"><h1>Nadaj paczkę · {{ z.display_number }}</h1><span class="spacer"></span><a class="btn" href="/zamowienia/{{ z.id }}">← Zamówienie</a></div>
+{% if not integ %}<div class="card">Brak podłączonego kuriera. <a href="/ustawienia/integracje">Podłącz Apaczkę</a> (2 klucze z panelu Apaczki).</div>
+{% else %}
+{% if error %}<div class="flash warn">{{ error }}</div>{% endif %}
+{% if z.shipping_method %}<div class="card"><span class="muted">Klient wybrał:</span> <b>{{ z.shipping_method }}</b>{% if z.pickup_point %} · punkt {{ z.pickup_point }}{% endif %}</div>{% endif %}
+<form method="post" action="/zamowienia/{{ z.id }}/paczka" class="card">
+<h2 style="margin-top:0">Odbiorca</h2>
+<div class="grid">
+  <div><label>Nazwa</label><input name="r_name" value="{{ rcv.name }}" maxlength="50" required></div>
+  <div><label>Osoba</label><input name="r_contact_person" value="{{ rcv.contact_person or '' }}"></div>
+  <div><label>Ulica i numer</label><input name="r_line1" value="{{ rcv.line1 }}"></div>
+  <div><label>Kod i miasto</label><div class="row" style="gap:6px;flex-wrap:nowrap"><input name="r_postal_code" value="{{ rcv.postal_code }}" style="max-width:100px" required><input name="r_city" value="{{ rcv.city }}" required></div></div>
+  <div><label>Telefon</label><input name="r_phone" value="{{ rcv.phone }}" required></div>
+  <div><label>E-mail</label><input name="r_email" value="{{ rcv.email }}"></div>
+  <div><label>Paczkomat / punkt (kod)</label><input name="r_point" value="{{ rcv.point or '' }}" placeholder="np. CHO01M"></div>
+  <div><label><input type="checkbox" name="r_is_residential" value="1" {{ 'checked' if rcv.is_residential }}> Osoba prywatna</label></div>
+</div>
+<h2>Paczka</h2>
+<div class="grid">
+  <div><label>Wymiary dł. × szer. × wys. (cm)</label><div class="row" style="gap:6px;flex-wrap:nowrap"><input name="p_l" value="{{ pcl.l }}" inputmode="numeric"><input name="p_w" value="{{ pcl.w }}" inputmode="numeric"><input name="p_h" value="{{ pcl.h }}" inputmode="numeric"></div></div>
+  <div><label>Waga (kg)</label><input name="p_kg" value="{{ pcl.kg }}" inputmode="decimal"></div>
+  <div><label>Zawartość</label><input name="p_content" value="{{ pcl.content or 'Towar' }}"></div>
+  <div><label>Pobranie (zł, puste = bez)</label><input name="cod" value="{{ cod|money if cod else '' }}" inputmode="decimal"></div>
+  <div style="grid-column:1/-1"><label>Uwagi dla kuriera</label><input name="p_comment" value="{{ pcl.comment or '' }}" maxlength="100"></div>
+</div>
+{% if prices %}
+<h2>Wybierz kuriera</h2>
+<div class="bank-list">
+{% for x in prices %}<label class="bank-opt"><input type="radio" name="service_id" value="{{ x.id }}" required {{ 'checked' if loop.first }} onchange="this.form.service_name.value='{{ x.name|e }}'"><span>{{ x.name }} · <b>{{ x.gross|money }} zł</b> brutto</span></label>{% endfor %}
+</div>
+<input type="hidden" name="service_name" value="{{ prices[0].name }}">
+<p class="row" style="gap:8px"><button class="btn" name="action" value="price">Przelicz</button>
+<button class="btn primary" name="action" value="send" onclick="return confirm('Zamówić kuriera? Apaczka obciąży Twoje konto za tę przesyłkę.')">Zamów kuriera</button></p>
+{% elif prices is not none %}<p class="muted">Apaczka nie zwróciła żadnej usługi dla tej paczki. Sprawdź adres i wymiary.</p>
+<p><button class="btn primary" name="action" value="price">Sprawdź ceny</button></p>
+{% else %}
+<p><button class="btn primary" name="action" value="price">Sprawdź ceny kurierów</button></p>
+{% endif %}
+</form>
+{% endif %}
+{% endblock %}

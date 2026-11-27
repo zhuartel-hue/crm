@@ -15,8 +15,13 @@ services:
       APP_DOMAIN: ${APP_DOMAIN}
       APP_ALIASES: ${APP_ALIASES:-}
       TRUSTED_PROXIES: ${TRUSTED_PROXIES:-127.0.0.1/32}
+      # Puste zmienne zamieniamy na adres-zaslepke, bo Caddy traktuje pusta wartosc jak brak adresu.
+      OLD_DOMAINS: ${OLD_DOMAINS:-http://brak.invalid}
+      TEST_DOMAIN: ${TEST_DOMAIN:-http://brak-test.invalid}
     volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Kopia Caddyfile z repozytorium robiona przez zainstaluj.sh (katalog, nie plik: po podmianie
+      # skryptow serwera kontener widzi nowa wersje, a zainstaluj.sh robi lagodne "caddy reload").
+      - /etc/sygnavo/caddy:/etc/caddy:ro
       - caddy-data:/data
       - caddy-config:/config
     depends_on: [app]
@@ -30,6 +35,9 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://crm:${DB_PASSWORD}@db/crm
       COOKIE_SECURE: "true"
+    volumes:
+      # Stan wdrozen (wersje produkcji i panelu testowego) do podgladu w programie i przez konektor Claude.
+      - /var/lib/sygnavo/stan:/stan:ro
     depends_on:
       db:
         condition: service_healthy

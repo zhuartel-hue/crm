@@ -1,0 +1,3 @@
+# Wersja programu zatwierdzona do produkcji (app.sygnavo.com). Serwer wgrywa ją sam (deploy/serwer/wydania.sh).
+# Zmieniaj TYLKO po "zatwierdzam" właściciela i tylko na wersję, która już działała na panelu testowym.
+# Pierwsza linia zaczynająca się od skrótu commita jest wersją produkcji. Pusto = produkcja bez zmian.

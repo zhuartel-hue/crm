@@ -1,0 +1,47 @@
+# Panel testowy Sygnavo (np. test.sygnavo.com): osobny projekt compose "crm-test" na tym samym serwerze.
+# Kopia danych z produkcji (odswiezana przy kazdym wgraniu), osobna baza, osobny SECRET_KEY, TRYB_TESTOWY=1:
+# zadnych maili, KSeF, banku ani zadan w tle. Produkcja (projekt "crm") nic o nim nie wie i go nie rusza.
+# Uruchamiane wylacznie przez deploy/serwer/panel-testowy.sh.
+name: crm-test
+
+services:
+  test-app:
+    image: crm-test:latest
+    build: ${TEST_DIR:-/opt/crm-test}
+    restart: unless-stopped
+    env_file: /etc/sygnavo/test.env
+    environment:
+      DATABASE_URL: postgresql+psycopg://crm:${TEST_DB_PASSWORD}@test-db/crm
+      COOKIE_SECURE: "true"
+      TRYB_TESTOWY: "1"
+      BACKGROUND_JOBS: "off"
+    depends_on:
+      test-db:
+        condition: service_healthy
+    networks: [default, crm]
+    mem_limit: 512m
+
+  test-db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: crm
+      POSTGRES_PASSWORD: ${TEST_DB_PASSWORD}
+      POSTGRES_DB: crm
+    command: ["postgres", "-c", "shared_buffers=96MB", "-c", "max_connections=20"]
+    volumes:
+      - test-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U crm"]
+      interval: 5s
+      retries: 30
+    mem_limit: 512m
+
+networks:
+  # Siec projektu produkcyjnego, zeby Caddy (jeden na serwer) widzial test-app. Baza testowa jej nie ma.
+  crm:
+    external: true
+    name: crm_default
+
+volumes:
+  test-db-data:

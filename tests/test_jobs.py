@@ -9,7 +9,7 @@ def test_all_jobs_respect_config():
     # conftest wylacza zadania (0), wiec start nic nie uruchamia
     assert jobs.start() is None
     names = [j.name for j in jobs.all_jobs()]
-    assert names == ["mail-sync", "recurring", "ksef-purchases", "bank-sync"]
+    assert names == ["mail-sync", "recurring", "ksef-purchases", "bank-sync", "integrations-sync"]
 
 
 def test_loop_runs_job_and_stops():

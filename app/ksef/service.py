@@ -5,7 +5,7 @@ import datetime as dt
 
 from sqlalchemy.orm import Session
 
-from .. import secretbox
+from .. import config, secretbox
 from ..models import Company, Invoice
 from ..services import ServiceError, audit, get_invoice
 from . import ENVIRONMENTS, fa3, qr
@@ -31,6 +31,8 @@ def can_send(inv: Invoice) -> bool:
 
 
 def _client(company: Company):
+    if config.TEST_PANEL:
+        raise ServiceError(config.TEST_PANEL_MSG)
     if not enabled(company):
         raise ServiceError(f"KSeF dla firmy {company.short_name} nie jest włączony (Ustawienia → KSeF).")
     try:

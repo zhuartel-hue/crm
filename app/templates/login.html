@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="pl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Logowanie · Sygnavo</title><link rel="stylesheet" href="/static/app.css"></head>
-<body><main class="login"><div class="card">
+<body>{% if TEST_PANEL %}<div style="background:#b45309;color:#fff;text-align:center;font-size:12px;padding:3px 8px">PANEL TESTOWY · kopia danych</div>{% endif %}<main class="login"><div class="card">
 <h1>Sygnavo</h1><p class="muted">Faktury i CRM</p>
 {% if error %}<div class="error">{{ error }}</div>{% endif %}
 <form method="post" action="/login">

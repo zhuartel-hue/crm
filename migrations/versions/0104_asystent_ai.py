@@ -2,14 +2,14 @@
 
 Tylko nowa tabela (migracja odwracalna).
 
-Revision ID: 0103
-Revises: 0102
+Revision ID: 0104
+Revises: 0103
 """
 import sqlalchemy as sa
 from alembic import op
 
-revision = "0103"
-down_revision = "0102"
+revision = "0104"
+down_revision = "0103"
 branch_labels = None
 depends_on = None
 
