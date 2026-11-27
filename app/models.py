@@ -936,7 +936,9 @@ class InvoicePayment(Base):
         return PAYMENT_METHODS.get(self.method, self.method)
 
 
-PURCHASE_STATUSES = {"new": "do weryfikacji", "accepted": "zatwierdzona", "rejected": "odrzucona"}
+PURCHASE_STATUSES = {"new": "do weryfikacji", "accepted": "zweryfikowana", "rejected": "odrzucona"}
+# Numery zastepcze dla kosztow spoza KSeF (import z Firmao, dodane recznie).
+PURCHASE_NON_KSEF_PREFIXES = ("FIRMAO-", "RECZNA-")
 
 
 class PurchaseInvoice(Base):
@@ -968,14 +970,45 @@ class PurchaseInvoice(Base):
     paid_at: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
     notes: Mapped[str] = mapped_column(Text, default="")
     source_ref: Mapped[str] = mapped_column(String(120), default="", index=True)  # np. "firmao:123"
+    verified_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+    verified_by: Mapped[str] = mapped_column(String(60), default="")
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
 
     company: Mapped[Company] = relationship()
     contractor: Mapped[Contractor | None] = relationship()
+    files: Mapped[list["PurchaseFile"]] = relationship(
+        back_populates="purchase", cascade="all, delete-orphan", order_by="PurchaseFile.id")
 
     @property
     def status_label(self) -> str:
         return PURCHASE_STATUSES.get(self.status, self.status)
+
+    @property
+    def in_ksef(self) -> bool:
+        """Prawdziwy numer KSeF (nie zastepczy z importu albo recznego dodania)."""
+        return bool(self.ksef_number) and not self.ksef_number.startswith(PURCHASE_NON_KSEF_PREFIXES)
+
+    @property
+    def is_manual(self) -> bool:
+        return self.ksef_number.startswith("RECZNA-")
+
+
+class PurchaseFile(Base):
+    """Zalacznik faktury kosztowej (skan, PDF od dostawcy) do weryfikacji. Plik w bazie, wiec jest w kopii."""
+
+    __tablename__ = "purchase_files"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    purchase_id: Mapped[int] = mapped_column(ForeignKey("purchase_invoices.id", ondelete="CASCADE"), index=True)
+    filename: Mapped[str] = mapped_column(String(200), default="")
+    content_type: Mapped[str] = mapped_column(String(100), default="application/octet-stream")
+    size: Mapped[int] = mapped_column(Integer, default=0)
+    data: Mapped[bytes] = mapped_column(LargeBinary)
+    added_by: Mapped[str] = mapped_column(String(60), default="")
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
+
+    purchase: Mapped[PurchaseInvoice] = relationship(back_populates="files")
 
 
 TEMPLATE_KINDS = {"invoice": "Wysyłka faktury", "reminder": "Przypomnienie o płatności", "wz": "Wysyłka WZ",

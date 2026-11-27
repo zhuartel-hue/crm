@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Raport {{ 'sprzedaży' if kind == 'sprzedaz' else 'kosztów' }}{% endblock %}
+{% block content %}
+<style>
+table.rep{border-collapse:collapse;margin-bottom:8px;background:var(--card)}
+table.rep.list{width:100%}
+table.rep th,table.rep td{border-bottom:1px solid var(--line);padding:3px 6px;vertical-align:top;font-size:13.5px}
+table.rep th{text-align:left;color:var(--muted);font-weight:600;font-size:12.5px}
+table.rep tr.sum td{font-weight:700;border-top:2px solid var(--line)}
+table.rep td.ksef{font-size:11.5px;color:var(--muted);word-break:break-all}
+.rep-grid{display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start}
+.content h2{font-size:15px;margin:12px 0 4px}
+</style>
+<div class="row" style="margin-bottom:6px"><h1 style="margin:0 6px 0 0">Raporty · {{ company.short_name }}</h1></div>
+<nav class="folders" aria-label="Raporty">
+  <a href="/raporty/sprzedaz?od={{ rep.start }}&do={{ rep.end }}" class="{{ 'on' if kind == 'sprzedaz' }}">Sprzedaż</a>
+  {% if can_open('/raporty/koszty') %}<a href="/raporty/koszty?od={{ rep.start }}&do={{ rep.end }}" class="{{ 'on' if kind == 'koszty' }}">Koszty</a>{% endif %}
+</nav>
+<form method="get" class="card no-print" style="padding:8px 10px">
+  <div class="row" style="margin-bottom:6px">
+    {% for label, a, b in presets %}<a class="btn small {{ 'primary' if a == rep.start and b == rep.end }}" href="?od={{ a }}&do={{ b }}{{ '&wg=' + rep.basis if kind == 'sprzedaz' and rep.basis != 'issue' }}{{ '&zakres=' + rep.scope if kind == 'koszty' and rep.scope != 'all' }}">{{ label }}</a>{% endfor %}
+  </div>
+  <div class="row">
+    <label>Od <input type="date" name="od" value="{{ rep.start }}" style="max-width:160px"></label>
+    <label>Do <input type="date" name="do" value="{{ rep.end }}" style="max-width:160px"></label>
+    {% if kind == 'sprzedaz' %}
+    <label>Wg <select name="wg">{% for k, l in BASIS.items() %}<option value="{{ k }}" {{ 'selected' if rep.basis == k }}>{{ l }}</option>{% endfor %}</select></label>
+    {% else %}
+    <label>Faktury <select name="zakres">{% for k, l in SCOPES.items() %}<option value="{{ k }}" {{ 'selected' if rep.scope == k }}>{{ l }}</option>{% endfor %}</select></label>
+    {% endif %}
+    <button class="btn small primary">Pokaż</button>
+    <span class="spacer"></span>
+    <a class="btn small" href="{{ doc_url }}" target="_blank">Drukuj</a>
+    <a class="btn small" href="{{ pdf_url }}">PDF</a>
+    <a class="btn small" href="{{ csv_url }}" title="Plik CSV do Excela">Excel (CSV)</a>
+  </div>
+</form>
+<div class="report-h"><h2 style="margin:4px 0">{{ title }}: {{ rep.label }}</h2><span class="muted">{{ subtitle }}</span></div>
+{% include partial %}
+{% endblock %}

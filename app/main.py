@@ -21,7 +21,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from . import dashboard as dash
 from . import offer_statuses as ost
-from . import calls, orders
+from . import calls, orders, reports
 from . import features, jobs, tenancy
 from . import users as users_mod
 from . import api, auth, calc, config, firmao_import, mail_templates, mcp_server, migrate, nip_lookup, numbering, offers, password, payments, pdf, recurring, secretbox, wz
@@ -81,6 +81,7 @@ from .models import (
     Product,
     ProductPhoto,
     PURCHASE_STATUSES,
+    PurchaseFile,
     PurchaseInvoice,
     StockMovement,
     TEMPLATE_KINDS,
@@ -3381,7 +3382,80 @@ def service_worker():
     return Response(js, media_type="application/javascript", headers={"Cache-Control": "no-cache"})
 
 
+# ---------------------------------------------------------------- Raporty (sprzedaz i koszty dla ksiegowej)
+
+
+@app.get("/raporty")
+def reports_index():
+    return redirect("/raporty/sprzedaz")
+
+
+def _report(request: Request, db: Session, kind: str, od: str | None, do: str | None, wg: str, zakres: str, fmt: str):
+    company = current_company(request, db)
+    start, end = reports.parse_period(od, do)
+    if kind == "sprzedaz":
+        basis = wg if wg in reports.DATE_BASIS else "issue"
+        rep = reports.sales(db, company.id, start, end, basis)
+        title, partial = "Raport sprzedaży", "_report_sales.html"
+        subtitle = f"Wg: {reports.DATE_BASIS[basis]}. Bez proform i szkiców."
+        extra = f"&wg={basis}" if basis != "issue" else ""
+    else:
+        scope = zakres if zakres in reports.COST_SCOPES else "all"
+        rep = reports.costs(db, company.id, start, end, scope)
+        title, partial = "Raport kosztów", "_report_costs.html"
+        subtitle = f"Faktury kosztowe: {reports.COST_SCOPES[scope]}, wg daty wystawienia. Bez odrzuconych."
+        extra = f"&zakres={scope}" if scope != "all" else ""
+    q = f"?od={start}&do={end}{extra}"
+    fname = f"raport-{kind}-{company.short_name}-{start}-{end}".replace(" ", "_")
+    fname = "".join(ch if ch.isascii() and (ch.isalnum() or ch in "-_") else "_" for ch in fname)
+    if fmt == "csv":
+        data = reports.sales_csv(rep) if kind == "sprzedaz" else reports.costs_csv(rep)
+        return Response(data, media_type="text/csv; charset=utf-8",
+                        headers={"Content-Disposition": f'attachment; filename="{fname}.csv"'})
+    ctx = dict(rep=rep, title=title, subtitle=subtitle, partial=partial, company=company, now=dt.datetime.now(),
+               pdf_url=f"/raporty/{kind}/pdf{q}", back_url=f"/raporty/{kind}{q}")
+    if fmt in ("druk", "pdf"):
+        html = templates.get_template("report_doc.html").render(**ctx, for_pdf=fmt == "pdf", link=False)
+        if fmt == "druk":
+            return HTMLResponse(html)
+        from weasyprint import HTML
+
+        pdf_bytes = HTML(string=html, base_url=str(HERE)).write_pdf()
+        return Response(pdf_bytes, media_type="application/pdf",
+                        headers={"Content-Disposition": f'inline; filename="{fname}.pdf"'})
+    return render(request, db, "report.html", **ctx, kind=kind, link=True, presets=reports.presets(dt.date.today()),
+                  BASIS=reports.DATE_BASIS, SCOPES=reports.COST_SCOPES, doc_url=f"/raporty/{kind}/druk{q}",
+                  csv_url=f"/raporty/{kind}/csv{q}")
+
+
+@app.get("/raporty/{kind}", response_class=HTMLResponse)
+def report_page(kind: str, request: Request, od: str | None = None, do: str | None = None, wg: str = "",
+                zakres: str = "", db: Session = Depends(get_db)):
+    if kind not in ("sprzedaz", "koszty"):
+        raise HTTPException(404)
+    return _report(request, db, kind, od, do, wg, zakres, "html")
+
+
+@app.get("/raporty/{kind}/{fmt}")
+def report_export(kind: str, fmt: str, request: Request, od: str | None = None, do: str | None = None, wg: str = "",
+                  zakres: str = "", db: Session = Depends(get_db)):
+    if kind not in ("sprzedaz", "koszty") or fmt not in ("druk", "pdf", "csv"):
+        raise HTTPException(404)
+    return _report(request, db, kind, od, do, wg, zakres, fmt)
+
+
 # ---------------------------------------------------------------- Koszty (faktury z KSeF)
+
+# Foldery kosztow: klucz w adresie -> (etykieta, warunek). Brak parametru = Do weryfikacji (tu trafiaja nowe).
+PURCHASE_FOLDERS = {
+    "new": "Do weryfikacji",
+    "accepted": "Zweryfikowane",
+    "all": "Wszystkie",
+    "nieoplacone": "Nieopłacone",
+    "rejected": "Odrzucone",
+}
+PURCHASE_FILE_MAX = 25 * 1024 * 1024
+
 
 def _get_purchase(db: Session, request: Request, pid: int) -> PurchaseInvoice:
     p = db.get(PurchaseInvoice, pid)
@@ -3390,26 +3464,39 @@ def _get_purchase(db: Session, request: Request, pid: int) -> PurchaseInvoice:
     return p
 
 
+def _purchase_folder_cond(folder: str):
+    if folder in PURCHASE_STATUSES:
+        return PurchaseInvoice.status == folder
+    if folder == "nieoplacone":
+        return and_(PurchaseInvoice.paid_at.is_(None), PurchaseInvoice.status != "rejected")
+    return None
+
+
 @app.get("/koszty", response_class=HTMLResponse)
-def purchases_list(request: Request, status: str = "", q: str = "", db: Session = Depends(get_db)):
+def purchases_list(request: Request, status: str | None = None, q: str = "", db: Session = Depends(get_db)):
     company = current_company(request, db)
+    folder = "new" if status is None else (status if status in PURCHASE_FOLDERS else "all")
     base = select(PurchaseInvoice).where(PurchaseInvoice.company_id == company.id)
     stmt = base
-    if status in PURCHASE_STATUSES:
-        stmt = stmt.where(PurchaseInvoice.status == status)
-    elif status == "nieoplacone":
-        stmt = stmt.where(PurchaseInvoice.paid_at.is_(None), PurchaseInvoice.status != "rejected")
+    cond = _purchase_folder_cond(folder)
+    if cond is not None:
+        stmt = stmt.where(cond)
     if q:
         like = f"%{q.strip()}%"
         stmt = stmt.where(or_(PurchaseInvoice.invoice_number.ilike(like), PurchaseInvoice.seller_name.ilike(like),
                               PurchaseInvoice.seller_nip.ilike(like), PurchaseInvoice.ksef_number.ilike(like)))
-    rows = db.scalars(stmt.order_by(PurchaseInvoice.issue_date.desc(), PurchaseInvoice.id.desc()).limit(300)).all()
-    new_count = db.scalar(select(func.count()).select_from(PurchaseInvoice).where(
-        PurchaseInvoice.company_id == company.id, PurchaseInvoice.status == "new"))
-    unpaid = db.scalars(base.where(PurchaseInvoice.paid_at.is_(None), PurchaseInvoice.status != "rejected")).all()
-    return render(request, db, "purchases.html", rows=rows, status=status, q=q, STATUSES=PURCHASE_STATUSES,
-                  new_count=new_count, unpaid_count=len(unpaid),
-                  unpaid_sum=sum((p.gross for p in unpaid if p.currency == "PLN"), Decimal("0")),
+    order = (PurchaseInvoice.issue_date.asc(), PurchaseInvoice.id.asc()) if folder == "new" else \
+        (PurchaseInvoice.issue_date.desc(), PurchaseInvoice.id.desc())
+    rows = db.scalars(stmt.options(selectinload(PurchaseInvoice.files).defer(PurchaseFile.data))
+                      .order_by(*order).limit(300)).all()
+    counts = {}
+    for key in PURCHASE_FOLDERS:
+        c = _purchase_folder_cond(key)
+        cstmt = select(func.count()).select_from(PurchaseInvoice).where(PurchaseInvoice.company_id == company.id)
+        counts[key] = db.scalar(cstmt.where(c) if c is not None else cstmt)
+    unpaid = db.scalars(base.where(_purchase_folder_cond("nieoplacone"))).all()
+    return render(request, db, "purchases.html", rows=rows, folder=folder, q=q, FOLDERS=PURCHASE_FOLDERS,
+                  counts=counts, unpaid_sum=sum((p.gross for p in unpaid if p.currency == "PLN"), Decimal("0")),
                   ksef_on=ksef.enabled(company), today=dt.date.today())
 
 
@@ -3431,6 +3518,93 @@ async def purchases_fetch(request: Request, db: Session = Depends(get_db)):
     return redirect("/koszty")
 
 
+async def _purchase_add_files(db: Session, request: Request, p: PurchaseInvoice, files) -> tuple[int, list[str]]:
+    added, skipped = 0, []
+    for f in files:
+        if not getattr(f, "filename", None):
+            continue
+        raw = await f.read()
+        name = os.path.basename(f.filename.replace("\\", "/"))[:200]
+        if not raw or len(raw) > PURCHASE_FILE_MAX:
+            skipped.append(name)
+            continue
+        ctype = (f.content_type or "").split(";")[0].strip().lower()[:100] or "application/octet-stream"
+        if raw[:4] == b"%PDF":
+            ctype = "application/pdf"
+        p.files.append(PurchaseFile(company_id=p.company_id, filename=name, content_type=ctype, size=len(raw), data=raw,
+                                    added_by=str(request.session.get("user", ""))[:60]))
+        added += 1
+    return added, skipped
+
+
+def _form_date(v) -> dt.date | None:
+    try:
+        return dt.date.fromisoformat(v) if v else None
+    except ValueError:
+        return None
+
+
+@app.get("/koszty/nowa", response_class=HTMLResponse)
+def purchase_new_form(request: Request, db: Session = Depends(get_db)):
+    return render(request, db, "purchase_form.html", today_iso=dt.date.today().isoformat(), v={}, error="")
+
+
+@app.post("/koszty/nowa")
+async def purchase_new(request: Request, db: Session = Depends(get_db)):
+    """Koszt spoza KSeF (paragon, faktura papierowa, zagraniczna): dane recznie + skan. Trafia do weryfikacji."""
+    import uuid
+
+    company = current_company(request, db)
+    form = await request.form()
+    v = {k: (form.get(k) or "").strip() for k in ("invoice_number", "seller_nip", "seller_name", "issue_date", "due_date",
+                                                  "net", "vat", "gross", "bank_account", "notes", "currency")}
+    net = calc.parse_decimal(v["net"], None)
+    vat = calc.parse_decimal(v["vat"], None)
+    gross = calc.parse_decimal(v["gross"], None)
+    if gross is None and net is not None:
+        gross = net + (vat or Decimal("0"))
+    if net is None and gross is not None:
+        net = gross - (vat or Decimal("0"))
+    vat = vat if vat is not None else ((gross or Decimal("0")) - (net or Decimal("0")))
+    error = ""
+    if not v["invoice_number"] or not v["seller_name"]:
+        error = "Podaj numer faktury i sprzedawcę."
+    elif gross is None:
+        error = "Podaj kwotę brutto albo netto."
+    elif not _form_date(v["issue_date"]):
+        error = "Podaj datę wystawienia."
+    if error:
+        return render(request, db, "purchase_form.html", today_iso=dt.date.today().isoformat(), v=v, error=error)
+    nip = "".join(ch for ch in v["seller_nip"] if ch.isalnum())[:20]
+    contractor = db.scalar(select(Contractor).where(Contractor.company_id == company.id, Contractor.nip == nip)
+                           .limit(1)) if nip else None
+    p = PurchaseInvoice(company_id=company.id, ksef_env="", ksef_number=f"RECZNA-{uuid.uuid4().hex[:16]}",
+                        invoice_number=v["invoice_number"][:256], invoice_type="Vat", issue_date=_form_date(v["issue_date"]),
+                        seller_nip=nip, seller_name=v["seller_name"][:512], contractor_id=contractor.id if contractor else None,
+                        net=net, vat=vat, gross=gross, currency=(v["currency"] or "PLN").upper()[:3],
+                        due_date=_form_date(v["due_date"]), bank_account=v["bank_account"].replace(" ", "")[:40],
+                        xml="", status="new", notes=v["notes"])
+    db.add(p)
+    added, skipped = await _purchase_add_files(db, request, p, form.getlist("files"))
+    db.flush()
+    audit(db, web_actor(request), "purchase.create",
+          f"Koszt dodany ręcznie {p.invoice_number} od {p.seller_name[:80]} ({calc.format_money(p.gross)} {p.currency}), pliki: {added}",
+          company_id=p.company_id, entity="purchase", entity_id=p.id)
+    db.commit()
+    msg = "Dodano koszt. Jest w folderze Do weryfikacji."
+    if skipped:
+        msg += " Pominięte pliki (puste albo ponad 25 MB): " + ", ".join(skipped)
+    flash(request, msg)
+    return redirect(f"/koszty/{p.id}")
+
+
+def _next_to_verify(db: Session, p: PurchaseInvoice) -> PurchaseInvoice | None:
+    """Nastepna faktura w folderze Do weryfikacji (najstarsza), zeby weryfikowac jedna po drugiej."""
+    return db.scalar(select(PurchaseInvoice).where(PurchaseInvoice.company_id == p.company_id,
+                                                   PurchaseInvoice.status == "new", PurchaseInvoice.id != p.id)
+                     .order_by(PurchaseInvoice.issue_date.asc(), PurchaseInvoice.id.asc()).limit(1))
+
+
 @app.get("/koszty/{pid}", response_class=HTMLResponse)
 def purchase_view(pid: int, request: Request, db: Session = Depends(get_db)):
     p = _get_purchase(db, request, pid)
@@ -3438,8 +3612,13 @@ def purchase_view(pid: int, request: Request, db: Session = Depends(get_db)):
         data = ksef_incoming.parse(p.xml) if p.xml else {}
     except Exception:  # noqa: BLE001
         data = {}
-    return render(request, db, "purchase_view.html", pi=p, data=data, STATUSES=PURCHASE_STATUSES,
-                  today_iso=dt.date.today().isoformat())
+    files = db.scalars(select(PurchaseFile).options(defer(PurchaseFile.data)).where(PurchaseFile.purchase_id == p.id)
+                       .order_by(PurchaseFile.id)).all()
+    nxt = _next_to_verify(db, p)
+    waiting = db.scalar(select(func.count()).select_from(PurchaseInvoice).where(
+        PurchaseInvoice.company_id == p.company_id, PurchaseInvoice.status == "new"))
+    return render(request, db, "purchase_view.html", pi=p, data=data, files=files, next_pi=nxt, waiting=waiting,
+                  STATUSES=PURCHASE_STATUSES, INLINE=_INLINE_TYPES, today_iso=dt.date.today().isoformat())
 
 
 @app.post("/koszty/{pid}")
@@ -3447,8 +3626,16 @@ async def purchase_update(pid: int, request: Request, db: Session = Depends(get_
     p = _get_purchase(db, request, pid)
     form = await request.form()
     action = form.get("action") or ""
+    go_next = action == "accepted_next"
+    if go_next:
+        action = "accepted"
     if action in PURCHASE_STATUSES:
         p.status = action
+        if action == "accepted":
+            p.verified_at = dt.datetime.now()
+            p.verified_by = str(request.session.get("user", ""))[:60]
+        elif action == "new":
+            p.verified_at, p.verified_by = None, ""
     if action == "paid":
         try:
             p.paid_at = dt.date.fromisoformat(form.get("paid_at") or "")
@@ -3462,6 +3649,10 @@ async def purchase_update(pid: int, request: Request, db: Session = Depends(get_
           f"Koszt {p.invoice_number} od {p.seller_name[:80]}: {p.status_label}{', zapłacona' if p.paid_at else ''}",
           company_id=p.company_id, entity="purchase", entity_id=p.id)
     db.commit()
+    if go_next:
+        nxt = _next_to_verify(db, p)
+        flash(request, "Zweryfikowano." + ("" if nxt else " To była ostatnia faktura do weryfikacji."))
+        return redirect(f"/koszty/{nxt.id}" if nxt else "/koszty?status=accepted")
     flash(request, "Zapisano.")
     return redirect(f"/koszty/{p.id}")
 
@@ -3483,8 +3674,88 @@ async def purchase_toggle_paid(pid: int, request: Request, db: Session = Depends
 @app.get("/koszty/{pid}/xml")
 def purchase_xml(pid: int, request: Request, db: Session = Depends(get_db)):
     p = _get_purchase(db, request, pid)
+    if not p.xml:
+        raise HTTPException(404, "Ta faktura nie ma pliku XML z KSeF.")
     return Response(p.xml.encode("utf-8"), media_type="application/xml",
                     headers={"Content-Disposition": f'attachment; filename="{p.ksef_number}.xml"'})
+
+
+def _purchase_preview_html(p: PurchaseInvoice, for_pdf: bool = False) -> str:
+    try:
+        data = ksef_incoming.parse(p.xml) if p.xml else {}
+    except Exception:  # noqa: BLE001
+        data = {}
+    return templates.get_template("purchase_preview.html").render(pi=p, data=data, for_pdf=for_pdf)
+
+
+@app.get("/koszty/{pid}/podglad", response_class=HTMLResponse)
+def purchase_preview(pid: int, request: Request, db: Session = Depends(get_db)):
+    """Czytelny podglad faktury z KSeF (wizualizacja XML FA(2)/FA(3)), do weryfikacji i druku."""
+    p = _get_purchase(db, request, pid)
+    if not p.xml:
+        raise HTTPException(404, "Ta faktura nie ma danych z KSeF.")
+    return HTMLResponse(_purchase_preview_html(p))
+
+
+@app.get("/koszty/{pid}/podglad.pdf")
+def purchase_preview_pdf(pid: int, request: Request, db: Session = Depends(get_db)):
+    from weasyprint import HTML
+
+    p = _get_purchase(db, request, pid)
+    if not p.xml:
+        raise HTTPException(404, "Ta faktura nie ma danych z KSeF.")
+    data = HTML(string=_purchase_preview_html(p, for_pdf=True), base_url=str(Path(__file__).parent)).write_pdf()
+    name = (p.invoice_number or p.ksef_number).replace("/", "-")
+    safe = "".join(ch if ch.isascii() and ch.isprintable() and ch not in '"\\' else "_" for ch in name) or "koszt"
+    return Response(data, media_type="application/pdf", headers={"Content-Disposition": f'inline; filename="{safe}.pdf"'})
+
+
+@app.post("/koszty/{pid}/pliki")
+async def purchase_file_add(pid: int, request: Request, db: Session = Depends(get_db)):
+    p = _get_purchase(db, request, pid)
+    form = await request.form()
+    added, skipped = await _purchase_add_files(db, request, p, form.getlist("files"))
+    if added:
+        audit(db, web_actor(request), "purchase.file_add", f"Koszt {p.invoice_number}: dodano załącznik(i): {added}",
+              company_id=p.company_id, entity="purchase", entity_id=p.id)
+        db.commit()
+    msg = f"Dodano załączników: {added}." if added else "Nie wybrano pliku."
+    if skipped:
+        msg += " Pominięte (puste albo ponad 25 MB): " + ", ".join(skipped)
+    flash(request, msg)
+    return redirect(f"/koszty/{pid}")
+
+
+def _purchase_file(db: Session, request: Request, pid: int, fid: int) -> PurchaseFile:
+    p = _get_purchase(db, request, pid)
+    f = db.get(PurchaseFile, fid)
+    if f is None or f.purchase_id != p.id or f.company_id != p.company_id:
+        raise HTTPException(404)
+    return f
+
+
+@app.get("/koszty/{pid}/pliki/{fid}")
+def purchase_file_get(pid: int, fid: int, request: Request, pobierz: int = 0, db: Session = Depends(get_db)):
+    f = _purchase_file(db, request, pid, fid)
+    inline = f.content_type in _INLINE_TYPES and not pobierz
+    ctype = f.content_type if f.content_type in _INLINE_TYPES else "application/octet-stream"
+    safe = "".join(ch if ch.isascii() and ch.isprintable() and ch not in '"\\' else "_" for ch in f.filename) or "plik"
+    disp = f"{'inline' if inline else 'attachment'}; filename=\"{safe}\"; filename*=UTF-8''{quote(f.filename)}"
+    headers = {"Content-Disposition": disp, "X-Content-Type-Options": "nosniff"}
+    if ctype != "application/pdf":  # przegladarka nie pokaze PDF w ramce z "sandbox"; obrazki i reszta - tak
+        headers["Content-Security-Policy"] = "sandbox"
+    return Response(f.data, media_type=ctype, headers=headers)
+
+
+@app.post("/koszty/{pid}/pliki/{fid}/usun")
+def purchase_file_delete(pid: int, fid: int, request: Request, db: Session = Depends(get_db)):
+    f = _purchase_file(db, request, pid, fid)
+    audit(db, web_actor(request), "purchase.file_delete", f"Koszt: usunięto załącznik {f.filename}",
+          company_id=f.company_id, entity="purchase", entity_id=pid)
+    db.delete(f)
+    db.commit()
+    flash(request, "Załącznik usunięty.")
+    return redirect(f"/koszty/{pid}")
 
 
 @app.get("/nip/{nip}")

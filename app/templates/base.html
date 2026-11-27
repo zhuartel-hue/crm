@@ -35,7 +35,7 @@
   ('Organizacja', [('/zadania', 'Zadania', 'check', p.startswith('/zadania')),
                ('/kalendarz', 'Kalendarz', 'calendar', p.startswith('/kalendarz')),
                ('', 'Projekty', 'folder', False),
-               ('', 'Raporty', 'chart', False)]),
+               ('/raporty', 'Raporty', 'chart', p.startswith('/raporty'))]),
   ('Finanse', [('/bank', 'Bank', 'bank', p.startswith('/bank'))]),
   ('System', [('/ustawienia', 'Ustawienia', 'gear', p.startswith('/ustawienia')),
               ('/szablony', 'Szablony maili', 'doc', p.startswith('/szablony')),

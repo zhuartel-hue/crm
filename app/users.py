@@ -39,7 +39,7 @@ _COMMON = ("/konto", "/logout", "/firma/", "/static", "/zdjecia", "/sw.js")
 # Czego rola NIE moze (prefiksy sciezek). Wlasciciel moze wszystko.
 _DENY = {
     "ksiegowosc": ("/ustawienia/uzytkownicy", "/dostep", "/import"),
-    "handlowiec": ("/ustawienia", "/dostep", "/import", "/bank", "/koszty", "/dziennik", "/naleznosci"),
+    "handlowiec": ("/ustawienia", "/dostep", "/import", "/bank", "/koszty", "/dziennik", "/naleznosci", "/raporty"),
 }
 # Magazyn: tylko to, co jest tu wymienione.
 _ALLOW_ONLY = {

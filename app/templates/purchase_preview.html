@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="pl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{{ data.get('number') or pi.invoice_number }}</title>
+{%- macro m(v) %}{{ '{:,.2f}'.format(v).replace(',', ' ').replace('.', ',') if v is not none else '' }}{% endmacro -%}
+{%- macro d(v) %}{{ v.strftime('%d.%m.%Y') if v else '' }}{% endmacro -%}
+<style>
+@page{size:A4;margin:14mm 12mm}
+*{box-sizing:border-box}
+body{margin:0;padding:16px;font:12px/1.4 -apple-system,"Segoe UI",Roboto,"DejaVu Sans",Arial,sans-serif;color:#111;background:#fff}
+h1{font-size:17px;margin:0}
+.top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;border-bottom:2px solid #111;padding-bottom:6px;margin-bottom:10px}
+.muted{color:#666}
+.parties{display:flex;gap:12px;margin-bottom:10px}
+.parties>div{flex:1;border:1px solid #ddd;border-radius:3px;padding:6px 8px}
+.lbl{font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:#666;margin-bottom:2px}
+table{width:100%;border-collapse:collapse;margin-bottom:10px}
+th,td{border:1px solid #ddd;padding:3px 5px;vertical-align:top}
+th{background:#f3f4f6;font-weight:600;font-size:11px;text-align:left}
+.n{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+.sum{display:flex;justify-content:flex-end}.sum table{width:auto;min-width:50%}
+.total td{font-weight:700;font-size:13px}
+.foot{margin-top:12px;font-size:10px;color:#666;border-top:1px solid #ddd;padding-top:4px}
+.bar{margin-bottom:10px}.bar button{font:inherit;padding:3px 10px;border:1px solid #ccc;border-radius:3px;background:#fff;cursor:pointer}
+@media print{.bar{display:none}body{padding:0}}
+</style></head><body>
+{% if not for_pdf %}<div class="bar"><button type="button" onclick="window.print()">Drukuj</button> <a href="/koszty/{{ pi.id }}/podglad.pdf" target="_blank">PDF</a></div>{% endif %}
+<div class="top">
+  <div><h1>Faktura {{ data.get('kind') or pi.invoice_type or 'VAT' }} nr {{ data.get('number') or pi.invoice_number }}</h1>
+    <div class="muted">Wystawiona {{ d(data.get('issue_date') or pi.issue_date) }}{% if data.get('place') %}, {{ data.place }}{% endif %}{% if data.get('sale_date') %} · data sprzedaży {{ d(data.sale_date) }}{% endif %}</div></div>
+  <div style="text-align:right"><div class="lbl">Numer KSeF</div><b>{{ pi.ksef_number if pi.in_ksef else '—' }}</b>
+    {% if pi.ksef_env and pi.ksef_env != 'prod' %}<div class="muted">środowisko {{ pi.ksef_env }}</div>{% endif %}</div>
+</div>
+<div class="parties">
+  <div><div class="lbl">Sprzedawca</div><b>{{ data.get('seller_name') or pi.seller_name }}</b><br>NIP {{ data.get('seller_nip') or pi.seller_nip }}
+    {% for l in data.get('seller_address', []) %}<br>{{ l }}{% endfor %}</div>
+  <div><div class="lbl">Nabywca</div>{% set b = data.get('buyer') or {} %}<b>{{ b.get('name') or pi.company.name }}</b>{% if b.get('nip') %}<br>NIP {{ b.nip }}{% endif %}
+    {% for l in b.get('address', []) %}<br>{{ l }}{% endfor %}</div>
+</div>
+{% if data.get('items') %}
+<table>
+<tr><th style="width:28px">Lp.</th><th>Nazwa</th><th class="n">Ilość</th><th>J.m.</th><th class="n">Cena</th><th class="n">VAT</th><th class="n">Wartość</th></tr>
+{% for it in data['items'] %}<tr><td>{{ loop.index }}</td><td>{{ it.name }}</td><td class="n">{{ it.quantity|string if it.quantity is not none }}</td><td>{{ it.unit }}</td>
+<td class="n">{{ m(it.unit_price) }}</td><td class="n">{{ it.rate }}{{ '%' if it.rate.isdigit() }}</td><td class="n">{{ m(it.value) }}</td></tr>{% endfor %}
+</table>
+{% endif %}
+<div class="sum"><table>
+<tr><th>Stawka</th><th class="n">Netto</th><th class="n">VAT</th><th class="n">Brutto</th></tr>
+{% for r in data.get('rates', []) %}<tr><td>{{ r.rate }}{{ '%' if r.rate.isdigit() }}</td><td class="n">{{ m(r.net) }}</td><td class="n">{{ m(r.vat) }}</td><td class="n">{{ m(r.gross) }}</td></tr>{% endfor %}
+<tr class="total"><td>Razem</td><td class="n">{{ m(pi.net) }}</td><td class="n">{{ m(pi.vat) }}</td><td class="n">{{ m(data.get('gross') or pi.gross) }} {{ data.get('currency') or pi.currency }}</td></tr>
+</table></div>
+<table style="width:auto">
+{% if data.get('payment_form') %}<tr><th>Forma płatności</th><td>{{ data.payment_form }}</td></tr>{% endif %}
+{% if data.get('due_date') or pi.due_date %}<tr><th>Termin płatności</th><td>{{ d(data.get('due_date') or pi.due_date) }}</td></tr>{% endif %}
+{% if data.get('bank_account') or pi.bank_account %}<tr><th>Rachunek</th><td>{{ data.get('bank_account') or pi.bank_account }}</td></tr>{% endif %}
+{% if data.get('paid') %}<tr><th>Zapłacono</th><td>tak</td></tr>{% endif %}
+</table>
+<div class="foot">Wizualizacja danych faktury z Krajowego Systemu e-Faktur (plik XML), przygotowana w Sygnavo do weryfikacji.
+{% if data.get('system') %}Wystawiono w: {{ data.system }}.{% endif %} Dokumentem jest faktura w KSeF.</div>
+</body></html>

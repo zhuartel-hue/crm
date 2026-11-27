@@ -1,48 +1,115 @@
 {% extends "base.html" %}
+{% from "_icons.html" import icon %}
 {% block title %}{{ pi.invoice_number }}{% endblock %}
 {% block content %}
-<div class="row"><h1>Koszt {{ pi.invoice_number or pi.ksef_number }}</h1>
+<div class="row" style="margin-bottom:6px"><a class="btn small" href="/koszty?status={{ pi.status }}">← {{ {'new': 'Do weryfikacji', 'accepted': 'Zweryfikowane', 'rejected': 'Odrzucone'}.get(pi.status, 'Koszty') }}</a>
+<h1 style="margin:0">Koszt {{ pi.invoice_number or pi.ksef_number }}</h1>
 <span class="badge {{ 'warn' if pi.status == 'new' else ('ok' if pi.status == 'accepted' else '') }}">{{ pi.status_label }}</span>
 {% if pi.paid_at %}<span class="badge ok">zapłacona {{ pi.paid_at|date }}</span>{% endif %}</div>
-<form method="post" action="/koszty/{{ pi.id }}" class="row" style="margin-bottom:16px">
-  {% if pi.status != 'accepted' %}<button class="btn primary" name="action" value="accepted">Zatwierdź</button>{% endif %}
-  {% if pi.status != 'rejected' %}<button class="btn" name="action" value="rejected">Odrzuć</button>{% endif %}
-  {% if pi.status != 'new' %}<button class="btn" name="action" value="new">Do weryfikacji</button>{% endif %}
-  <a class="btn" href="/koszty/{{ pi.id }}/xml">Pobierz XML</a>
-  <a class="btn" href="/koszty">Wróć</a>
+
+<form method="post" action="/koszty/{{ pi.id }}" class="verify-bar {{ 'done' if pi.status == 'accepted' }}">
+  {% if pi.status == 'new' %}
+  <b>Do weryfikacji</b><span class="muted">Sprawdź dane z podglądem obok.</span><span class="spacer"></span>
+  <button class="btn primary" name="action" value="accepted_next" title="Zweryfikuj i otwórz następną fakturę do weryfikacji">Zweryfikuj{{ ' i dalej' if next_pi }}</button>
+  {% if next_pi %}<button class="btn" name="action" value="accepted">Zweryfikuj</button>{% endif %}
+  <button class="btn danger" name="action" value="rejected">Odrzuć</button>
+  {% if next_pi %}<a class="btn" href="/koszty/{{ next_pi.id }}" title="Pomiń, wróć do niej później">Pomiń</a>{% endif %}
+  <span class="muted" style="font-size:13px">czeka: {{ waiting }}</span>
+  {% elif pi.status == 'accepted' %}
+  <b>Zweryfikowana</b><span class="muted">{% if pi.verified_at %}{{ pi.verified_at.strftime('%d.%m.%Y %H:%M') }}{% if pi.verified_by %}, {{ pi.verified_by }}{% endif %}{% endif %}</span><span class="spacer"></span>
+  <button class="btn small" name="action" value="new">Cofnij do weryfikacji</button>
+  {% else %}
+  <b>Odrzucona</b><span class="spacer"></span>
+  <button class="btn small" name="action" value="new">Cofnij do weryfikacji</button>
+  {% endif %}
 </form>
-<div class="grid">
-  <div class="card"><div class="muted">Sprzedawca</div><b>{{ klink(pi.contractor_id, pi.seller_name) }}</b><br>NIP {{ pi.seller_nip }}
-    {% for l in data.get('seller_address', []) %}<br>{{ l }}{% endfor %}
-    {% if pi.contractor %}<br><a href="/kontrahenci/{{ pi.contractor_id }}">Karta kontrahenta</a>{% endif %}</div>
-  <div class="card">Wystawiona {{ pi.issue_date|date if pi.issue_date }}{% if data.get('sale_date') %}, sprzedaż {{ data.sale_date|date }}{% endif %}
-    {% if pi.due_date %}<br>Termin płatności <b>{{ pi.due_date|date }}</b>{% endif %}
-    {% if pi.bank_account %}<br>Konto <b>{{ pi.bank_account }}</b>{% endif %}
-    <br><span class="muted">Nr KSeF {{ pi.ksef_number }}{% if pi.ksef_env != 'prod' %} ({{ pi.ksef_env }}){% endif %}</span></div>
+
+<div class="split">
+<div class="docview">
+  {% set has_ksef = pi.xml %}
+  <div class="doc-tabs no-print">
+    {% if has_ksef %}<button type="button" class="btn small primary" data-doc="/koszty/{{ pi.id }}/podglad">Faktura z KSeF</button>{% endif %}
+    {% for f in files %}<button type="button" class="btn small {{ 'primary' if not has_ksef and loop.first }}" data-doc="/koszty/{{ pi.id }}/pliki/{{ f.id }}" data-type="{{ f.content_type }}" title="{{ f.filename }}">{{ icon('clip') }}{{ f.filename|truncate(28, True) }}</button>{% endfor %}
+    <span class="spacer"></span>
+    <a class="btn small" id="doc-open" href="#" target="_blank" rel="noopener">Otwórz w nowej karcie</a>
+  </div>
+  {% if has_ksef or files %}
+  {% set first = files[0] if not has_ksef else none %}
+  {% if first and first.content_type.startswith('image/') %}
+  <iframe id="doc-frame" title="Podgląd" hidden></iframe><img id="doc-img" src="/koszty/{{ pi.id }}/pliki/{{ first.id }}" alt="Załącznik">
+  {% elif first and first.content_type not in INLINE %}
+  <iframe id="doc-frame" title="Podgląd" hidden></iframe><img id="doc-img" hidden alt="">
+  <div class="empty" id="doc-none">Tego pliku nie da się pokazać w przeglądarce. <a href="/koszty/{{ pi.id }}/pliki/{{ first.id }}?pobierz=1">Pobierz {{ first.filename }}</a></div>
+  {% else %}
+  <iframe id="doc-frame" title="Podgląd" src="{{ '/koszty/%d/podglad'|format(pi.id) if has_ksef else '/koszty/%d/pliki/%d'|format(pi.id, first.id) }}"></iframe><img id="doc-img" hidden alt="">
+  {% endif %}
+  {% else %}
+  <div class="empty">Brak podglądu: faktura nie ma danych z KSeF ani załącznika.<br>Dodaj skan albo PDF od dostawcy poniżej.</div>
+  {% endif %}
+  <form method="post" action="/koszty/{{ pi.id }}/pliki" enctype="multipart/form-data" class="row no-print" style="margin:0">
+    <input type="file" name="files" multiple accept="application/pdf,image/*" required aria-label="Załącznik" style="max-width:260px">
+    <button class="btn small">Dodaj załącznik</button>
+    <span class="muted" style="font-size:12px">PDF albo zdjęcie, do 25 MB</span>
+  </form>
+  {% if files %}
+  <div class="muted no-print" style="font-size:13px">{% for f in files %}{{ f.filename }} ({{ (f.size / 1024)|round|int }} KB, {{ f.created_at.strftime('%d.%m.%Y') if f.created_at }}{{ ', ' + f.added_by if f.added_by }})
+    <a href="/koszty/{{ pi.id }}/pliki/{{ f.id }}?pobierz=1">pobierz</a>
+    <form method="post" action="/koszty/{{ pi.id }}/pliki/{{ f.id }}/usun" style="display:inline" onsubmit="return confirm('Usunąć załącznik {{ f.filename|e }}?')"><button class="btn small danger" style="padding:0 6px">usuń</button></form>{{ '' if loop.last else ' · ' }}{% endfor %}</div>
+  {% endif %}
 </div>
-{% if data.get('items') %}
+
+<div>
+<div class="card">
+  <div class="muted">Sprzedawca</div><b>{{ klink(pi.contractor_id, pi.seller_name) }}</b>{% if pi.seller_nip %}<br>NIP {{ pi.seller_nip }}{% endif %}
+  {% for l in data.get('seller_address', []) %}<br>{{ l }}{% endfor %}
+  <hr style="border:0;border-top:1px solid var(--line);margin:8px 0">
+  Wystawiona <b>{{ pi.issue_date|date if pi.issue_date }}</b>{% if data.get('sale_date') %}, sprzedaż {{ data.sale_date|date }}{% endif %}
+  {% if pi.due_date %}<br>Termin płatności <b>{{ pi.due_date|date }}</b>{% endif %}
+  {% if data.get('payment_form') %}<br>Forma płatności {{ data.payment_form }}{% endif %}
+  {% if pi.bank_account %}<br>Konto <b>{{ pi.bank_account }}</b>{% endif %}
+  <br><span class="muted">{% if pi.in_ksef %}Nr KSeF {{ pi.ksef_number }}{% if pi.ksef_env and pi.ksef_env != 'prod' %} ({{ pi.ksef_env }}){% endif %}{% elif pi.is_manual %}Dodana ręcznie, spoza KSeF{% else %}Bez numeru KSeF{% endif %}</span>
+</div>
 <div class="card tbl"><table>
-<tr><th>Lp.</th><th>Nazwa</th><th class="n">Ilość</th><th>J.m.</th><th class="n hide-sm">Cena</th><th class="n hide-sm">VAT</th><th class="n">Wartość</th></tr>
-{% for it in data['items'] %}<tr><td>{{ loop.index }}</td><td>{{ it.name }}</td><td class="n">{% if it.quantity is not none %}{{ it.quantity|qty }}{% endif %}</td><td>{{ it.unit }}</td>
-<td class="n hide-sm">{% if it.unit_price is not none %}{{ it.unit_price|money }}{% endif %}</td><td class="n hide-sm">{{ it.rate }}{{ '%' if it.rate.isdigit() }}</td>
-<td class="n">{% if it.value is not none %}{{ it.value|money }}{% endif %}</td></tr>{% endfor %}
-</table></div>
-{% endif %}
-<div class="card tbl"><table>
-<tr><td>Netto</td><td class="n">{{ pi.net|money }}</td></tr>
-<tr><td>VAT</td><td class="n">{{ pi.vat|money }}</td></tr>
-<tr><td><b>Brutto</b></td><td class="n"><b>{{ pi.gross|money }} {{ 'zł' if pi.currency == 'PLN' else pi.currency }}</b></td></tr>
+{% for r in data.get('rates', []) %}<tr><td class="muted">{{ r.rate }}{{ '%' if r.rate.isdigit() }}</td><td class="n">{{ r.net|money }}</td><td class="n">{{ r.vat|money }}</td></tr>{% endfor %}
+<tr><td>Netto</td><td class="n" colspan="2">{{ pi.net|money }}</td></tr>
+<tr><td>VAT</td><td class="n" colspan="2">{{ pi.vat|money }}</td></tr>
+<tr class="sum"><td>Brutto</td><td class="n" colspan="2">{{ pi.gross|money }} {{ 'zł' if pi.currency == 'PLN' else pi.currency }}</td></tr>
 </table></div>
 <div class="card">
-<form method="post" action="/koszty/{{ pi.id }}" class="grid">
-  <div style="grid-column:1/-1"><label>Uwagi</label><textarea name="notes" rows="2">{{ pi.notes }}</textarea></div>
+<form method="post" action="/koszty/{{ pi.id }}" class="grid" style="gap:8px">
   {% if pi.paid_at %}
-  <div><label>&nbsp;</label><button class="btn" name="action" value="unpaid">Cofnij „zapłacona”</button></div>
+  <div><button class="btn small" name="action" value="unpaid">Cofnij „zapłacona”</button></div>
   {% else %}
   <div><label>Data zapłaty</label><input type="date" name="paid_at" value="{{ today_iso }}"></div>
-  <div><label>&nbsp;</label><button class="btn primary" name="action" value="paid">Oznacz jako zapłaconą</button></div>
+  <div><label>&nbsp;</label><button class="btn" name="action" value="paid">Oznacz jako zapłaconą</button></div>
   {% endif %}
-  <div><label>&nbsp;</label><button class="btn" name="action" value="notes">Zapisz uwagi</button></div>
+  <div style="grid-column:1/-1"><label>Uwagi (np. na co poszedł koszt)</label><textarea name="notes" rows="2">{{ pi.notes }}</textarea></div>
+  <div><button class="btn small" name="action" value="notes">Zapisz uwagi</button></div>
 </form>
 </div>
+<div class="row no-print">
+  {% if pi.xml %}<a class="btn small" href="/koszty/{{ pi.id }}/podglad.pdf" target="_blank">PDF z KSeF</a><a class="btn small" href="/koszty/{{ pi.id }}/xml">XML</a>{% endif %}
+  {% if pi.contractor %}<a class="btn small" href="/kontrahenci/{{ pi.contractor_id }}">Karta kontrahenta</a>{% endif %}
+</div>
+</div>
+</div>
+<script>
+(function(){
+  var frame=document.getElementById('doc-frame'), img=document.getElementById('doc-img'), open=document.getElementById('doc-open');
+  var none=document.getElementById('doc-none');
+  var btns=document.querySelectorAll('[data-doc]');
+  if(!btns.length){ if(open) open.hidden=true; return; }
+  function show(b){
+    btns.forEach(function(x){x.classList.toggle('primary', x===b);});
+    var url=b.getAttribute('data-doc'), t=b.getAttribute('data-type')||'text/html';
+    open.href=url;
+    if(none) none.hidden=true;
+    if(t.indexOf('image/')===0){ frame.hidden=true; frame.removeAttribute('src'); img.src=url; img.hidden=false; }
+    else if(t==='text/html'||t==='application/pdf'){ img.hidden=true; frame.hidden=false; if(frame.getAttribute('src')!==url) frame.src=url; }
+    else { location.href=url+'?pobierz=1'; }
+  }
+  btns.forEach(function(b){ b.addEventListener('click', function(){show(b);}); });
+  open.href=btns[0].getAttribute('data-doc');
+})();
+</script>
 {% endblock %}

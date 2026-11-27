@@ -67,15 +67,17 @@ def test_fetch_and_verify_purchase_invoices(client, monkeypatch):
     page = client.get("/koszty").text
     assert "do weryfikacji" in page and "1\xa0230,00" in page
     view = client.get(f"/koszty/{pid}").text
-    assert "Wtyk RJ45" in view and "31.12.2026" in view
+    assert "31.12.2026" in view and f"/koszty/{pid}/podglad" in view and "Zweryfikuj" in view
+    prev = client.get(f"/koszty/{pid}/podglad").text
+    assert "Wtyk RJ45" in prev and "5551859956-20261120-AAA111-01" in prev and "Nabywca" in prev
     # weryfikacja i zaplata
     client.post(f"/koszty/{pid}", data={"action": "accepted"})
     r = client.post(f"/koszty/{pid}", data={"action": "paid", "paid_at": "2026-11-25"})
-    assert "zatwierdzona" in r.text and "zapłacona 25.11.2026" in r.text
+    assert "zweryfikowana" in r.text and "zapłacona 25.11.2026" in r.text
     assert client.get(f"/koszty/{pid}/xml").content.startswith(b"<?xml")
     assert "AAA111" not in client.get("/koszty?status=nieoplacone").text
     # reczne odhaczenie z listy (kolumny KSeF i Zapłacona)
-    page = client.get("/koszty").text
+    page = client.get("/koszty?status=all").text
     assert "W KSeF: 5551859956-20261120-AAA111-01" in page and "/zaplacona" in page
     r = client.post(f"/koszty/{pid}/zaplacona", data={"paid": "0", "back": "/koszty?status=nieoplacone"},
                     follow_redirects=False)

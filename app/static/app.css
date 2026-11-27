@@ -177,3 +177,29 @@ table.cols-fixed td,table.cols-fixed th{overflow:hidden;text-overflow:ellipsis}
 
 .klink{font-weight:600;color:var(--text);text-decoration:underline;text-decoration-color:var(--accent);text-decoration-thickness:1.5px;text-underline-offset:2px}.klink:hover{color:var(--accent)}
 .kcard p.muted{margin:2px 0 6px}.kcard h2{margin:10px 0 4px}.kcard .card{margin-bottom:6px}
+/* foldery (Koszty: Do weryfikacji / Zweryfikowane / Wszystkie) i raporty */
+.folders{display:flex;gap:2px;flex-wrap:wrap;border-bottom:1px solid var(--line);margin:0 0 8px}
+.folders a{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;font-size:14px;color:var(--muted);border-bottom:2px solid transparent;margin-bottom:-1px;white-space:nowrap}
+.folders a:hover{color:var(--text)}
+.folders a.on{color:var(--accent);border-bottom-color:var(--accent);font-weight:600}
+.folders a .cnt{font-size:11.5px;background:var(--line2);color:var(--muted);padding:0 6px;border-radius:3px;font-weight:600}
+.folders a.on .cnt{background:var(--accent-weak);color:var(--accent)}
+.folders a.hot .cnt{background:var(--warn-weak);color:var(--warn)}
+.folders .sep{flex:1}
+.docview{display:flex;flex-direction:column;gap:6px}
+.docview .doc-tabs{display:flex;gap:4px;flex-wrap:wrap}
+.docview iframe,.docview img{width:100%;height:78vh;border:1px solid var(--line);border-radius:4px;background:#fff}
+.docview img{height:auto;max-height:78vh;object-fit:contain}
+.docview .empty{border:1px dashed var(--line);border-radius:4px;padding:28px 12px;text-align:center;color:var(--muted)}
+.verify-bar{display:flex;gap:6px;flex-wrap:wrap;align-items:center;padding:8px 10px;margin-bottom:8px;background:var(--warn-weak);border:1px solid var(--line);border-radius:4px}
+.verify-bar.done{background:var(--ok-weak)}
+.report-h{display:flex;justify-content:space-between;gap:12px;align-items:flex-end;flex-wrap:wrap}
+.tbl tr.sum td{font-weight:700;border-top:2px solid var(--line)}
+.tbl tr.sub td{background:var(--line2);font-weight:600}
+@media print{
+  .side,.top,.tabs,.scrim,.no-print,.flash{display:none!important}
+  body{background:#fff;font-size:11px}.content{padding:0!important;margin:0!important}
+  .card{box-shadow:none;border:0;padding:0;margin:0 0 8px}
+  a{color:inherit}
+  table{font-size:10.5px}tr{break-inside:avoid}
+}
