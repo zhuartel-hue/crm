@@ -1,6 +1,14 @@
 # Zarzadzane przez repozytorium (deploy/serwer/Caddyfile). Zmiany tylko przez PR.
 # APP_ALIASES (opcjonalnie, w /etc/sygnavo/serwer.env) to dodatkowe adresy, np. ", 188-245-222-137.sslip.io"
 # na czas przeprowadzki, gdy stary serwer przekazuje ruch na nowy, zanim zmieni sie DNS.
+# TRUSTED_PROXIES (opcjonalnie): adresy serwera przekazujacego ruch (np. chirpstack-1), zeby program widzial
+# prawdziwy adres klienta (dziennik, bank). Bez zmiennej ufamy tylko sobie.
+{
+	servers {
+		trusted_proxies static {$TRUSTED_PROXIES:127.0.0.1/32}
+	}
+}
+
 {$APP_DOMAIN}{$APP_ALIASES} {
 	encode gzip
 	reverse_proxy app:8000

@@ -68,7 +68,9 @@ Gdy właściciel nie może od razu zmienić DNS, stary serwer przekazuje ruch na
 2. Na chirpstack-1 blok `crm.margotsystem.com` w `/opt/chirpstack/Caddyfile` (kopia przed zmianą obok):
    `reverse_proxy https://188-245-222-137.sslip.io { header_up Host 188-245-222-137.sslip.io }`,
    potem `caddy validate` i łagodne przeładowanie. Pozostałych bloków (LoRaWAN) nie ruszamy.
-3. Po zmianie DNS: usunąć ten blok ze starego serwera, a `APP_ALIASES` zostawić pusty.
+   W `serwer.env` też `TRUSTED_PROXIES="188.245.166.12/32 2a01:4f8:c016:daae::/64"` (adresy chirpstack-1), żeby
+   program widział prawdziwy adres klienta, a nie starego serwera.
+3. Po zmianie DNS: usunąć ten blok ze starego serwera, a `APP_ALIASES` i `TRUSTED_PROXIES` zostawić puste.
 
 Uwaga: bez `APP_ALIASES` w `serwer.env` kolejne wdrożenie usunie adres sslip z Caddy i przekazywanie
 przestanie działać, dopóki DNS nie wskazuje nowego serwera.
