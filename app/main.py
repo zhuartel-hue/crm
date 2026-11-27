@@ -74,6 +74,7 @@ from .models import (
     Company,
     Contact,
     Contractor,
+    ContractorFile,
     CUSTOMER_TYPES,
     SmsMessage,
     ContractorNote,
@@ -1046,11 +1047,20 @@ def contractor_edit(cid: int, request: Request, db: Session = Depends(get_db)):
                           .order_by(SmsMessage.id.desc()).limit(30)).all()
     timeline = _contractor_timeline(c, invoices, deliveries, offer_rows, order_rows, mails, call_rows, sms_rows,
                                     task_rows, purchase_rows, history)
+    files = db.scalars(select(ContractorFile).options(defer(ContractorFile.data))
+                       .where(ContractorFile.contractor_id == cid, ContractorFile.company_id == company_id)
+                       .order_by(ContractorFile.id.desc())).all()
+    contract_files = db.scalars(select(ContractFile).options(defer(ContractFile.data))
+                                .where(ContractFile.recurring_id.in_([r.id for r in contracts]),
+                                       ContractFile.company_id == company_id)
+                                .order_by(ContractFile.id.desc())).all() if contracts else []
+    mail_files = [(m, a) for m in mails for a in m.attachments]
     accounts = [a for a in _company_accounts(db, company_id) if a.active]
     phones = [x for x in [c.phone] + [p.phone for p in c.contacts] if x]
     emails = [x for x in [c.email] + [p.email for p in c.contacts] if x]
     return render(request, db, "contractor_form.html", c=c, invoices=invoices, mails=mails, offers=offer_rows,
-                  mail_count=mail_count, sms_rows=sms_rows, timeline=timeline, accounts=accounts, phones=phones,
+                  mail_count=mail_count, sms_rows=sms_rows, files=files, contract_files=contract_files,
+                  mail_files=mail_files, timeline=timeline, accounts=accounts, phones=phones,
                   emails=emails, CUSTOMER_TYPES=CUSTOMER_TYPES, sms_ready=sms_mod.provider_configured(None),
                   orders=order_rows, calls=call_rows, CALL_DIRECTIONS=CALL_DIRECTIONS,
                   deliveries=deliveries, equipment=equipment, contracts=contracts, today=dt.date.today(),
@@ -1172,6 +1182,71 @@ async def contractor_update(cid: int, request: Request, db: Session = Depends(ge
     if c is None:
         raise HTTPException(404)
     return await _save_contractor(request, db, c)
+
+
+@app.post("/kontrahenci/{cid}/pliki")
+async def contractor_file_add(cid: int, request: Request, db: Session = Depends(get_db)):
+    """Pliki na karcie kontrahenta; kilka naraz, do 25 MB kazdy."""
+    c = _own(db, request, Contractor, cid)
+    if c is None:
+        raise HTTPException(404)
+    form = await request.form()
+    title = (form.get("title") or "").strip()[:200]
+    added, skipped = 0, []
+    for f in form.getlist("files"):
+        if not getattr(f, "filename", None):
+            continue
+        raw = await f.read()
+        name = os.path.basename(f.filename.replace("\\", "/"))[:200]
+        if not raw or len(raw) > CONTRACT_FILE_MAX:
+            skipped.append(name)
+            continue
+        ctype = (f.content_type or "").split(";")[0].strip().lower()[:100] or "application/octet-stream"
+        if raw[:4] == b"%PDF":
+            ctype = "application/pdf"
+        db.add(ContractorFile(company_id=c.company_id, contractor_id=c.id, title=title or name, filename=name,
+                              content_type=ctype, size=len(raw), data=raw,
+                              added_by=str(request.session.get("user", ""))[:60]))
+        added += 1
+    if added:
+        audit(db, web_actor(request), "contractor.file_add", f"{c.name}: dodano {added} plik(i)",
+              company_id=c.company_id, entity="contractor", entity_id=c.id)
+        db.commit()
+    msg = f"Dodano plików: {added}." if added else "Nie wybrano pliku."
+    if skipped:
+        msg += " Pominięte (puste albo ponad 25 MB): " + ", ".join(skipped)
+    flash(request, msg)
+    return redirect(f"/kontrahenci/{c.id}#pliki")
+
+
+def _contractor_file(db: Session, request: Request, cid: int, fid: int) -> ContractorFile:
+    c = _own(db, request, Contractor, cid)
+    f = db.get(ContractorFile, fid)
+    if c is None or f is None or f.contractor_id != c.id or f.company_id != c.company_id:
+        raise HTTPException(404)
+    return f
+
+
+@app.get("/kontrahenci/{cid}/pliki/{fid}")
+def contractor_file_get(cid: int, fid: int, request: Request, pobierz: int = 0, db: Session = Depends(get_db)):
+    f = _contractor_file(db, request, cid, fid)
+    inline = f.content_type in _INLINE_TYPES and not pobierz
+    ctype = f.content_type if f.content_type in _INLINE_TYPES else "application/octet-stream"
+    safe = "".join(ch if ch.isascii() and ch.isprintable() and ch not in '"\\' else "_" for ch in f.filename) or "plik"
+    disp = f"{'inline' if inline else 'attachment'}; filename=\"{safe}\"; filename*=UTF-8''{quote(f.filename)}"
+    return Response(f.data, media_type=ctype, headers={"Content-Disposition": disp, "X-Content-Type-Options": "nosniff",
+                                                       "Content-Security-Policy": "sandbox"})
+
+
+@app.post("/kontrahenci/{cid}/pliki/{fid}/usun")
+def contractor_file_delete(cid: int, fid: int, request: Request, db: Session = Depends(get_db)):
+    f = _contractor_file(db, request, cid, fid)
+    audit(db, web_actor(request), "contractor.file_delete", f"Usunięto plik „{f.title}” ({f.filename})",
+          company_id=f.company_id, entity="contractor", entity_id=cid)
+    db.delete(f)
+    db.commit()
+    flash(request, "Plik usunięty.")
+    return redirect(f"/kontrahenci/{cid}#pliki")
 
 
 @app.post("/kontrahenci/{cid}/sms")

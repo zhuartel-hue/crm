@@ -142,3 +142,24 @@ def test_contractor_links_and_full_card(client):
     assert "123,00" in card  # zaleglosc
     # karta innej firmy niedostepna
     assert client.get(f"/kontrahenci/{other_id}").status_code == 404
+
+
+def test_contractor_files(client):
+    from app.db import SessionLocal
+    from app.models import Contractor
+    with SessionLocal() as db:
+        c = Contractor(company_id=1, name="Plikowa", is_company=True, country="PL")
+        db.add(c)
+        db.commit()
+        cid = c.id
+    r = client.post(f"/kontrahenci/{cid}/pliki", data={"title": "Skan pisma"},
+                    files={"files": ("pismo.pdf", b"%PDF-1.4 test", "application/octet-stream")})
+    assert "Dodano plików: 1" in r.text and "Skan pisma" in r.text
+    import re
+    fid = int(re.search(rf"/kontrahenci/{cid}/pliki/(\d+)", r.text).group(1))
+    got = client.get(f"/kontrahenci/{cid}/pliki/{fid}")
+    assert got.status_code == 200 and got.content.startswith(b"%PDF") and got.headers["content-type"] == "application/pdf"
+    client.post("/firma/2")
+    assert client.get(f"/kontrahenci/{cid}/pliki/{fid}").status_code == 404
+    client.post("/firma/1")
+    assert "Plik usunięty" in client.post(f"/kontrahenci/{cid}/pliki/{fid}/usun").text
