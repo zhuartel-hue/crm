@@ -24,6 +24,7 @@ from . import offer_statuses as ost
 from . import calls, orders
 from . import features, jobs, tenancy
 from . import users as users_mod
+from . import sms as sms_mod
 from . import api, auth, calc, config, firmao_import, mail_templates, mcp_server, migrate, nip_lookup, numbering, offers, password, payments, pdf, recurring, secretbox, wz
 from . import products as prod
 from . import tasks as tasks_mod
@@ -73,6 +74,8 @@ from .models import (
     Company,
     Contact,
     Contractor,
+    CUSTOMER_TYPES,
+    SmsMessage,
     ContractorNote,
     Delivery,
     DeliveryItem,
@@ -110,6 +113,7 @@ templates.env.globals.update(
 templates.env.globals["ksef_cert_info"] = ksef.cert_info
 templates.env.globals["ksef_can_send"] = ksef.can_send
 templates.env.globals["wz_payment"] = wz.payment_state
+templates.env.globals["CUSTOMER_TYPES"] = CUSTOMER_TYPES
 
 
 def _klink(contractor_id, name, cls: str = "klink"):
@@ -954,8 +958,12 @@ def invoice_ksef_upo(invoice_id: int, request: Request, db: Session = Depends(ge
 
 
 @app.get("/kontrahenci", response_class=HTMLResponse)
-def contractor_list(request: Request, q: str = "", db: Session = Depends(get_db)):
+def contractor_list(request: Request, q: str = "", widok: str = "", db: Session = Depends(get_db)):
     stmt = select(Contractor).where(Contractor.company_id == current_company(request, db).id)
+    if widok == "kontakt":
+        stmt = stmt.where(Contractor.next_contact.is_not(None), Contractor.next_contact <= dt.date.today())
+    elif widok in CUSTOMER_TYPES:
+        stmt = stmt.where(Contractor.customer_type == widok)
     if q:
         like = f"%{q}%"
         stmt = stmt.where(or_(Contractor.name.ilike(like), Contractor.nip.ilike(like), Contractor.city.ilike(like),
@@ -963,11 +971,12 @@ def contractor_list(request: Request, q: str = "", db: Session = Depends(get_db)
                               Contractor.id.in_(select(Contact.contractor_id).where(or_(
                                   Contact.last_name.ilike(like), Contact.first_name.ilike(like),
                                   Contact.email.ilike(like), Contact.phone.ilike(like))))))
-    return render(request, db, "contractors.html", contractors=db.scalars(stmt.order_by(Contractor.name)).all(), q=q)
+    return render(request, db, "contractors.html", contractors=db.scalars(stmt.order_by(Contractor.name)).all(), q=q,
+                  widok=widok, CUSTOMER_TYPES=CUSTOMER_TYPES, today=dt.date.today())
 
 
 CONTRACTOR_FIELDS = ["name", "nip", "pesel", "street", "postal_code", "city", "country", "email", "phone", "website",
-                     "notes"]
+                     "notes", "regon", "krs", "bank_account", "corr_address"]
 
 
 @app.get("/kontrahenci/nowy", response_class=HTMLResponse)
@@ -983,8 +992,10 @@ def contractor_edit(cid: int, request: Request, db: Session = Depends(get_db)):
     invoices = db.scalars(select(Invoice).where(Invoice.contractor_id == cid)
                           .order_by(Invoice.issue_date.desc()).limit(100)).all()
     mail_stmt = _contractor_mail_stmt(db, c, current_company(request, db).id)
-    mails = db.scalars(mail_stmt.order_by(MailMessage.date.desc().nulls_last()).limit(10)).all() \
+    mails = db.scalars(mail_stmt.options(selectinload(MailMessage.attachments).defer(MailAttachment.data))
+                       .order_by(MailMessage.date.desc().nulls_last()).limit(25)).all() \
         if mail_stmt is not None else []
+    mail_count = db.scalar(select(func.count()).select_from(mail_stmt.subquery())) if mail_stmt is not None else 0
     offer_rows = db.scalars(select(Offer).where(Offer.contractor_id == cid,
                                                 Offer.company_id == current_company(request, db).id)
                             .order_by(Offer.issue_date.desc()).limit(50)).all()
@@ -1031,11 +1042,58 @@ def contractor_edit(cid: int, request: Request, db: Session = Depends(get_db)):
     history = db.scalars(select(AuditLog).where(or_(AuditLog.company_id == company_id, AuditLog.entity == "contractor"),
                                                 or_(*conds))
                          .order_by(AuditLog.id.desc()).limit(40)).all()
+    sms_rows = db.scalars(select(SmsMessage).where(SmsMessage.contractor_id == cid, SmsMessage.company_id == company_id)
+                          .order_by(SmsMessage.id.desc()).limit(30)).all()
+    timeline = _contractor_timeline(c, invoices, deliveries, offer_rows, order_rows, mails, call_rows, sms_rows,
+                                    task_rows, purchase_rows, history)
+    accounts = [a for a in _company_accounts(db, company_id) if a.active]
+    phones = [x for x in [c.phone] + [p.phone for p in c.contacts] if x]
+    emails = [x for x in [c.email] + [p.email for p in c.contacts] if x]
     return render(request, db, "contractor_form.html", c=c, invoices=invoices, mails=mails, offers=offer_rows,
+                  mail_count=mail_count, sms_rows=sms_rows, timeline=timeline, accounts=accounts, phones=phones,
+                  emails=emails, CUSTOMER_TYPES=CUSTOMER_TYPES, sms_ready=sms_mod.provider_configured(None),
                   orders=order_rows, calls=call_rows, CALL_DIRECTIONS=CALL_DIRECTIONS,
                   deliveries=deliveries, equipment=equipment, contracts=contracts, today=dt.date.today(),
                   task_rows=task_rows, purchases=purchase_rows, owed=owed, sales_total=sales_total,
                   history=history, now=dt.datetime.now())
+
+
+def _contractor_timeline(c, invoices, deliveries, offers_, orders_, mails, calls, sms_rows, tasks, purchases_, history):
+    """Jedna os czasu kontrahenta (najnowsze na gorze): wszystko, co sie z nim dzialo."""
+    def at(d):
+        if d is None:
+            return dt.datetime.min
+        return d if isinstance(d, dt.datetime) else dt.datetime.combine(d, dt.time())
+    ev = []
+    for n in c.note_rows:
+        ev.append((at(n.at), "notatka", n.text[:300], "", n.author))
+    for m in mails:
+        ev.append((at(m.date), "e-mail wysłany" if m.direction == "out" else "e-mail odebrany",
+                   m.subject or "(bez tematu)", f"/poczta/{m.id}", m.from_name or m.from_addr))
+    for x in sms_rows:
+        ev.append((at(x.created_at), "SMS", f"{x.body[:200]} ({x.status_label})", "", x.created_by))
+    for x in calls:
+        ev.append((at(x.started_at), "rozmowa", (x.note or x.status_label)[:200], "", x.user_label))
+    for i in invoices:
+        ev.append((at(i.issue_date), "faktura", f"{i.kind_label} {i.display_number}, {calc.format_money(i.total_gross)} zł",
+                   f"/faktury/{i.id}", ""))
+    for d in deliveries:
+        ev.append((at(d.issue_date), d.kind_short, d.display_number, f"/wz/{d.id}", ""))
+    for o in offers_:
+        ev.append((at(o.issue_date), "oferta", f"{o.display_number} {o.title or ''}".strip(), f"/oferty/{o.id}", ""))
+    for z in orders_:
+        ev.append((at(z.issue_date), "zamówienie", f"{z.display_number} {z.title or ''}".strip(), f"/zamowienia/{z.id}", ""))
+    for t in tasks:
+        ev.append((at(t.due_at or t.created_at), "zadanie", t.title, f"/zadania/{t.id}", ""))
+    for p in purchases_:
+        ev.append((at(p.issue_date), "koszt", f"{p.invoice_number}, {calc.format_money(p.gross)} {p.currency}",
+                   f"/koszty/{p.id}", ""))
+    for h in history:
+        if h.action.endswith(".issue") or h.action == "mail.send":
+            continue  # wystawienie/wysylka sa juz wyzej jako dokument albo mail
+        ev.append((at(h.at), "zmiana", h.summary[:300], "", h.actor))
+    ev.sort(key=lambda e: e[0], reverse=True)
+    return [dict(at=e[0], kind=e[1], text=e[2], href=e[3], who=e[4]) for e in ev[:60]]
 
 
 def _contractor_mail_stmt(db: Session, c: Contractor, company_id: int, contact: Contact | None = None):
@@ -1083,14 +1141,24 @@ async def _save_contractor(request: Request, db: Session, c: Contractor):
     c.country = (c.country or "PL").upper()[:2]
     c.is_company = form.get("is_company") == "1"
     c.ksef_auto = form.get("ksef_auto") == "1"
+    c.customer_type = form.get("customer_type") if form.get("customer_type") in CUSTOMER_TYPES else ""
+    try:
+        c.next_contact = dt.date.fromisoformat(form.get("next_contact") or "")
+    except ValueError:
+        c.next_contact = None
     if not c.name:
+        if c.id:
+            db.rollback()
+            flash(request, "Podaj nazwę albo imię i nazwisko.")
+            return redirect(f"/kontrahenci/{c.id}")
         return render(request, db, "contractor_form.html", c=c, error="Podaj nazwę albo imię i nazwisko.")
     if c.company_id is None:
         c.company_id = current_company(request, db).id
+    is_new = c.id is None
     db.add(c)
     db.commit()
     flash(request, "Zapisano kontrahenta.")
-    return redirect("/kontrahenci")
+    return redirect("/kontrahenci" if is_new else f"/kontrahenci/{c.id}")
 
 
 @app.post("/kontrahenci/nowy")
@@ -1104,6 +1172,26 @@ async def contractor_update(cid: int, request: Request, db: Session = Depends(ge
     if c is None:
         raise HTTPException(404)
     return await _save_contractor(request, db, c)
+
+
+@app.post("/kontrahenci/{cid}/sms")
+async def contractor_sms(cid: int, request: Request, db: Session = Depends(get_db)):
+    c = _own(db, request, Contractor, cid)
+    if c is None:
+        raise HTTPException(404)
+    form = await request.form()
+    try:
+        x = sms_mod.create(db, web_actor(request), c, form.get("phone") or "", form.get("body") or "")
+        db.flush()
+        audit(db, web_actor(request), "sms.create", f"SMS do {c.name} ({x.phone}): {x.body[:120]}",
+              company_id=c.company_id, entity="contractor", entity_id=c.id)
+        db.commit()
+        flash(request, "SMS zapisany w historii. Wyśle się po podłączeniu bramki SMS." if x.status == "waiting"
+              else "Wysłano SMS.")
+    except ValueError as e:
+        db.rollback()
+        flash(request, str(e))
+    return redirect(f"/kontrahenci/{c.id}#sms")
 
 
 @app.post("/kontrahenci/{cid}/ksef-auto")
@@ -1952,6 +2040,9 @@ async def mail_send(request: Request, db: Session = Depends(get_db)):
         return render(request, db, "mail_compose.html", accounts=list(accounts.values()), draft=draft, inv=inv,
                       offer=offer, error=str(e))
     flash(request, f"Wysłano {'przypomnienie ' if inv is not None and draft['reminder'] == '1' else ''}do {draft['to']}.")
+    back = form.get("back") or ""
+    if back.startswith("/kontrahenci/"):
+        return redirect(back)
     return redirect(f"/faktury/{inv.id}" if inv else f"/oferty/{offer.id}" if offer else "/poczta?kierunek=out")
 
 

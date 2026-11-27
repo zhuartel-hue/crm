@@ -68,3 +68,23 @@ def test_matches_existing_by_nip_and_bad_file(client):
     r = client.post("/import/firmao", files={"customers": ("c.json", b"nie json", "application/json")})
     assert "poprawny plik JSON" in r.text
     assert "Wybierz co najmniej jeden plik" in client.post("/import/firmao", data={"x": "1"}).text
+
+
+def test_import_customer_card_fields(client):
+    import datetime as dt
+
+    from app import firmao_import
+    from app.db import SessionLocal
+    from app.models import Contractor
+    row = {"id": 142, "name": "Muzeum", "nipNumber": "5551739548", "identificationNumber": "000286166", "krs": "1",
+           "website": "www.muzeum.pl", "bankAccountNumber": "71 1090 0004", "customerType": {"key": "CUSTOMER"},
+           "officeAddress": {"street": "Podmurna 15", "postCode": "89-600", "city": "Chojnice", "country": "Polska"},
+           "correspondenceAddress": {"street": "Skrytka 1", "postCode": "89-600", "city": "Chojnice", "country": "Polska"},
+           "nextContactDate": "2026-12-01T00:00:00Z"}
+    with SessionLocal() as db:
+        firmao_import.import_customers(db, [row], 1)
+        db.commit()
+        c = db.query(Contractor).filter_by(source_ref="firmao:142").one()
+        assert c.regon == "000286166" and c.krs == "" and c.website == "www.muzeum.pl"
+        assert c.customer_type == "CUSTOMER" and c.bank_account.startswith("71")
+        assert c.corr_address == "Skrytka 1, 89-600 Chojnice" and c.next_contact == dt.date(2026, 12, 1)

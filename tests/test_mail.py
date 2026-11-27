@@ -211,3 +211,49 @@ def test_mail_has_company_logo(client, fake_mail):
     assert "&lt;oferta&gt;" in html_part.get_content() and "cid:" in html_part.get_content()
     assert any(p.get_content_type() == "image/png" for p in msg.walk())
     assert "w załączniku <oferta>" in msg.get_body(("plain",)).get_content()
+
+
+def test_contractor_card_mail_sms_timeline(client, fake_mail):
+    import datetime as dt
+
+    from app.db import SessionLocal
+    from app.models import Contractor, MailAttachment, MailMessage, SmsMessage
+    acc_id = _account(client)
+    r = client.post("/kontrahenci/nowy", data={"name": "Muzeum Test", "is_company": "1", "email": "muzeum@test.pl",
+                                              "phone": "600 100 200", "country": "PL", "customer_type": "CUSTOMER",
+                                              "regon": "000286166", "next_contact": "2020-01-01"},
+                    follow_redirects=False)
+    with SessionLocal() as db:
+        c = db.query(Contractor).filter_by(name="Muzeum Test").one()
+        cid = c.id
+        assert c.customer_type == "CUSTOMER" and c.regon == "000286166" and c.next_contact == dt.date(2020, 1, 1)
+        m = MailMessage(account_id=acc_id, direction="in", folder="INBOX", subject="Zapytanie o kamerę",
+                        from_addr="muzeum@test.pl", from_name="Muzeum", to_addrs="biuro@margot.test",
+                        date=dt.datetime(2026, 11, 20, 10, 0), body_text="Prosimy o ofertę.")
+        m.attachments.append(MailAttachment(filename="plan.pdf", content_type="application/pdf", size=2048, data=b"%PDF"))
+        db.add(m)
+        db.commit()
+        mid = m.id
+    assert "kontakt" in client.get("/kontrahenci?widok=kontakt").text and "Muzeum Test" in client.get("/kontrahenci?widok=kontakt").text
+    card = client.get(f"/kontrahenci/{cid}").text
+    for part in ("Zapytanie o kamerę", "Prosimy o ofertę.", "plan.pdf", f"/poczta/nowa?odpowiedz={mid}",
+                 'id="sms"', "Wyślij SMS", 'id="os"', "REGON 000286166", "Klient", "Napisz e-mail"):
+        assert part in card, part
+    # e-mail z karty wraca na karte
+    r = client.post("/poczta/nowa", data={"account_id": str(acc_id), "to": "muzeum@test.pl", "subject": "Oferta",
+                                          "body": "W załączeniu.", "back": f"/kontrahenci/{cid}#maile"},
+                    follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == f"/kontrahenci/{cid}#maile"
+    # SMS: zapisany w historii, czeka na bramke
+    r = client.post(f"/kontrahenci/{cid}/sms", data={"phone": "600 100 200", "body": "Przypominamy o przeglądzie."})
+    assert "czeka" in r.text or "bramki" in r.text
+    with SessionLocal() as db:
+        x = db.query(SmsMessage).one()
+        assert x.phone == "+48600100200" and x.status == "waiting" and x.contractor_id == cid
+    card = client.get(f"/kontrahenci/{cid}").text
+    assert "Przypominamy o przeglądzie." in card and "czeka na bramkę SMS" in card
+    assert "Podaj poprawny numer" in client.post(f"/kontrahenci/{cid}/sms", data={"phone": "12", "body": "x"}).text
+    # inna firma nie wysle SMS-a z cudzego kontrahenta
+    client.post("/firma/2")
+    assert client.post(f"/kontrahenci/{cid}/sms", data={"phone": "600100200", "body": "x"}).status_code == 404
+    client.post("/firma/1")

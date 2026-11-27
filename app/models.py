@@ -108,6 +108,12 @@ class Contractor(Base):
     phone: Mapped[str] = mapped_column(String(40), default="")
     notes: Mapped[str] = mapped_column(Text, default="")
     website: Mapped[str] = mapped_column(String(200), default="")
+    customer_type: Mapped[str] = mapped_column(String(20), default="", server_default="")  # CUSTOMER_TYPES
+    regon: Mapped[str] = mapped_column(String(20), default="", server_default="")
+    krs: Mapped[str] = mapped_column(String(20), default="", server_default="")
+    bank_account: Mapped[str] = mapped_column(String(40), default="", server_default="")
+    corr_address: Mapped[str] = mapped_column(String(300), default="", server_default="")  # adres korespondencyjny
+    next_contact: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
     # Faktury dla tego kontrahenta ida do KSeF od razu po wystawieniu (takze cykliczne).
     ksef_auto: Mapped[bool] = mapped_column(default=False, server_default=sa_false())
     # Skad pochodzi (np. "firmao:123"), do ponownego importu bez dubli.
@@ -121,6 +127,43 @@ class Contractor(Base):
     @property
     def address_lines(self) -> list[str]:
         return [x for x in (self.street, f"{self.postal_code} {self.city}".strip()) if x]
+
+    @property
+    def customer_type_label(self) -> str:
+        return CUSTOMER_TYPES.get(self.customer_type, self.customer_type)
+
+
+CUSTOMER_TYPES = {"CUSTOMER": "Klient", "SUPPLIER": "Dostawca", "PARTNER": "Partner", "SUBCONTRACTOR": "Podwykonawca",
+                  "PRODUCER": "Producent", "INVESTOR": "Inwestor", "COMPETITION": "Konkurencja", "OTHER": "Inny"}
+
+SMS_STATUSES = {"waiting": "czeka na bramkę SMS", "sent": "wysłany", "error": "błąd", "received": "odebrany"}
+
+
+class SmsMessage(Base):
+    """SMS do (albo od) kontrahenta. Bez podlaczonej bramki zostaje zapisany jako 'waiting' i widoczny w historii."""
+
+    __tablename__ = "sms_messages"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    contractor_id: Mapped[int | None] = mapped_column(ForeignKey("contractors.id", ondelete="SET NULL"), nullable=True,
+                                                      index=True)
+    contact_id: Mapped[int | None] = mapped_column(ForeignKey("contacts.id", ondelete="SET NULL"), nullable=True)
+    direction: Mapped[str] = mapped_column(String(3), default="out")
+    phone: Mapped[str] = mapped_column(String(40))
+    body: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(12), default="waiting")
+    provider_ref: Mapped[str] = mapped_column(String(100), default="")
+    error: Mapped[str] = mapped_column(Text, default="")
+    created_by: Mapped[str] = mapped_column(String(100), default="")
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
+    sent_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+
+    contractor: Mapped[Contractor | None] = relationship()
+
+    @property
+    def status_label(self) -> str:
+        return SMS_STATUSES.get(self.status, self.status)
 
 
 class Contact(Base):

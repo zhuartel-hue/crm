@@ -3,6 +3,9 @@
 {% block content %}
 <form class="row" method="get" style="margin-bottom:6px"><h1 style="margin:0 6px 0 0">Kontrahenci</h1><button type="submit" hidden tabindex="-1" aria-hidden="true"></button>
   <input type="search" name="q" value="{{ q }}" placeholder="nazwa, NIP, miasto" style="max-width:320px" aria-label="Szukaj">
+  <select name="widok" style="max-width:200px" aria-label="Widok" onchange="this.form.submit()"><option value="">wszyscy</option>
+    <option value="kontakt" {{ 'selected' if widok == 'kontakt' }}>skontaktować się dziś</option>
+    {% for k, v in CUSTOMER_TYPES.items() %}<option value="{{ k }}" {{ 'selected' if widok == k }}>{{ v }}</option>{% endfor %}</select>
   <span class="spacer"></span><a class="btn primary small" href="/kontrahenci/nowy">+ Kontrahent</a></form>
 <div class="card tbl"><table>
 <tr><th title="KSeF: zielony ptaszek = faktury idą automatycznie, czerwona firma = czekają na zatwierdzenie" style="width:40px">KSeF</th><th>Nazwa</th><th>NIP</th><th class="hide-sm">Miasto</th><th class="hide-sm">Telefon</th></tr>
@@ -11,7 +14,7 @@
   <button class="icon-btn" title="{{ 'Zatwierdzony: faktury idą do KSeF automatycznie (kliknij, aby wyłączyć)' if c.ksef_auto else 'Niezatwierdzony: faktury czekają na ptaszek na liście faktur (kliknij, aby zatwierdzić)' }}" aria-label="KSeF automatycznie: {{ 'tak' if c.ksef_auto else 'nie' }}">
   {% if c.ksef_auto %}<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1a9b4b" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12l5 5L20 6"/></svg>
   {% else %}<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#d33" stroke-width="2" stroke-linejoin="round"><path d="M4 21V5l8-3v19M12 9l8 3v9M2 21h20M7 8h2M7 12h2M7 16h2M15 14h2M15 18h2"/></svg>{% endif %}
-  </button></form></td><td><a href="/kontrahenci/{{ c.id }}">{{ c.name }}</a>{% if not c.is_company %} <span class="badge">prywatny</span>{% endif %}</td><td>{{ c.nip }}</td><td class="hide-sm">{{ c.city }}</td><td class="hide-sm">{{ c.phone }}</td></tr>
+  </button></form></td><td><a href="/kontrahenci/{{ c.id }}">{{ c.name }}</a>{% if not c.is_company %} <span class="badge">prywatny</span>{% endif %}{% if c.customer_type %} <span class="badge">{{ c.customer_type_label }}</span>{% endif %}{% if c.next_contact and c.next_contact <= today %} <span class="badge due" title="Następny kontakt">kontakt {{ c.next_contact|date }}</span>{% endif %}</td><td>{{ c.nip }}</td><td class="hide-sm">{{ c.city }}</td><td class="hide-sm">{{ c.phone }}</td></tr>
 {% else %}<tr><td colspan="5" class="muted">Brak kontrahentów.</td></tr>{% endfor %}
 </table></div>
 {% endblock %}

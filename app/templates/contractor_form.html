@@ -2,18 +2,18 @@
 {% block title %}Kontrahent{% endblock %}
 {% block content %}
 {% if c.id %}
-<div class="row" style="margin-bottom:4px"><h1 style="margin:0 6px 0 0">{{ c.name }}</h1>{% if not c.is_company %}<span class="badge">prywatny</span>{% endif %}
+<div class="row" style="margin-bottom:4px"><h1 style="margin:0 6px 0 0">{{ c.name }}</h1>{% if not c.is_company %}<span class="badge">prywatny</span>{% endif %}{% if c.customer_type %}<span class="badge">{{ c.customer_type_label }}</span>{% endif %}{% if c.next_contact %}<span class="badge {{ 'due' if c.next_contact <= today }}" title="Następny kontakt">kontakt {{ c.next_contact|date }}</span>{% endif %}
   <span class="spacer"></span><a class="btn small primary" href="/faktury/nowa?kontrahent={{ c.id }}">+ Faktura</a><a class="btn small" href="/wz/nowa?kontrahent={{ c.id }}">+ WZ</a>
-  <a class="btn small" href="/oferty/nowa?kontrahent={{ c.id }}">+ Oferta</a><a class="btn small" href="/poczta/nowa?kontrahent={{ c.id }}">E-mail</a></div>
-<div class="muted" style="margin-bottom:6px">{% if c.nip %}NIP {{ c.nip }} · {% endif %}{{ c.address_lines|join(', ') }}{% if c.phone %} · <a href="tel:{{ c.phone }}">{{ c.phone }}</a>{% endif %}{% if c.email %} · <a href="/poczta/nowa?kontrahent={{ c.id }}">{{ c.email }}</a>{% endif %}{% if c.website %} · <a href="{{ c.website if '://' in c.website else 'https://' ~ c.website }}" target="_blank" rel="noopener">{{ c.website }}</a>{% endif %}</div>
+  <a class="btn small" href="/oferty/nowa?kontrahent={{ c.id }}">+ Oferta</a><a class="btn small" href="/kontrahenci/{{ c.id }}?napisz=1#napisz">E-mail</a><a class="btn small" href="#sms">SMS</a></div>
+<div class="muted" style="margin-bottom:6px">{% if c.nip %}NIP {{ c.nip }} · {% endif %}{% if c.regon %}REGON {{ c.regon }} · {% endif %}{% if c.krs %}KRS {{ c.krs }} · {% endif %}{{ c.address_lines|join(', ') }}{% if c.phone %} · <a href="tel:{{ c.phone }}">{{ c.phone }}</a>{% endif %}{% if c.email %} · <a href="/poczta/nowa?kontrahent={{ c.id }}">{{ c.email }}</a>{% endif %}{% if c.website %} · <a href="{{ c.website if '://' in c.website else 'https://' ~ c.website }}" target="_blank" rel="noopener">{{ c.website }}</a>{% endif %}{% if c.corr_address %}<br>Adres do korespondencji: {{ c.corr_address }}{% endif %}{% if c.bank_account %}<br>Konto: {{ c.bank_account }}{% endif %}</div>
 <div class="grid stats" style="margin-bottom:6px">
   <div class="card stat"><div class="l">Do zapłaty</div><div class="v"><a href="/naleznosci?q={{ (c.nip or c.name)|urlencode }}">{{ owed.total|money }} zł</a></div><div class="muted">{{ owed.count }} faktur</div></div>
   <div class="card stat"><div class="l">Po terminie</div><div class="v"{% if owed.overdue_total > 0 %} style="color:var(--danger)"{% endif %}>{{ owed.overdue_total|money }} zł</div><div class="muted">{{ owed.overdue_count }} faktur</div></div>
   <div class="card stat"><div class="l">Sprzedaż razem (brutto)</div><div class="v">{{ sales_total|money }} zł</div></div>
 </div>
 <div class="row" style="gap:4px;margin-bottom:8px">
-  {% for anchor, label, n in [('notatki', 'Notatki', c.note_rows|length), ('faktury', 'Faktury', invoices|length), ('wz', 'WZ/PZ', deliveries|length), ('oferty', 'Oferty', offers|length), ('zamowienia', 'Zamówienia', orders|length), ('umowy', 'Umowy', contracts|length), ('zadania', 'Zadania', task_rows|length), ('sprzet', 'Sprzęt', equipment|length), ('koszty', 'Koszty', purchases|length), ('rozmowy', 'Rozmowy', calls|length), ('maile', 'Maile', mails|length), ('osoby', 'Osoby', c.contacts|length), ('historia', 'Historia', history|length)] %}
-  <a class="btn small" href="#{{ anchor }}">{{ label }}{% if n %} ({{ n }}{{ '+' if (anchor == 'maile' and n >= 10) or (anchor == 'faktury' and n >= 100) }}){% endif %}</a>{% endfor %}
+  {% for anchor, label, n in [('os', 'Oś czasu', 0), ('notatki', 'Notatki', c.note_rows|length), ('faktury', 'Faktury', invoices|length), ('wz', 'WZ/PZ', deliveries|length), ('oferty', 'Oferty', offers|length), ('zamowienia', 'Zamówienia', orders|length), ('umowy', 'Umowy', contracts|length), ('zadania', 'Zadania', task_rows|length), ('sprzet', 'Sprzęt', equipment|length), ('koszty', 'Koszty', purchases|length), ('rozmowy', 'Rozmowy', calls|length), ('maile', 'Maile', mail_count), ('sms', 'SMS', sms_rows|length), ('osoby', 'Osoby', c.contacts|length), ('historia', 'Historia', history|length)] %}
+  <a class="btn small" href="#{{ anchor }}">{{ label }}{% if n %} ({{ n }}{{ '+' if anchor == 'faktury' and n >= 100 }}){% endif %}</a>{% endfor %}
   <a class="btn small" href="#dane">Dane</a>
 </div>
 {% else %}<h1>Nowy kontrahent</h1>{% endif %}
@@ -33,6 +33,12 @@
   <div><label>E-mail</label><input name="email" type="email" value="{{ c.email or '' }}"></div>
   <div><label>Telefon</label><input name="phone" type="tel" value="{{ c.phone or '' }}"></div>
   <div style="grid-column:1/-1"><label>Strona www</label><input name="website" value="{{ c.website or '' }}" inputmode="url"></div>
+  <div><label>Typ</label><select name="customer_type"><option value="">—</option>{% for k, v in (CUSTOMER_TYPES or {}).items() %}<option value="{{ k }}" {{ 'selected' if c.customer_type == k }}>{{ v }}</option>{% endfor %}</select></div>
+  <div><label>Następny kontakt</label><input type="date" name="next_contact" value="{{ c.next_contact.isoformat() if c.next_contact }}"></div>
+  <div><label>REGON</label><input name="regon" value="{{ c.regon or '' }}" inputmode="numeric"></div>
+  <div><label>KRS</label><input name="krs" value="{{ c.krs or '' }}" inputmode="numeric"></div>
+  <div style="grid-column:1/-1"><label>Numer konta</label><input name="bank_account" value="{{ c.bank_account or '' }}"></div>
+  <div style="grid-column:1/-1"><label>Adres do korespondencji (gdy inny)</label><input name="corr_address" value="{{ c.corr_address or '' }}"></div>
   <div style="grid-column:1/-1"><label><input type="checkbox" name="ksef_auto" value="1" {{ 'checked' if c.ksef_auto }}> wysyłaj faktury do KSeF automatycznie zaraz po wystawieniu (także cykliczne)</label>
     <div class="muted">Bez tego faktura czeka, aż zaznaczysz ją na liście faktur i klikniesz „Wyślij zaznaczone do KSeF”.</div></div>
   <div style="grid-column:1/-1"><label>Notatki</label><textarea name="notes">{{ c.notes or '' }}</textarea></div>
@@ -43,6 +49,12 @@
 {% if c.id and not (invoices|selectattr('status', 'equalto', 'issued')|list) %}
 <form method="post" action="/kontrahenci/{{ c.id }}/usun" onsubmit="return confirm('Usunąć tego kontrahenta?')" style="margin-top:12px"><button class="btn danger">Usuń kontrahenta</button></form>{% endif %}
 {% if c.id %}<div class="kcard">
+<div class="row"><h2 id="os">Oś czasu</h2><span class="muted">wszystko, co działo się z kontrahentem, od najnowszych</span></div>
+{% if timeline %}<div class="card tbl"><table>{% for e in timeline[:15] %}<tr><td style="white-space:nowrap;width:1%">{{ e.at.strftime('%d.%m.%Y') }}</td><td style="white-space:nowrap;width:1%"><span class="badge">{{ e.kind }}</span></td>
+<td>{% if e.href %}<a href="{{ e.href }}">{{ e.text }}</a>{% else %}{{ e.text }}{% endif %}</td><td class="hide-sm muted" style="white-space:nowrap">{{ e.who }}</td></tr>{% endfor %}</table>
+{% if timeline|length > 15 %}<details><summary class="muted" style="cursor:pointer;padding:4px 8px">Pokaż starsze ({{ timeline|length - 15 }})</summary><table>{% for e in timeline[15:] %}<tr><td style="white-space:nowrap;width:1%">{{ e.at.strftime('%d.%m.%Y') }}</td><td style="white-space:nowrap;width:1%"><span class="badge">{{ e.kind }}</span></td>
+<td>{% if e.href %}<a href="{{ e.href }}">{{ e.text }}</a>{% else %}{{ e.text }}{% endif %}</td><td class="hide-sm muted" style="white-space:nowrap">{{ e.who }}</td></tr>{% endfor %}</table></details>{% endif %}</div>
+{% else %}<p class="muted">Jeszcze nic się nie działo.</p>{% endif %}
 <h2 id="notatki">Notatki</h2>
 <form method="post" action="/kontrahenci/{{ c.id }}/notatki" class="card">
   <textarea name="text" rows="2" placeholder="Nowa notatka, np. rozmowa telefoniczna, ustalenia" required></textarea>
@@ -60,11 +72,42 @@
 <td>{% if d.invoice %}<a href="/faktury/{{ d.invoice_id }}">{{ d.invoice.display_number }}</a>{% endif %}</td>
 <td>{% if d.kind == 'wz' %}{% if ps == 'paid' %}<span class="badge ok">zapłacono</span>{% elif ps == 'partial' %}<span class="badge due">częściowo</span>{% elif ps == 'unpaid' %}<span class="badge due">nie zapłacono</span>{% elif ps == 'draft' %}<span class="muted">szkic faktury</span>{% else %}<span class="muted">bez faktury</span>{% endif %}{% endif %}</td></tr>{% endfor %}</table></div>
 {% else %}<p class="muted">Brak WZ i PZ.</p>{% endif %}
-<div class="row"><h2 id="maile">Maile</h2><span class="spacer"></span><a class="btn small" href="/kontrahenci/{{ c.id }}/maile">Cała historia</a><a class="btn small primary" href="/poczta/nowa?kontrahent={{ c.id }}">Napisz e-mail</a></div>
-{% if mails %}<div class="card tbl"><table>{% for mm in mails %}<tr><td style="white-space:nowrap">{{ mm.date.strftime('%d.%m.%Y') if mm.date }}</td>
-<td>{{ '→' if mm.direction == 'out' else '←' }} <a href="/poczta/{{ mm.id }}">{{ mm.subject or '(bez tematu)' }}</a></td>
-<td class="hide-sm muted">{% if mm.direction == 'out' %}do {{ mm.to_addrs[:50] }}{% else %}{{ mm.from_name or mm.from_addr }}{% endif %}</td></tr>{% endfor %}</table></div>
+<div class="row"><h2 id="maile">Maile{% if mail_count %} ({{ mail_count }}){% endif %}</h2><span class="spacer"></span><a class="btn small" href="/kontrahenci/{{ c.id }}/maile">Cała historia</a></div>
+{% if accounts %}<details id="napisz" {{ 'open' if request.query_params.get('napisz') }}><summary class="btn small primary" style="display:inline-block;margin-bottom:6px">Napisz e-mail</summary>
+<form method="post" action="/poczta/nowa" enctype="multipart/form-data" class="card">
+  <input type="hidden" name="back" value="/kontrahenci/{{ c.id }}#maile">
+  <div class="row" style="flex-wrap:nowrap"><select name="account_id" style="max-width:220px" aria-label="Od">{% for a in accounts %}<option value="{{ a.id }}">{{ a.email }}</option>{% endfor %}</select>
+    <input name="to" value="{{ emails[0].split(',')[0].strip() if emails else '' }}" list="k-emails" placeholder="Do" required inputmode="email" aria-label="Do"></div>
+  <datalist id="k-emails">{% for e in emails %}{% for one in e.split(',') %}<option value="{{ one.strip() }}">{% endfor %}{% endfor %}</datalist>
+  <input name="subject" placeholder="Temat" style="margin-top:6px" aria-label="Temat">
+  <textarea name="body" rows="6" placeholder="Treść" style="margin-top:6px" aria-label="Treść"></textarea>
+  <div class="row" style="margin-top:6px"><input type="file" name="files" multiple style="max-width:340px" aria-label="Załączniki"><span class="spacer"></span>
+    <a class="btn small" href="/poczta/nowa?kontrahent={{ c.id }}&amp;wroc=/kontrahenci/{{ c.id }}">Pełny edytor / szablony</a><button class="btn small primary">Wyślij</button></div>
+</form></details>
+{% else %}<p class="muted">Aby pisać z karty, dodaj skrzynkę w <a href="/ustawienia/poczta">Ustawieniach poczty</a>.</p>{% endif %}
+{% if mails %}<div class="card tbl" style="padding:0 6px">{% for mm in mails %}
+<details style="border-bottom:1px solid var(--line2);padding:5px 0"><summary style="cursor:pointer;list-style:none;display:flex;gap:8px;align-items:baseline;{{ '' if mm.seen or mm.direction == 'out' else 'font-weight:600' }}">
+  <span class="muted" style="white-space:nowrap">{{ mm.date.strftime('%d.%m.%Y %H:%M') if mm.date }}</span>
+  <span class="badge {{ 'm' if mm.direction == 'out' }}">{{ 'wysłany' if mm.direction == 'out' else 'odebrany' }}</span>
+  <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ mm.subject or '(bez tematu)' }}{% if mm.attachments %} 📎{{ mm.attachments|length }}{% endif %}</span>
+  <span class="hide-sm muted" style="white-space:nowrap">{% if mm.direction == 'out' %}do {{ mm.to_addrs[:40] }}{% else %}{{ mm.from_name or mm.from_addr }}{% endif %}</span></summary>
+  <div style="padding:6px 0 4px">
+    <div class="muted" style="font-size:13px">Od: {{ mm.from_name }} &lt;{{ mm.from_addr }}&gt; · Do: {{ mm.to_addrs }}{% if mm.cc_addrs %} · DW: {{ mm.cc_addrs }}{% endif %}</div>
+    <div style="white-space:pre-wrap;margin:6px 0;max-height:320px;overflow:auto">{{ (mm.body_text or '')[:4000] }}</div>
+    {% if mm.attachments %}<div class="row" style="gap:6px">{% for a in mm.attachments %}{% if a.size and a.size < 25*1024*1024 %}<a class="btn small" href="/poczta/zalacznik/{{ a.id }}">📎 {{ a.filename or 'załącznik' }} <span class="muted">({{ (a.size / 1024)|round|int }} kB)</span></a>{% else %}<span class="badge">📎 {{ a.filename }}</span>{% endif %}{% endfor %}</div>{% endif %}
+    <div class="row" style="margin-top:6px"><a class="btn small primary" href="/poczta/nowa?odpowiedz={{ mm.id }}&amp;wroc=/kontrahenci/{{ c.id }}">Odpowiedz</a><a class="btn small" href="/poczta/{{ mm.id }}">Otwórz</a></div>
+  </div></details>{% endfor %}</div>
+{% if mail_count > mails|length %}<p class="muted"><a href="/kontrahenci/{{ c.id }}/maile">Pokaż wszystkie {{ mail_count }} wiadomości →</a></p>{% endif %}
 {% else %}<p class="muted">Brak wiadomości z adresów tego kontrahenta.</p>{% endif %}
+<div class="row"><h2 id="sms">SMS</h2></div>
+<form method="post" action="/kontrahenci/{{ c.id }}/sms" class="card">
+  <div class="row" style="flex-wrap:nowrap"><input name="phone" value="{{ phones[0] if phones else '' }}" list="k-phones" placeholder="Numer telefonu" required inputmode="tel" style="max-width:200px" aria-label="Numer">
+  <datalist id="k-phones">{% for ph in phones %}<option value="{{ ph }}">{% endfor %}</datalist>
+  <input name="body" maxlength="640" placeholder="Treść SMS-a" required aria-label="Treść SMS"><button class="btn small primary">Wyślij SMS</button></div>
+  {% if not sms_ready %}<div class="muted" style="font-size:13px;margin-top:4px">Bramka SMS nie jest jeszcze podłączona: SMS zapisze się w historii jako „czeka na bramkę” i wyśle się po podłączeniu.</div>{% endif %}
+</form>
+{% if sms_rows %}<div class="card tbl"><table>{% for x in sms_rows %}<tr><td style="white-space:nowrap">{{ x.created_at.strftime('%d.%m.%Y %H:%M') if x.created_at }}</td><td style="white-space:nowrap">{{ x.phone }}</td><td>{{ x.body }}</td>
+<td><span class="badge {{ 'ok' if x.status == 'sent' else ('due' if x.status == 'error' else 'warn') }}">{{ x.status_label }}</span></td><td class="hide-sm muted">{{ x.created_by }}</td></tr>{% endfor %}</table></div>{% endif %}
 <div class="row"><h2 id="rozmowy">Rozmowy telefoniczne</h2><span class="spacer"></span><a class="btn small" href="/polaczenia?q={{ c.name|urlencode }}">Wszystkie</a></div>
 {% set call_contractor = c %}<details><summary class="btn small" style="display:inline-block;margin-bottom:6px">+ Zapisz rozmowę</summary>{% include "_call_form.html" %}</details>
 {% if calls %}<div class="card tbl"><table>{% for cl in calls %}<tr><td style="white-space:nowrap">{{ cl.started_at.strftime('%d.%m.%Y %H:%M') }}</td>
