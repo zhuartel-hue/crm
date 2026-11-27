@@ -43,6 +43,7 @@ chmod 600 /etc/sygnavo/test.env
 log "Kod panelu testowego: $WERSJA"
 if [ "$(readlink -f "$ZRODLO")" != "$(readlink -f "$TEST_DIR")" ]; then
   rm -rf "$TEST_DIR.nowy" && cp -a "$ZRODLO" "$TEST_DIR.nowy"
+  rm -f "$TEST_DIR.nowy/.env"   # sekrety produkcji nigdy w panelu testowym
   rm -rf "$TEST_DIR" && mv "$TEST_DIR.nowy" "$TEST_DIR"
 fi
 tdc build test-app
