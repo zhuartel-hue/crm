@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}{{ K.title }}{% endblock %}
+{% block content %}
+<div class="row"><h1>{{ K.title }} · {{ company.short_name }}</h1><span class="spacer"></span><a class="btn" href="{{ K.back }}">{{ {'offer': 'Oferty', 'contract': 'Umowy', 'order': 'Zamówienia'}[kind] }}</a></div>
+<p class="muted">Zmieniaj nazwy, kolory i kolejność (przeciągnij za ⠿ albo strzałkami).
+{% if kind == 'offer' %}„Grupa” mówi programowi, czy oferta jeszcze czeka na klienta (liczy się do otwartych i przypomnień), czy jest wygrana albo przegrana.{% elif kind == 'order' %}„Grupa” mówi programowi, czy zamówienie jest jeszcze w toku (liczy się do otwartych i terminów), zrealizowane czy anulowane.{% else %}Status umowy to informacja dla zespołu. Faktury cykliczne włączasz osobno w umowie („Wystawiaj faktury”), więc zmiana statusu ich nie zatrzymuje.{% endif %}
+Wbudowanych statusów nie da się usunąć, ale możesz je ukryć z listy wyboru.</p>
+{% if error %}<div class="error">{{ error }}</div>{% endif %}
+<form method="post" id="st-form">
+<div class="card tbl"><table id="st-table">
+<tr><th></th><th>Nazwa</th><th>Grupa</th><th>Kolor</th><th class="n">{{ {'offer': 'Ofert', 'contract': 'Umów', 'order': 'Zamówień'}[kind] }}</th><th>Ukryty</th><th>Usuń</th></tr>
+{% for r in rows %}<tr class="st-row">
+  <td style="white-space:nowrap"><span class="dash-grip" title="Przeciągnij">⠿</span><button type="button" class="btn small st-up" title="W górę">↑</button><button type="button" class="btn small st-down" title="W dół">↓</button></td>
+  <td><input type="hidden" name="k" value="{{ r.k }}"><input name="label" value="{{ r.label }}" maxlength="60" required>
+    {% if r.builtin %}<span class="muted" style="font-size:12px">wbudowany</span>{% endif %}</td>
+  <td><select name="group">{% for g, gl in GROUPS.items() %}<option value="{{ g }}" {{ 'selected' if r.group == g }}>{{ gl }}</option>{% endfor %}</select></td>
+  <td><select name="color" class="st-color">{% for c, cl in COLORS.items() %}<option value="{{ c }}" {{ 'selected' if r.color == c }}>{{ cl }}</option>{% endfor %}</select>
+    <span class="badge {{ r.color }} st-prev">{{ r.label }}</span></td>
+  <td class="n">{{ used.get(r.k, 0) }}</td>
+  <td><input type="hidden" name="hidden" value="{{ '1' if r.hidden else '0' }}"><input type="checkbox" class="st-flag" data-for="hidden" {{ 'checked' if r.hidden }} aria-label="ukryj"></td>
+  <td>{% if not r.builtin %}<input type="hidden" name="delete" value="0"><input type="checkbox" class="st-flag" data-for="delete" aria-label="usuń">{% else %}<input type="hidden" name="delete" value="0">{% endif %}</td>
+</tr>{% endfor %}
+<tr class="st-row"><td class="muted">nowy</td>
+  <td><input type="hidden" name="k" value=""><input name="label" value="" maxlength="60" placeholder="{{ {'offer': 'np. Czeka na wizję lokalną', 'contract': 'np. Zawieszona, Wypowiedziana', 'order': 'np. Czeka na montaż'}[kind] }}"></td>
+  <td><select name="group">{% for g, gl in GROUPS.items() %}<option value="{{ g }}">{{ gl }}</option>{% endfor %}</select></td>
+  <td><select name="color">{% for c, cl in COLORS.items() %}<option value="{{ c }}">{{ cl }}</option>{% endfor %}</select></td>
+  <td></td><td><input type="hidden" name="hidden" value="0"></td><td><input type="hidden" name="delete" value="0"></td></tr>
+</table></div>
+<p class="row" style="gap:8px"><button class="btn primary">Zapisz statusy</button><span class="spacer"></span>
+  <button class="btn" name="reset" value="1" onclick="return confirm('Przywrócić statusy jak w Firmao? Własne statusy znikną.')">Przywróć domyślne</button></p>
+</form>
+{% endblock %}
+{% block scripts %}<script>
+(function () {
+  const t = document.getElementById('st-table');
+  t.addEventListener('change', e => {
+    const f = e.target.closest('.st-flag');
+    if (f) f.closest('td').querySelector('input[name="' + f.dataset.for + '"]').value = f.checked ? '1' : '0';
+    if (e.target.classList.contains('st-color')) { const p = e.target.parentNode.querySelector('.st-prev'); p.className = 'badge st-prev ' + e.target.value; }
+  });
+  t.addEventListener('input', e => {
+    if (e.target.name === 'label') { const p = e.target.closest('tr').querySelector('.st-prev'); if (p) p.textContent = e.target.value; }
+  });
+  t.addEventListener('click', e => {
+    const tr = e.target.closest('tr'); if (!tr) return;
+    if (e.target.classList.contains('st-up') && tr.previousElementSibling && tr.previousElementSibling.classList.contains('st-row')) tr.parentNode.insertBefore(tr, tr.previousElementSibling);
+    if (e.target.classList.contains('st-down') && tr.nextElementSibling && tr.nextElementSibling.querySelector('input[name=k]').value) tr.parentNode.insertBefore(tr.nextElementSibling, tr);
+  });
+  let drag = null;
+  t.addEventListener('pointerdown', e => { const g = e.target.closest('.dash-grip'); if (!g) return; drag = g.closest('tr'); drag.style.opacity = .5; g.setPointerCapture(e.pointerId); e.preventDefault(); });
+  t.addEventListener('pointermove', e => {
+    if (!drag) return;
+    const el = document.elementFromPoint(e.clientX, e.clientY), over = el && el.closest('tr.st-row');
+    if (!over || over === drag || !over.querySelector('input[name=k]').value) return;
+    const r = over.getBoundingClientRect();
+    over.parentNode.insertBefore(drag, e.clientY > r.top + r.height / 2 ? over.nextSibling : over);
+  });
+  const end = () => { if (drag) { drag.style.opacity = ''; drag = null; } };
+  t.addEventListener('pointerup', end); t.addEventListener('pointercancel', end);
+})();
+</script>{% endblock %}

@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edycja ' ~ o.display_number if o.id else 'Nowa oferta' }}{% endblock %}
+{% block content %}
+<h1>{{ 'Edycja oferty ' ~ o.display_number if o.id else 'Nowa oferta' }}</h1>
+<form method="post" class="card" action="{{ '/oferty/%d/edytuj' % o.id if o.id else '/oferty/nowa' }}">
+<div class="grid">
+  <div style="grid-column:1/-1"><label>Tytuł oferty (dla nas, klient go nie widzi)</label><input name="title" value="{{ o.title }}" placeholder="np. Home Kalinowska, kamery modernizacja"></div>
+  <div style="grid-column:1/-1"><label>Nagłówek na PDF dla klienta (opcjonalnie)</label><input name="heading" value="{{ o.heading }}" placeholder="Oferta handlowa"></div>
+  <div><label>Data oferty</label><input type="date" name="issue_date" value="{{ o.issue_date.isoformat() if o.issue_date }}"></div>
+  <div><label>Ważna do</label><input type="date" name="valid_until" value="{{ o.valid_until.isoformat() if o.valid_until }}"></div>
+  <div><label>Status</label><select name="status" class="searchable" data-placeholder="szukaj statusu">{% for k, v in STATUSES.items() %}<option value="{{ k }}" {{ 'selected' if o.status == k }}>{{ v }}</option>{% endfor %}</select></div>
+  <div><label>Szansa (%)</label><input name="probability" inputmode="numeric" value="{{ o.probability if o.probability is not none else '' }}" placeholder="np. 50"></div>
+  <div style="grid-column:1/-1"><label>Kontrahent z bazy</label><select name="contractor_id" id="contractor">
+    <option value="">—</option>
+    {% for c in contractors %}<option value="{{ c.id }}" data-search="{{ c.nip }} {{ c.city }}" data-name="{{ c.name }}" data-address="{{ c.address_lines|join('\n') }}" data-email="{{ (c.email or '').split(',')[0]|trim }}" {{ 'selected' if c.id == o.contractor_id }}>{{ c.name }}</option>{% endfor %}
+  </select></div>
+  <div style="grid-column:1/-1"><label>Klient</label><input name="recipient_name" id="recipient_name" value="{{ o.recipient_name }}" required></div>
+  <div style="grid-column:1/-1"><label>Adres klienta</label><textarea name="recipient_address" id="recipient_address" rows="2">{{ o.recipient_address }}</textarea></div>
+  <div><label>Osoba kontaktowa</label><input name="contact_person" value="{{ o.contact_person }}"></div>
+  <div><label>E-mail do wysyłki</label><input name="email" id="offer_email" value="{{ o.email }}" inputmode="email"></div>
+</div>
+<h2>Pozycje</h2>
+<p><label><input type="checkbox" name="prices_gross" value="1" id="prices_gross" {{ 'checked' if o.prices_gross }}> Ceny brutto</label></p>
+<div id="items">
+{% for it in (o.items or [none]) %}
+  <div class="item grid">
+    <div class="name" style="grid-column:1/-1"><label>Nazwa{% if products %} (wpisz kod lub nazwę produktu){% endif %}</label>
+      <input name="item_name" list="product-list" autocomplete="off" value="{{ it.name if it else '' }}">
+      <input type="hidden" name="item_product" value="{{ (it.product_id or '') if it else '' }}"></div>
+    <div><label>Ilość</label><input name="item_qty" inputmode="decimal" value="{{ it.quantity|qty if it else '1' }}"></div>
+    <div><label>Jedn.</label><input name="item_unit" value="{{ it.unit if it else 'szt.' }}"></div>
+    <div><label>Cena</label><input name="item_price" inputmode="decimal" value="{{ it.unit_price|money if it and it.unit_price is not none else '' }}"></div>
+    <div><label>VAT</label><select name="item_rate">{% for r in VAT_RATES %}<option value="{{ r }}" {{ 'selected' if (it.vat_rate if it else '23') == r }}>{{ r }}{{ '%' if r.isdigit() }}</option>{% endfor %}</select></div>
+    <div><label>&nbsp;</label><button type="button" class="btn small remove">Usuń pozycję</button></div>
+  </div>
+{% endfor %}
+</div>
+<datalist id="product-list">{% for pr in products %}<option value="{{ pr.label }}"></option>{% endfor %}</datalist>
+<p class="row"><button type="button" class="btn" id="add">+ Pozycja</button>
+<button type="button" class="btn" data-quick="Dojazd" data-unit="km">+ Dojazd (km)</button>
+<button type="button" class="btn" data-quick="Roboczogodziny" data-unit="rbh">+ Roboczogodziny</button>
+<span class="spacer"></span><b id="total"></b></p>
+<div class="grid">
+  <div style="grid-column:1/-1"><label>Uwagi dla klienta (na PDF)</label><textarea name="notes" rows="3" placeholder="np. termin realizacji, warunki płatności, gwarancja">{{ o.notes }}</textarea></div>
+  <div style="grid-column:1/-1"><label>Notatka wewnętrzna (tylko w programie)</label><textarea name="internal_notes" rows="2">{{ o.internal_notes }}</textarea></div>
+</div>
+<p class="row"><button class="btn primary">Zapisz ofertę</button>{% if o.id %}<a class="btn" href="/oferty/{{ o.id }}">Anuluj</a>{% endif %}</p>
+</form>
+{% endblock %}
+{% block scripts %}
+<script>const PRODUCTS = {{ products_json|safe }};</script>
+<script src="/static/wz.js"></script>
+<script>
+document.getElementById('contractor').addEventListener('change', function () {
+  var o = this.selectedOptions[0], e = document.getElementById('offer_email');
+  if (o && o.value && o.dataset.email && !e.value) e.value = o.dataset.email;
+});
+</script>
+{% endblock %}

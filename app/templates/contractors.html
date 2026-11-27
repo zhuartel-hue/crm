@@ -2,12 +2,16 @@
 {% block title %}Kontrahenci{% endblock %}
 {% block content %}
 <div class="row"><h1>Kontrahenci</h1><span class="spacer"></span><a class="btn primary" href="/kontrahenci/nowy">+ Kontrahent</a></div>
-<p class="muted">Lista wspólna dla obu firm.</p>
+<p class="muted">Kontrahenci bieżącej firmy. Wyniki pojawiają się w trakcie pisania.</p>
 <form class="card row" method="get"><div style="flex:1"><input name="q" value="{{ q }}" placeholder="nazwa, NIP, miasto"></div><button class="btn">Szukaj</button></form>
 <div class="card tbl"><table>
-<tr><th>Nazwa</th><th>NIP</th><th class="hide-sm">Miasto</th><th class="hide-sm">Telefon</th></tr>
+<tr><th title="KSeF: zielony ptaszek = faktury idą automatycznie, czerwona firma = czekają na zatwierdzenie" style="width:40px">KSeF</th><th>Nazwa</th><th>NIP</th><th class="hide-sm">Miasto</th><th class="hide-sm">Telefon</th></tr>
 {% for c in contractors %}
-<tr><td><a href="/kontrahenci/{{ c.id }}">{{ c.name }}</a>{% if not c.is_company %} <span class="badge">prywatny</span>{% endif %}</td><td>{{ c.nip }}</td><td class="hide-sm">{{ c.city }}</td><td class="hide-sm">{{ c.phone }}</td></tr>
-{% else %}<tr><td colspan="4" class="muted">Brak kontrahentów.</td></tr>{% endfor %}
+<tr><td><form method="post" action="/kontrahenci/{{ c.id }}/ksef-auto" style="margin:0"><input type="hidden" name="back" value="{{ request.url.path }}{{ '?' + request.url.query if request.url.query }}">
+  <button class="icon-btn" title="{{ 'Zatwierdzony: faktury idą do KSeF automatycznie (kliknij, aby wyłączyć)' if c.ksef_auto else 'Niezatwierdzony: faktury czekają na ptaszek na liście faktur (kliknij, aby zatwierdzić)' }}" aria-label="KSeF automatycznie: {{ 'tak' if c.ksef_auto else 'nie' }}">
+  {% if c.ksef_auto %}<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1a9b4b" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12l5 5L20 6"/></svg>
+  {% else %}<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#d33" stroke-width="2" stroke-linejoin="round"><path d="M4 21V5l8-3v19M12 9l8 3v9M2 21h20M7 8h2M7 12h2M7 16h2M15 14h2M15 18h2"/></svg>{% endif %}
+  </button></form></td><td><a href="/kontrahenci/{{ c.id }}">{{ c.name }}</a>{% if not c.is_company %} <span class="badge">prywatny</span>{% endif %}</td><td>{{ c.nip }}</td><td class="hide-sm">{{ c.city }}</td><td class="hide-sm">{{ c.phone }}</td></tr>
+{% else %}<tr><td colspan="5" class="muted">Brak kontrahentów.</td></tr>{% endfor %}
 </table></div>
 {% endblock %}

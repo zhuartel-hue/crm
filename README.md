@@ -15,6 +15,18 @@ biała lista VAT, wysyłka mailem, przeniesienie danych z Firmao.
 - **Auta na placu**: marka, model, VIN, rocznik, przebieg, nr rej., cena nabycia,
   cena sprzedaży. „Sprzedaj” wypełnia fakturę VAT danymi auta, a po wystawieniu
   auto dostaje status „Sprzedany”.
+- **Rodzaje faktur**: VAT, proforma (bez skutków podatkowych, nie liczy się do sprzedaży),
+  zaliczkowa (całe zamówienie + otrzymana zaliczka, VAT zaliczki proporcjonalnie do stawek),
+  końcowa (zamówienie minus wszystkie nierozliczone zaliczki nabywcy), korygująca
+  (pozycje przed i po, różnica wg stawek, przyczyna korekty). Z proformy jednym kliknięciem
+  powstaje faktura VAT, z zaliczkowej końcowa, z VAT/końcowej korekta. Osobne serie:
+  `FV` (VAT i końcowe), `PRO`, `FZ`, `FK`; wzory w Ustawieniach.
+- **Produkty**: katalog wspólny dla obu firm (kod, nazwa, jm., cena netto/brutto, VAT, EAN,
+  opis, zdjęcia). Zdjęcia są w bazie (JPEG max 1600 px + miniatura), więc trafiają do nocnej
+  kopii. Na fakturze wpisz kod albo nazwę i wybierz produkt z listy. Claude: `search_products`,
+  a w `create_invoice_draft` pozycja może mieć `product_id`; REST: `GET /api/v1/products`.
+- **Konto**: zmiana hasła w aplikacji (skrót scrypt w bazie; od tej chwili hasło z `.env`
+  przestaje działać).
 - **Numeracja** bez dziur, osobno dla każdej firmy, od 1 co miesiąc
   albo co rok; wzór do ustawienia (domyślnie `FV/{nr}/{MM}/{RRRR}`).
 - **Szkic → wystawienie**: numer nadaje się przy wystawieniu. Wystawionej faktury
@@ -43,7 +55,118 @@ zalogowanie do programu i zaznaczenie uprawnień. Instrukcja jest też w program
 - **Cofnięcie dostępu**: zakładka **Claude → Aktywne połączenia → Cofnij**.
 - **Dziennik**: każda zmiana z programu, API i Claude (kto, co, kiedy), zakładka **Dziennik**.
 - **REST API** `/api/v1/...` (te same operacje, nagłówek `Authorization: Bearer <klucz>`);
-  klucz tworzy się w zakładce **Claude**.
+  klucz tworzy się w zakładce **Claude**. Korekta / VAT z proformy / końcowa:
+  `POST /api/v1/invoices/{id}/correction` (`reason`, opcjonalnie `items` po korekcie),
+  `/from-proforma`, `/final`. Te same operacje w MCP: `create_correction_draft`,
+  `create_invoice_from_proforma`, `create_final_invoice_draft`; `create_invoice_draft`
+  przyjmuje `kind` (`vat`, `proforma`, `advance` + `advance_gross`).
+
+## Bank: wpłaty z PKO BP
+
+Zakładka **Bank** wczytuje wyciągi MT940 z iPKO (Moje sprawy → Raporty → MT940 → „Włącz” przy
+rachunku firmowym; raporty są bezpłatne). Firma jest rozpoznawana po numerze rachunku z Ustawień.
+Wpłata z numerem faktury w tytule albo z kwotą i nadawcą pasującymi do jednej faktury księguje się
+sama (pole „Zapłacono”); pozostałe czekają w „Do sprawdzenia” z propozycją albo do ręcznego
+przypisania. Ten sam plik można wczytać wiele razy, powtórzone operacje są pomijane.
+Format: specyfikacja PKO „Struktura pliku wyjściowego - Raport MT940” (CP852, podpola `~NN`).
+
+## Poczta
+
+Zakładka **Poczta**: skrzynki IMAP/SMTP przypisane do firm (Ustawienia → Skrzynki pocztowe).
+Sygnavo pobiera INBOX i folder wysłanych co `MAIL_SYNC_MINUTES` minut (domyślnie 5; 0 wyłącza),
+tylko do odczytu, nic nie usuwa na serwerze poczty. Wiadomość łączy się z kontrahentem po adresie
+e-mail i z fakturą po numerze w temacie. Fakturę można wysłać z PDF-em przyciskiem „Wyślij e-mailem”.
+Hasła skrzynek są zaszyfrowane kluczem z `SECRET_KEY`. HTML wiadomości jest wyświetlany w ramce
+sandbox z CSP (bez skryptów i bez obrazków z internetu).
+
+## WZ i aplikacja na telefon
+
+Zakładka **WZ**: wydanie towaru (z faktury przyciskiem „Wystaw WZ” albo od zera, z listą produktów),
+numeracja `WZ/{nr}/{MM}/{RRRR}` (Ustawienia), podpis odbiorcy palcem na telefonie, PDF z podpisem.
+Sygnavo można dodać do ekranu początkowego telefonu (Safari → Udostępnij → „Do ekranu początkowego”):
+otwiera się wtedy jak aplikacja, z ikoną. Service worker niczego nie zapisuje offline.
+
+Zakładka **Magazyn** (jak w Firmao): WZ i PZ. Pozycje mogą mieć cenę i VAT, są przyciski „+ Dojazd (km)”
+i „+ Roboczogodziny”; z wystawionej WZ przycisk „Wystaw fakturę z WZ” tworzy szkic faktury VAT.
+Wystawienie WZ zmniejsza, a PZ zwiększa stan produktu z katalogu (usługi nie mają stanu). Stan i historię ruchów
+widać na karcie produktu; tam też ręczna korekta stanu (np. inwentaryzacja). W numeracji `{NNN}` daje numer
+z zerami (`{RRRR}/{MM}/{NNN}/WZ` → `2027/02/001/WZ`, jak w Firmao).
+
+## Należności i koszty
+
+Zakładka **Należności**: nieopłacone faktury (wszystkie, po terminie, z terminem w ciągu 7 dni), suma i liczba dni po terminie.
+Wpłatę, także częściową, zapisujesz z listy albo z faktury (kwota, data, forma). Wpłaty z banku (MT940) liczą się same.
+„Przypomnij” otwiera gotowy e-mail z kwotą do zapłaty, terminem i numerem konta. Po wysłaniu licznik przypomnień rośnie.
+
+Zakładka **Koszty**: faktury, na których firma jest nabywcą, pobierane z KSeF co `KSEF_PURCHASE_SYNC_HOURS` godzin
+(domyślnie 6) albo przyciskiem „Pobierz z KSeF”. Każda czeka na weryfikację (zatwierdź / odrzuć); można ją oznaczyć
+jako zapłaconą i pobrać oryginalny XML. Działa dla firm z włączonym KSeF (certyfikat albo token).
+
+## Faktury cykliczne i szablony maili
+
+Zakładka **Faktury cykliczne**: abonamenty i umowy (co miesiąc, kwartał, pół roku, rok; wybrany dzień miesiąca, koniec umowy).
+W dniu terminu program tworzy szkic, wystawia fakturę albo wystawia i wysyła ją mailem (sprawdza co `RECURRING_CHECK_MINUTES`,
+domyślnie 60). W nazwach pozycji działają `{okres}`, `{miesiac}`, `{rok}`. Cykliczną robi się też z faktury: „Powtarzaj cyklicznie”.
+
+**Szablony maili** (menu System): treści do wysyłki faktury, przypomnienia, WZ i faktury cyklicznej, ze znacznikami
+(`{numer}`, `{kwota}`, `{do_zaplaty}`, `{termin}`...) i podglądem na żywo. Przy wysyłce można wybrać inny szablon.
+
+## Bank automatycznie (Enable Banking)
+
+Bank → „Podłącz bank (automatycznie)”. Sygnavo łączy się z bankiem przez licencjonowanego pośrednika PSD2
+(Enable Banking, AISP nadzorowany przez FIN-FSA): tylko odczyt sald i operacji, bez przelewów.
+
+- Jedna aplikacja Enable Banking na cały program: identyfikator i klucz `.pem` wgrywane na stronie `/bank/polaczenie`,
+  klucz zapisany zaszyfrowany (`app_settings`). Każda firma podłącza swoje rachunki osobno (`bank_connections`).
+- Zgoda w banku ważna tyle, ile pozwala bank (zwykle ~180 dni). Na 14 dni przed końcem przypomnienie na Start i w Banku;
+  odnowienie to ponowne „Podłącz” tego samego banku (stare połączenie zamyka się samo).
+- Operacje zaksięgowane (BOOK) pobierane w tle co `BANK_SYNC_HOURS` (domyślnie 6; banki pozwalają na ok. 4 pobrania dziennie)
+  i od razu dopasowywane do faktur tymi samymi zasadami co MT940. Powtórki odrzuca odcisk operacji.
+- Bez umowy z Enable Banking aplikacja działa w trybie „restricted”: tylko rachunki podłączone w ich panelu
+  („Activate by linking accounts”). Do sprzedaży Sygnavo innym firmom potrzebna umowa.
+- Publiczne strony `/polityka-prywatnosci` i `/regulamin` (wymagane przy rejestracji aplikacji).
+- Wczytywanie MT940 zostaje jako zapas.
+
+## Oferty
+
+Menu **Oferty** (`/oferty`): oferta z pozycjami jak na WZ (produkty z katalogu, dojazd w km, roboczogodziny), ceny
+netto albo brutto, data ważności, szansa w %, osoba kontaktowa i notatka wewnętrzna. Numer nadaje się przy pierwszym
+zapisie wg wzoru z Ustawień (domyślnie `OF/{nr}/{MM}/{RRRR}`).
+
+- Statusy jak w Firmao: nowa, wysłana, przyjęta, w realizacji, zrealizowana, odrzucona, anulowana.
+- **Wyślij mailem**: szablon „Wysyłka oferty”, PDF w załączniku; po wysłaniu nowa oferta dostaje status „wysłana”.
+- **Faktura z oferty** i **WZ z oferty** tworzą szkice do sprawdzenia; oferta przechodzi w „przyjęta”.
+- **Kopiuj jako nową**: ta sama treść, dzisiejsza data.
+- Na Start przypomnienie o otwartych ofertach, którym za 3 dni lub mniej kończy się ważność (albo już minęła).
+- Na karcie kontrahenta lista jego ofert i przycisk „+ Oferta”.
+
+## Osoby kontaktowe i karta klienta
+
+Menu Klienci → **Osoby kontaktowe** (`/kontakty`): imię, nazwisko, stanowisko, e-mail, dwa telefony, notatki, firma.
+Karta kontrahenta zbiera wszystko o kliencie: osoby kontaktowe, faktury, oferty, WZ/PZ i korespondencję, z przyciskami
+„+ Osoba”, „+ Faktura”, „+ Oferta”. Wyszukiwarka kontrahentów szuka też po osobach (nazwisko, e-mail, telefon).
+Poczta przypisuje wiadomość do firmy również po adresie e-mail jej osoby kontaktowej.
+
+## Import z Firmao
+
+Menu System → **Import z Firmao** (`/import/firmao`): wgraj `customers.json`, `products.json` i `contacts.json` z eksportu
+(`tools/firmao_export.py`, tylko odczyt z API Firmao). Rekordy pamiętają swoje id z Firmao (`source_ref`), więc
+ponowny import aktualizuje zamiast dublować; istniejącego kontrahenta dopasowuje po NIP, produkt po kodzie.
+
+Całe archiwum (faktury sprzedaży z pozycjami, korekty, koszty, WZ/PZ, oferty i powiązania między nimi) idzie z
+wiersza poleceń, bo jest za duże na formularz:
+
+```bash
+python3 tools/firmao_bundle.py                       # na komputerze z eksportem: jeden mały plik .json.gz
+docker compose cp firmao-bundle.json.gz app:/tmp/    # na serwerze
+docker compose run --rm --no-deps -v /tmp/firmao-bundle.json.gz:/tmp/b.json.gz app \
+    python -m app.firmao_cli /tmp/b.json.gz --firma 5551859956 --dry-run   # bez --dry-run zapisuje
+```
+
+Dokumenty zachowują numery i kwoty z Firmao. Faktury nie idą do KSeF: z numerem KSeF z Firmao mają status
+„przyjęta”, bez niego „wystawiona poza Sygnavo”. WZ/PZ nie zmieniają stanów (stany przychodzą z produktów).
+Gdy numery z Firmao mają układ `RRRR/MM/NNN` (+ końcówka jak `/KOR`, `/WZ`, `/O/S`), firma przejmuje ten wzór,
+a liczniki są ustawiane po ostatnim numerze w każdym miesiącu, więc numeracja idzie dalej bez dziur.
 
 ## Uruchomienie u siebie
 
@@ -94,7 +217,8 @@ KSeF: podpisy XAdES, certyfikaty i XML (FA(3)) mają tu dojrzałe biblioteki.
 ## Dalsze etapy
 
 1. (Etap 2, gotowe) Konektor dla Claude: MCP + OAuth + REST API + dziennik.
-1. Korekty, proformy, zaliczki; migracje bazy (Alembic) przed pierwszymi prawdziwymi danymi.
+1. (Gotowe) Korekty, proformy, zaliczki; migracje bazy (Alembic, `migrations/`, uruchamiane
+   automatycznie przy starcie; stara baza bez `alembic_version` dostaje stempel `0001`).
 2. KSeF 2.0: logowanie certyfikatem KSeF (bez tokenu), wysyłka FA(3), numer KSeF
    i UPO przy fakturze, kod QR na PDF, tryb offline, pobieranie faktur zakupowych.
    Najpierw środowisko testowe MF.

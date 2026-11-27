@@ -1,0 +1,73 @@
+# Sygnavo na wlasnym serwerze (sygnavo-1). Projekt compose "crm", zeby nazwy kontenerow
+# (crm-app-1, crm-db-1) byly takie same jak na starym serwerze i dzialaly istniejace skrypty kopii.
+# Uruchamiane przez deploy/serwer/zainstaluj.sh; kod aplikacji w ${APP_DIR:-/opt/crm}.
+name: crm
+
+services:
+  caddy:
+    image: caddy:2.8-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN}
+      APP_ALIASES: ${APP_ALIASES:-}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on: [app]
+    mem_limit: 128m
+
+  app:
+    image: crm:latest
+    build: ${APP_DIR:-/opt/crm}
+    restart: unless-stopped
+    env_file: ${APP_DIR:-/opt/crm}/.env
+    environment:
+      DATABASE_URL: postgresql+psycopg://crm:${DB_PASSWORD}@db/crm
+      COOKIE_SECURE: "true"
+    depends_on:
+      db:
+        condition: service_healthy
+    # Domyslnie zadania w tle (poczta, KSeF, bank, umowy) dzialaja w tym procesie (BACKGROUND_JOBS=app).
+    # Przejscie na osobny worker: BACKGROUND_JOBS=off w .env i `docker compose --profile worker up -d`
+    # (README, sekcja Rozbudowa). Dopiero wtedy wolno uruchomic kilka procesow aplikacji.
+    mem_limit: 1536m
+
+  worker:
+    image: crm:latest
+    profiles: ["worker"]
+    restart: unless-stopped
+    command: ["python", "-m", "app.worker"]
+    env_file: ${APP_DIR:-/opt/crm}/.env
+    environment:
+      DATABASE_URL: postgresql+psycopg://crm:${DB_PASSWORD}@db/crm
+    depends_on:
+      db:
+        condition: service_healthy
+    mem_limit: 768m
+
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: crm
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: crm
+    command: ["postgres", "-c", "shared_buffers=512MB", "-c", "effective_cache_size=2GB", "-c", "max_connections=60"]
+    shm_size: 256m
+    volumes:
+      # Dane bazy na osobnym dysku Hetzner Volume (powiekszanie bez wylaczania serwera).
+      - ${DB_DATA_DIR:?ustaw DB_DATA_DIR}:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U crm"]
+      interval: 5s
+      retries: 30
+    mem_limit: 3g
+
+volumes:
+  caddy-data:
+  caddy-config:

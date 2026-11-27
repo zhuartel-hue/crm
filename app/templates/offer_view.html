@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Oferta {{ o.display_number }}{% endblock %}
+{% block content %}
+<div class="row"><h1>Oferta {{ o.display_number }}</h1>
+<span class="badge {{ o.status_class }}">{{ o.status_label }}</span>
+{% if o.expired %}<span class="badge warn">ważność minęła</span>{% endif %}</div>
+<form method="post" action="/oferty/{{ o.id }}/wyglad" class="row" style="margin-bottom:8px">
+  <label style="margin:0">Wygląd PDF</label>
+  <select name="pdf_template" style="max-width:300px" onchange="this.form.submit()">{% for k, v in OFFER_PDF_TEMPLATES.items() %}<option value="{{ k }}" {{ 'selected' if o.pdf_template == k }}>{{ v }}</option>{% endfor %}</select>
+</form>
+<div class="row" style="margin-bottom:16px">
+  <a class="btn" href="/oferty/{{ o.id }}/pdf" target="_blank">PDF</a>
+  <a class="btn primary" href="/poczta/nowa?oferta={{ o.id }}">Wyślij mailem</a>
+  <a class="btn" href="/oferty/{{ o.id }}/edytuj">Edytuj</a>
+  {% if not o.invoice_id %}<form method="post" action="/oferty/{{ o.id }}/faktura"><button class="btn">Faktura z oferty</button></form>{% endif %}
+  {% if not o.delivery_id %}<form method="post" action="/oferty/{{ o.id }}/wz"><button class="btn">WZ z oferty</button></form>{% endif %}
+  <a class="btn" href="/zamowienia/nowe?oferta={{ o.id }}">Zamówienie z oferty</a>
+  <a class="btn" href="/oferty/nowa?kopia={{ o.id }}">Kopiuj jako nową</a>
+  <form method="post" action="/oferty/{{ o.id }}/wzor" onsubmit="var n=prompt('Nazwa wzoru (np. Monitoring 4 kamery):', this.name.value); if(!n) return false; this.name.value=n;"><input type="hidden" name="name" value="{{ o.title }}"><button class="btn">Zapisz jako wzór</button></form>
+  {% if not o.invoice_id and not o.delivery_id %}
+  <form method="post" action="/oferty/{{ o.id }}/usun" onsubmit="return confirm('Usunąć ofertę {{ o.display_number }}? Tego nie da się cofnąć.')"><button class="btn danger">Usuń</button></form>
+  {% else %}<button class="btn" disabled title="Z oferty jest faktura albo WZ, więc zostaje w historii. Możesz zmienić jej status.">Usuń</button>{% endif %}
+</div>
+<div class="grid">
+  <div class="card"><div class="muted">Klient</div><b>{{ o.recipient_name }}</b><br><span style="white-space:pre-line">{{ o.recipient_address }}</span>
+    {% if o.contact_person %}<br>{{ o.contact_person }}{% endif %}{% if o.email %}<br>{{ o.email }}{% endif %}
+    {% if o.contractor_id %}<br><a href="/kontrahenci/{{ o.contractor_id }}">Karta kontrahenta</a>{% endif %}</div>
+  <div class="card">{% if o.title %}<b>{{ o.title }}</b><br>{% endif %}
+    Data {{ o.issue_date|date }} · ważna do {{ o.valid_until|date if o.valid_until else '—' }}
+    {% if o.is_open and o.days_left is not none and o.days_left >= 0 %}(zostało {{ o.days_left }} dni){% endif %}
+    {% if o.probability is not none %}<br>Szansa: {{ o.probability }}%{% endif %}
+    {% if o.sent_at %}<br>Wysłana {{ o.sent_at.strftime('%d.%m.%Y %H:%M') }}{% endif %}
+    {% if o.invoice %}<br>Faktura: <a href="/faktury/{{ o.invoice_id }}">{{ o.invoice.display_number }}</a>{% endif %}
+    {% if o.delivery %}<br>WZ: <a href="/wz/{{ o.delivery_id }}">{{ o.delivery.display_number }}</a>{% endif %}
+    {% if o.created_by %}<br><span class="muted">Dodał: {{ o.created_by }}</span>{% endif %}</div>
+</div>
+<form method="post" action="/oferty/{{ o.id }}/status" class="row card" style="gap:8px;flex-wrap:wrap;align-items:center">
+  <span class="muted">Status:</span>
+  <div style="min-width:220px"><select name="status" class="searchable status-pick {{ o.status_class }}" data-placeholder="szukaj statusu" aria-label="Status oferty" onchange="this.form.submit()">
+  {% for k, v in STATUSES.items() %}<option value="{{ k }}" {{ 'selected' if o.status == k }}>{{ v }}</option>{% endfor %}</select></div>
+  <a class="muted" style="font-size:13px" href="/ustawienia/statusy-ofert">Edytuj listę statusów</a>
+</form>
+<div class="card tbl"><table>
+<tr><th>Lp.</th><th>Pozycja</th><th class="n">Ilość</th><th>Jedn.</th><th class="n">Cena {{ 'brutto' if o.prices_gross else 'netto' }}</th><th class="n hide-sm">VAT</th><th class="n">Brutto</th></tr>
+{% for it in o.items %}<tr><td>{{ it.position }}</td><td>{{ it.name }}{% if it.code %}<br><span class="muted">{{ it.code }}</span>{% endif %}</td>
+<td class="n">{{ it.quantity|qty }}</td><td>{{ it.unit }}</td><td class="n">{{ it.unit_price|money if it.unit_price is not none }}</td>
+<td class="n hide-sm">{{ it.vat_rate }}{{ '%' if it.vat_rate.isdigit() }}</td><td class="n">{{ it.gross|money }}</td></tr>{% endfor %}
+<tr><td colspan="4"></td><td class="n" colspan="2">Netto {{ o.total_net|money }} · VAT {{ o.total_vat|money }}</td><td class="n"><b>{{ o.total_gross|money }} zł</b></td></tr>
+</table></div>
+{% if o.notes %}<div class="card"><div class="muted">Uwagi dla klienta</div><span style="white-space:pre-line">{{ o.notes }}</span></div>{% endif %}
+{% if o.internal_notes %}<div class="card"><div class="muted">Notatka wewnętrzna</div><span style="white-space:pre-line">{{ o.internal_notes }}</span></div>{% endif %}
+{% endblock %}

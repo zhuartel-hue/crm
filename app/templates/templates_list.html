@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Szablony{% endblock %}
+{% block content %}
+<div class="row"><h1>Szablony maili</h1><span class="spacer"></span><a class="btn primary" href="/szablony/nowy">+ Szablon</a></div>
+<p class="muted">Treści maili wysyłanych z programu: faktura, przypomnienie o płatności, WZ, faktura cykliczna. Znaczniki w nawiasach,
+np. <code>{numer}</code> czy <code>{do_zaplaty}</code>, program wypełnia danymi dokumentu. Szablon „domyślny” podstawia się sam; przy wysyłce możesz wybrać inny.</p>
+{% for kind, label in KINDS.items() %}
+{% set items = rows|selectattr('kind', 'equalto', kind)|list %}
+<h2>{{ label }}</h2>
+<div class="card tbl"><table>
+{% for t in items %}
+<tr><td><a href="/szablony/{{ t.id }}">{{ t.name }}</a> {% if t.is_default %}<span class="badge ok">domyślny</span>{% endif %}</td>
+<td class="muted hide-sm">{{ t.subject }}</td><td class="n"><a class="btn small" href="/szablony/{{ t.id }}">Edytuj</a></td></tr>
+{% else %}<tr><td class="muted">Brak. <a href="/szablony/nowy?rodzaj={{ kind }}">Dodaj szablon</a></td></tr>{% endfor %}
+</table></div>
+{% endfor %}
+{% endblock %}

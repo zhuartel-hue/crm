@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Import z Firmao{% endblock %}
+{% block content %}
+<h1>Import z Firmao</h1>
+{% if result %}<div class="card"><h2 style="margin-top:0">Gotowe</h2>
+{% for k, v in result.items() %}<p><b>{{ k }}:</b> {{ v.added }} nowych, {{ v.updated }} zaktualizowanych{% if v.skipped %}, {{ v.skipped }} pominiętych (usunięte albo bez nazwy){% endif %}</p>{% endfor %}
+<p class="row"><a class="btn" href="/kontrahenci">Kontrahenci</a><a class="btn" href="/produkty">Produkty</a></p></div>{% endif %}
+<div class="card">
+<p>Teraz w Sygnavo: <b>{{ counts.contractors }}</b> kontrahentów (z Firmao {{ counts.contractors_firmao }}),
+<b>{{ counts.products }}</b> produktów (z Firmao {{ counts.products_firmao }}), <b>{{ counts.contacts }}</b> osób kontaktowych.</p>
+<form method="post" action="/import/firmao" enctype="multipart/form-data" class="grid" style="max-width:520px;gap:8px">
+  <label>Klienci <span class="muted">(customers.json)</span><input type="file" name="customers" accept=".json,application/json"></label>
+  <label>Produkty <span class="muted">(products.json)</span><input type="file" name="products" accept=".json,application/json"></label>
+  <label>Osoby kontaktowe <span class="muted">(contacts.json, po klientach)</span><input type="file" name="contacts" accept=".json,application/json"></label>
+  <button class="btn primary">Importuj</button>
+</form>
+<p class="muted" style="margin-bottom:0">Pliki są w folderze <code>firmao-eksport</code> po eksporcie z Firmao. Import można powtórzyć:
+rekordy z Firmao się aktualizują, a nie dublują. Kontrahenta dopasowujemy też po NIP, produkt po kodzie. Do Firmao nic nie jest wysyłane.</p>
+</div>
+{% endblock %}

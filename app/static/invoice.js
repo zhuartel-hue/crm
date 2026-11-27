@@ -28,17 +28,37 @@
 
   document.getElementById('add').addEventListener('click', () => {
     const tpl = items.querySelector('.item').cloneNode(true);
-    tpl.querySelectorAll('input:not([type=hidden])').forEach((i) => { i.value = i.name === 'item_qty' ? '1' : i.name === 'item_unit' ? 'szt.' : ''; });
+    tpl.querySelectorAll('input').forEach((i) => { i.value = i.name === 'item_qty' ? '1' : i.name === 'item_unit' ? 'szt.' : ''; });
     items.appendChild(tpl); recalc();
   });
   items.addEventListener('click', (e) => {
     if (!e.target.classList.contains('remove')) return;
     const rows = items.querySelectorAll('.item');
     if (rows.length > 1) e.target.closest('.item').remove();
-    else e.target.closest('.item').querySelectorAll('input:not([type=hidden])').forEach((i) => { i.value = ''; });
+    else e.target.closest('.item').querySelectorAll('input').forEach((i) => { i.value = ''; });
     recalc();
   });
-  items.addEventListener('input', recalc);
+  // Produkt z katalogu: wybor z listy wypelnia nazwe, jednostke, cene i VAT.
+  items.addEventListener('input', (e) => {
+    const el = e.target;
+    if (el.name === 'item_name' && typeof PRODUCTS !== 'undefined') {
+      const row = el.closest('.item');
+      const hidden = row.querySelector('[name=item_product]');
+      const p = PRODUCTS[el.value];
+      if (p) {
+        el.value = p.name;
+        row.dataset.pname = p.name;
+        hidden.value = p.id;
+        row.querySelector('[name=item_unit]').value = p.unit;
+        const price = grossBox && grossBox.checked ? p.gross : p.net;
+        if (price !== null) row.querySelector('[name=item_price]').value = price.replace('.', ',');
+        row.querySelector('[name=item_rate]').value = p.vat;
+      } else if (hidden.value && el.value !== row.dataset.pname) {
+        hidden.value = '';
+      }
+    }
+    recalc();
+  });
   if (grossBox) grossBox.addEventListener('change', recalc);
 
   const contractor = document.getElementById('contractor');

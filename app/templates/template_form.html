@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}{{ t.name or 'Nowy szablon' }}{% endblock %}
+{% block content %}
+<div class="row"><h1>{{ t.name if t.id else 'Nowy szablon maila' }}</h1><span class="spacer"></span><a class="btn" href="/szablony">Wróć</a></div>
+<div class="split">
+<form method="post" action="{{ '/szablony/%d' % t.id if t.id else '/szablony/nowy' }}" class="card">
+  <div class="grid">
+    <div><label>Nazwa</label><input name="name" value="{{ t.name }}" required placeholder="np. Przypomnienie – drugie, stanowcze"></div>
+    <div><label>Rodzaj</label><select name="kind">{% for k, v in KINDS.items() %}<option value="{{ k }}" {{ 'selected' if t.kind == k }}>{{ v }}</option>{% endfor %}</select></div>
+    <div style="grid-column:1/-1"><label>Temat</label><input name="subject" id="t_subject" value="{{ t.subject }}"></div>
+    <div style="grid-column:1/-1"><label>Treść</label><textarea name="body" id="t_body" rows="14">{{ t.body }}</textarea></div>
+    <div style="grid-column:1/-1"><label><input type="checkbox" name="is_default" value="1" {{ 'checked' if t.is_default }}> Domyślny dla tego rodzaju</label></div>
+  </div>
+  <p class="muted" style="margin-bottom:6px">Kliknij znacznik, żeby wstawić go w miejsce kursora:</p>
+  <div class="row" style="margin-bottom:14px">{% for k, v in PLACEHOLDERS.items() %}<button type="button" class="btn small tag" data-tag="{{ '{' ~ k ~ '}' }}" title="{{ v }}">{{ '{' ~ k ~ '}' }}</button>{% endfor %}</div>
+  <div class="row"><button class="btn primary">Zapisz</button><a class="btn" href="/szablony">Anuluj</a></div>
+</form>
+<div class="card preview">
+  <div class="muted" style="font-size:12px;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Podgląd (przykładowe dane)</div>
+  <div class="mail-subj" id="p_subject">{{ preview_subject }}</div>
+  <div class="mail-body" id="p_body">{{ preview_body }}</div>
+</div>
+</div>
+{% if t.id %}<form method="post" action="/szablony/{{ t.id }}/usun" onsubmit="return confirm('Usunąć szablon?')"><button class="btn danger small">Usuń szablon</button></form>{% endif %}
+{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  const SAMPLE = {{ sample_json|safe }};
+  const subj = document.getElementById('t_subject'), body = document.getElementById('t_body');
+  const fill = (t) => t.replace(/\{([a-z_]+)\}/g, (m, k) => (k in SAMPLE ? SAMPLE[k] : m));
+  let last = body;
+  [subj, body].forEach((el) => el.addEventListener('focus', () => { last = el; }));
+  function upd() { document.getElementById('p_subject').textContent = fill(subj.value); document.getElementById('p_body').textContent = fill(body.value); }
+  subj.addEventListener('input', upd); body.addEventListener('input', upd);
+  document.querySelectorAll('.tag').forEach((b) => b.addEventListener('click', () => {
+    const el = last, a = el.selectionStart ?? el.value.length, z = el.selectionEnd ?? a;
+    el.value = el.value.slice(0, a) + b.dataset.tag + el.value.slice(z); el.focus();
+    el.selectionStart = el.selectionEnd = a + b.dataset.tag.length; upd();
+  }));
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}{{ p.name if p.id else 'Nowa osoba kontaktowa' }}{% endblock %}
+{% block content %}
+<h1>{{ p.name if p.id else 'Nowa osoba kontaktowa' }}</h1>
+<form method="post" class="card" action="{{ '/kontakty/%d' % p.id if p.id else '/kontakty/nowy' }}">
+<input type="hidden" name="back" value="{{ 'kontrahent' if p.contractor_id else '' }}">
+<div class="grid">
+  <div><label>Imię</label><input name="first_name" value="{{ p.first_name or '' }}"></div>
+  <div><label>Nazwisko</label><input name="last_name" value="{{ p.last_name or '' }}"></div>
+  <div style="grid-column:1/-1"><label>Firma</label><select name="contractor_id"><option value="">—</option>
+    {% for c in contractors %}<option value="{{ c.id }}" data-search="{{ c.nip }} {{ c.city }}" {{ 'selected' if c.id == p.contractor_id }}>{{ c.name }}</option>{% endfor %}</select></div>
+  <div><label>Stanowisko</label><input name="position" value="{{ p.position or '' }}"></div>
+  <div><label>E-mail</label><input name="email" type="email" value="{{ p.email or '' }}"></div>
+  <div><label>Telefon</label><input name="phone" type="tel" value="{{ p.phone or '' }}"></div>
+  <div><label>Drugi telefon</label><input name="phone2" type="tel" value="{{ p.phone2 or '' }}"></div>
+  <div style="grid-column:1/-1"><label>Notatki</label><textarea name="notes">{{ p.notes or '' }}</textarea></div>
+</div>
+<div class="row"><button class="btn primary">Zapisz</button>
+{% if p.id and p.email %}<a class="btn" href="/poczta/nowa?kontakt={{ p.id }}">Napisz e-mail</a>{% endif %}
+{% if p.id and p.phone %}<a class="btn" href="tel:{{ p.phone }}">Zadzwoń</a>{% endif %}
+<a class="btn" href="{{ '/kontrahenci/%d' % p.contractor_id if p.contractor_id else '/kontakty' }}">Anuluj</a></div>
+</form>
+{% if p.id %}<form method="post" action="/kontakty/{{ p.id }}/usun" onsubmit="return confirm('Usunąć tę osobę?')" style="margin-top:12px"><button class="btn danger">Usuń osobę</button></form>{% endif %}
+{% endblock %}

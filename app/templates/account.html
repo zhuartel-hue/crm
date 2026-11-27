@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Konto{% endblock %}
+{% block content %}
+<h1>Konto</h1>
+<form method="post" action="/konto/haslo" class="card" style="max-width:420px">
+  <h2 style="margin-top:0">Zmiana hasła</h2>
+  <p class="muted">Login: <b>{{ request.session.get('user') }}</b></p>
+  <label>Obecne hasło</label><input type="password" name="old" autocomplete="current-password" required>
+  <label style="margin-top:10px">Nowe hasło (min. 10 znaków)</label><input type="password" name="new" autocomplete="new-password" minlength="10" required>
+  <label style="margin-top:10px">Powtórz nowe hasło</label><input type="password" name="repeat" autocomplete="new-password" minlength="10" required>
+  <div class="row" style="margin-top:14px"><button class="btn primary">Zmień hasło</button></div>
+</form>
+<div class="card" id="2fa" style="max-width:420px">
+  <h2 style="margin-top:0">Weryfikacja dwuetapowa</h2>
+  {% if error_2fa %}<div class="error">{{ error_2fa }}</div>{% endif %}
+  {% if has_2fa %}
+  <p>Włączona. Przy logowaniu podajesz hasło i kod z aplikacji w telefonie.</p>
+  <form method="post" action="/konto/2fa/wylacz" class="row" style="gap:6px">
+    <input name="code" inputmode="numeric" autocomplete="one-time-code" placeholder="kod z telefonu" maxlength="7" required style="max-width:160px">
+    <button class="btn">Wyłącz</button>
+  </form>
+  {% elif totp_qr %}
+  <p>1. W telefonie otwórz aplikację do kodów (np. Google Authenticator, Microsoft Authenticator) i zeskanuj kod:</p>
+  <div style="max-width:220px">{{ totp_qr | safe }}</div>
+  <p class="muted">Albo wpisz ręcznie klucz: <code>{{ totp_secret }}</code></p>
+  <p>2. Wpisz 6 cyfr, które pokazuje aplikacja:</p>
+  <form method="post" action="/konto/2fa/wlacz" class="row" style="gap:6px">
+    <input name="code" inputmode="numeric" autocomplete="one-time-code" placeholder="123456" maxlength="7" required style="max-width:160px">
+    <button class="btn primary">Włącz</button>
+  </form>
+  {% else %}
+  <p class="muted">Dodatkowa ochrona konta: oprócz hasła kod z telefonu. Zalecane dla właściciela i księgowości.</p>
+  <form method="post" action="/konto/2fa/start"><button class="btn">Włącz weryfikację dwuetapową</button></form>
+  {% endif %}
+</div>
+<form method="post" action="/logout"><button class="btn">Wyloguj</button></form>
+{% endblock %}

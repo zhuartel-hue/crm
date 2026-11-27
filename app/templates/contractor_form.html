@@ -3,22 +3,74 @@
 {% block content %}
 <h1>{{ c.name if c.id else 'Nowy kontrahent' }}</h1>
 <form method="post" class="card">
-<p><label><input type="checkbox" name="is_company" value="1" {{ 'checked' if c.is_company }}> firma (odznacz dla osoby prywatnej)</label></p>
+<p><label><input type="checkbox" name="is_company" id="c_company" value="1" {{ 'checked' if c.is_company }}> firma (odznacz dla osoby prywatnej)</label></p>
 <div class="grid">
-  <div style="grid-column:1/-1"><label>Nazwa / imię i nazwisko</label><input name="name" value="{{ c.name or '' }}" required></div>
-  <div><label>NIP</label><input name="nip" value="{{ c.nip or '' }}" inputmode="numeric"></div>
+  <div style="grid-column:1/-1"><label>Nazwa / imię i nazwisko</label><input name="name" id="c_name" value="{{ c.name or '' }}" required></div>
+  <div><label>NIP</label><div class="row" style="flex-wrap:nowrap"><input name="nip" id="c_nip" value="{{ c.nip or '' }}" inputmode="numeric">
+    <button type="button" class="btn small" data-nip-lookup='{"nip":"c_nip","name":"c_name","street":"c_street","postal":"c_postal","city":"c_city","company":"c_company","info":"c_nip_info"}'>Pobierz dane po NIP</button></div>
+    <div class="muted" id="c_nip_info"></div></div>
   <div><label>PESEL (opcjonalnie)</label><input name="pesel" value="{{ c.pesel or '' }}" inputmode="numeric"></div>
-  <div style="grid-column:1/-1"><label>Ulica i numer</label><input name="street" value="{{ c.street or '' }}"></div>
-  <div><label>Kod pocztowy</label><input name="postal_code" value="{{ c.postal_code or '' }}"></div>
-  <div><label>Miasto</label><input name="city" value="{{ c.city or '' }}"></div>
+  <div style="grid-column:1/-1"><label>Ulica i numer</label><input name="street" id="c_street" value="{{ c.street or '' }}"></div>
+  <div><label>Kod pocztowy</label><input name="postal_code" id="c_postal" value="{{ c.postal_code or '' }}"></div>
+  <div><label>Miasto</label><input name="city" id="c_city" value="{{ c.city or '' }}"></div>
   <div><label>Kraj</label><input name="country" value="{{ c.country or 'PL' }}" maxlength="2"></div>
   <div><label>E-mail</label><input name="email" type="email" value="{{ c.email or '' }}"></div>
   <div><label>Telefon</label><input name="phone" type="tel" value="{{ c.phone or '' }}"></div>
+  <div style="grid-column:1/-1"><label>Strona www</label><input name="website" value="{{ c.website or '' }}" inputmode="url"></div>
+  <div style="grid-column:1/-1"><label><input type="checkbox" name="ksef_auto" value="1" {{ 'checked' if c.ksef_auto }}> wysyłaj faktury do KSeF automatycznie zaraz po wystawieniu (także cykliczne)</label>
+    <div class="muted">Bez tego faktura czeka, aż zaznaczysz ją na liście faktur i klikniesz „Wyślij zaznaczone do KSeF”.</div></div>
   <div style="grid-column:1/-1"><label>Notatki</label><textarea name="notes">{{ c.notes or '' }}</textarea></div>
 </div>
 <div class="row"><button class="btn primary">Zapisz</button><a class="btn" href="/kontrahenci">Anuluj</a></div>
 </form>
 {% if c.id and not (invoices|selectattr('status', 'equalto', 'issued')|list) %}
 <form method="post" action="/kontrahenci/{{ c.id }}/usun" onsubmit="return confirm('Usunąć tego kontrahenta?')" style="margin-top:12px"><button class="btn danger">Usuń kontrahenta</button></form>{% endif %}
-{% if invoices %}<h2>Faktury</h2>{% include "_invoice_rows.html" %}{% endif %}
+{% if c.id %}<h2 id="notatki">Notatki</h2>
+<form method="post" action="/kontrahenci/{{ c.id }}/notatki" class="card">
+  <textarea name="text" rows="3" placeholder="Nowa notatka, np. rozmowa telefoniczna, ustalenia" required></textarea>
+  <div class="row" style="margin-top:6px"><button class="btn primary small">Dodaj notatkę</button></div>
+</form>
+{% for n in c.note_rows %}<div class="card" style="padding:10px 12px">
+  <div class="row muted" style="font-size:.9em"><span>{{ n.at.strftime('%d.%m.%Y %H:%M') }} · {{ n.author }}{% if n.contact %} · {{ n.contact.name }}{% endif %}</span><span class="spacer"></span>
+  <form method="post" action="/kontrahenci/{{ c.id }}/notatki/{{ n.id }}/usun" onsubmit="return confirm('Usunąć notatkę?')" style="margin:0"><button class="btn small">Usuń</button></form></div>
+  <div style="white-space:pre-wrap;margin-top:4px">{{ n.text }}</div></div>
+{% else %}<p class="muted">Brak notatek.</p>{% endfor %}
+{% endif %}
+{% if c.id %}<div class="row"><h2>Osoby kontaktowe</h2><span class="spacer"></span><a class="btn small" href="/kontakty/nowy?kontrahent={{ c.id }}">+ Osoba</a></div>
+{% if c.contacts %}<div class="card tbl"><table>{% for p in c.contacts %}<tr><td><a href="/kontakty/{{ p.id }}">{{ p.name }}</a>{% if p.position %}<br><span class="muted">{{ p.position }}</span>{% endif %}</td>
+<td>{% if p.phone %}<a href="tel:{{ p.phone }}">{{ p.phone }}</a>{% endif %}</td>
+<td class="hide-sm">{% if p.email %}<a href="/poczta/nowa?kontakt={{ p.id }}">{{ p.email }}</a>{% endif %}</td>
+<td style="white-space:nowrap">{% if p.email %}<a class="btn small" href="/kontrahenci/{{ c.id }}/maile?osoba={{ p.id }}">Maile</a>{% endif %}</td></tr>{% endfor %}</table></div>
+{% else %}<p class="muted">Brak osób kontaktowych.</p>{% endif %}{% endif %}
+{% if c.id %}<div class="row"><h2>Umowy</h2><span class="spacer"></span><a class="btn small" href="/umowy/nowa?kontrahent={{ c.id }}">+ Umowa</a></div>
+{% if contracts %}<div class="card tbl"><table>{% for r in contracts %}<tr><td><a href="/umowy/{{ r.id }}">{{ r.number or r.name }}</a></td>
+<td class="hide-sm">{{ r.start_date|date if r.start_date }} – {{ r.end_date|date if r.end_date else 'bezterminowo' }}</td>
+<td>{% if r.invoicing and r.active %}{{ r.interval_label }}, następna {{ r.next_date|date }}{% endif %}</td><td><span class="badge {{ 'm' if r.status == 'active' }}">{{ r.status_label }}</span></td></tr>{% endfor %}</table></div>
+{% else %}<p class="muted">Brak umów.</p>{% endif %}
+<div class="row"><h2>Zadania</h2><span class="spacer"></span><a class="btn small" href="/zadania/nowe?kontrahent={{ c.id }}">+ Zadanie</a></div>
+{% set rows = task_rows %}{% set back = '/kontrahenci/%d' % c.id %}{% set empty = 'Brak zadań.' %}{% include "_task_rows.html" %}
+<div class="row"><h2>Sprzęt</h2><span class="spacer"></span><a class="btn small" href="/sprzet/nowy?kontrahent={{ c.id }}">+ Sprzęt</a></div>
+{% if equipment %}<div class="card tbl"><table>{% for e in equipment %}<tr><td><a href="/sprzet/{{ e.id }}">{{ e.name }}</a>{% if e.serial_no %}<br><span class="muted" style="font-size:12px">SN {{ e.serial_no }}</span>{% endif %}</td>
+<td class="hide-sm">{{ e.location }}</td><td>{% include "_equipment_badges.html" %}</td></tr>{% endfor %}</table></div>
+{% else %}<p class="muted">Brak sprzętu.</p>{% endif %}{% endif %}
+{% if invoices %}<div class="row"><h2>Faktury</h2><span class="spacer"></span><a class="btn small" href="/faktury/nowa?kontrahent={{ c.id }}">+ Faktura</a></div>{% include "_invoice_rows.html" %}{% endif %}
+{% if deliveries %}<h2>WZ i PZ</h2><div class="card tbl"><table>{% for d in deliveries %}<tr><td><a href="/wz/{{ d.id }}">{{ d.display_number }}</a></td><td>{{ d.issue_date|date }}</td><td class="n">{{ d.total_gross|money if d.total_gross }}</td></tr>{% endfor %}</table></div>{% endif %}
+{% if c.id %}<div class="row"><h2>Oferty</h2><span class="spacer"></span><a class="btn small" href="/oferty/nowa?kontrahent={{ c.id }}">+ Oferta</a></div>
+{% if offers %}<div class="card tbl"><table>{% for o in offers %}<tr><td><a href="/oferty/{{ o.id }}">{{ o.display_number }}</a></td><td>{{ o.issue_date|date }}</td>
+<td class="n">{{ o.total_gross|money }}</td><td>{{ o.status_label }}</td></tr>{% endfor %}</table></div>
+{% else %}<p class="muted">Brak ofert dla tego kontrahenta.</p>{% endif %}
+<div class="row"><h2>Zamówienia</h2><span class="spacer"></span><a class="btn small" href="/zamowienia/nowe?kontrahent={{ c.id }}">+ Zamówienie</a></div>
+{% if orders %}<div class="card tbl"><table>{% for z in orders %}<tr><td><a href="/zamowienia/{{ z.id }}">{{ z.display_number }}</a>{% if z.title %} <span class="muted">{{ z.title }}</span>{% endif %}</td><td>{{ z.issue_date|date }}</td>
+<td>{{ z.due_date|date if z.due_date else '' }}{% if z.overdue %} <span class="badge due">po terminie</span>{% endif %}</td><td class="n">{{ z.total_gross|money }}</td><td><span class="badge {{ z.status_class }}">{{ z.status_label }}</span></td></tr>{% endfor %}</table></div>
+{% else %}<p class="muted">Brak zamówień.</p>{% endif %}
+<div class="row"><h2 id="rozmowy">Rozmowy telefoniczne</h2><span class="spacer"></span><a class="btn small" href="/polaczenia?q={{ c.name|urlencode }}">Wszystkie</a></div>
+{% set call_contractor = c %}{% include "_call_form.html" %}
+{% if calls %}<div class="card tbl"><table>{% for cl in calls %}<tr><td style="white-space:nowrap">{{ cl.started_at.strftime('%d.%m.%Y %H:%M') }}</td>
+<td style="white-space:nowrap">{{ '↙' if cl.direction == 'in' else '↗' }} {{ cl.status_label if cl.status != 'answered' else '' }}</td><td class="n">{{ cl.duration if cl.seconds else '' }}</td><td>{{ cl.note }}{% if cl.task %} <a class="muted" href="/zadania/{{ cl.task_id }}">{{ cl.task.title }}</a>{% endif %}</td></tr>{% endfor %}</table></div>{% endif %}
+<div class="row"><h2 id="maile">Maile</h2><span class="spacer"></span><a class="btn small" href="/kontrahenci/{{ c.id }}/maile">Cała historia</a><a class="btn small primary" href="/poczta/nowa?kontrahent={{ c.id }}">Napisz e-mail</a></div>
+{% if mails %}<div class="card tbl"><table>{% for mm in mails %}<tr><td style="white-space:nowrap">{{ mm.date.strftime('%d.%m.%Y') if mm.date }}</td>
+<td>{{ '→' if mm.direction == 'out' else '←' }} <a href="/poczta/{{ mm.id }}">{{ mm.subject or '(bez tematu)' }}</a></td>
+<td class="hide-sm muted">{% if mm.direction == 'out' %}do {{ mm.to_addrs[:50] }}{% else %}{{ mm.from_name or mm.from_addr }}{% endif %}</td></tr>{% endfor %}</table></div>
+{% else %}<p class="muted">Brak wiadomości z adresów tego kontrahenta.</p>{% endif %}{% endif %}
 {% endblock %}
+{% block scripts %}<script src="/static/nip.js"></script>{% endblock %}
