@@ -66,6 +66,10 @@ SCREENS = [
                {"css": "button", "text": "Dodaj", "label": "Dodaj"}]},
     {"id": "kontrahent-nowy", "title": "Kontrahenci: nowy kontrahent", "page": "/kontrahenci",
      "steps": [{"css": "a.btn", "text": "+ Kontrahent", "label": "przycisk + Kontrahent"}]},
+    {"id": "kontrahent-notatki", "title": "Karta kontrahenta: notatki (wpisz i zmień w miejscu)", "page": "/kontrahenci/1#notatki",
+     "steps": [{"css": ".note-pin textarea", "label": "stała notatka: kliknij i pisz, zapisuje się po wyjściu z pola"},
+               {"css": "#notatki ~ form textarea[name=text]", "label": "nowa notatka (Ctrl+Enter zapisuje)"},
+               {"css": ".note-edit", "label": "Edytuj (albo kliknij w treść notatki), potem Zapisz"}]},
     {"id": "produkt-nowy", "title": "Produkty: nowy produkt", "page": "/produkty",
      "steps": [{"css": "a.btn", "text": "+ Produkt", "label": "przycisk + Produkt"}]},
     {"id": "oferta-nowa", "title": "Oferty: nowa oferta", "page": "/oferty",
@@ -95,7 +99,7 @@ def _demo_data() -> None:
 
     from app import features, services
     from app.db import SessionLocal
-    from app.models import Company, Contractor, Organisation, Product
+    from app.models import Company, Contractor, ContractorNote, Organisation, Product
 
     with SessionLocal() as db:
         demo = [("Demo", "DEMO SPÓŁKA Z O.O.", "1234563218"), ("Przykład JDG", "JAN PRZYKŁADOWY", "5260250274")]
@@ -107,6 +111,11 @@ def _demo_data() -> None:
         first = db.scalar(select(Company).order_by(Company.id))
         for name in ("Hurtownia Przykład Sp. z o.o.", "Anna Testowa", "Serwis Demo s.c."):
             db.add(Contractor(company_id=first.id, name=name, city="Kraków"))
+        db.flush()
+        hurt = db.scalar(select(Contractor).where(Contractor.name.like("Hurtownia%")))
+        hurt.notes = "Płaci przelewem 14 dni. Decyzje: pan Nowak."
+        db.add(ContractorNote(contractor_id=hurt.id, author="admin", at=dt.datetime(2026, 11, 27, 10, 15),
+                              text="Rozmowa telefoniczna: chce ofertę na serwis kwartalny."))
         db.add(Product(company_id=first.id, name="Usługa serwisowa", unit="szt.", price_net=150, vat_rate="23",
                        is_service=True))
         db.commit()

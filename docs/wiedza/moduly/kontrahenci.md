@@ -1,5 +1,5 @@
 # Kontrahenci i karta kontrahenta
-Aktualizacja: 2026-11-27 (karta jak w Firmao: maile, SMS, oś czasu)
+Aktualizacja: 2026-11-28 (notatki wpisujesz i zmieniasz wprost na karcie)
 
 ## Link do kontrahenta na każdej liście
 Na listach faktur, należności, WZ, ofert, zamówień, umów, kosztów, zadań, połączeń, poczty, sprzętu i w kalendarzu
@@ -22,6 +22,18 @@ Oprócz nazwy, NIP i adresu: **typ** (klient, dostawca, partner, podwykonawca, p
 **REGON**, **KRS**, **numer konta**, **adres do korespondencji** i **następny kontakt**. Te pola wczytują się też
 z Firmao przy ponownym imporcie. Na liście kontrahentów filtr **skontaktować się dziś** pokazuje tych, z którymi
 kontakt wypada dziś lub wcześniej, a filtr typu zawęża listę np. do dostawców.
+
+## Notatki: wpisz i zmień od razu na karcie
+![Notatki na karcie kontrahenta](../zrzuty/kontrahent-notatki.png)
+
+1. **Stała notatka** (na górze sekcji Notatki): kliknij w pole i pisz, np. warunki współpracy albo kto decyduje.
+   Zapisuje się sama, gdy klikniesz gdzie indziej (albo przyciskiem **Zapisz**). To ta sama notatka, co pole
+   „Notatki” w danych kontrahenta.
+2. **Nowa notatka**: wpisz treść i kliknij **Dodaj notatkę** (albo Ctrl+Enter / Cmd+Enter). Dostaje datę i autora
+   i trafia na oś czasu.
+3. **Zmiana notatki**: kliknij **Edytuj** albo wprost w treść notatki. Treść zamienia się w pole do pisania,
+   **Zapisz** (Ctrl+Enter) zapisuje, **Anuluj** (Esc) odrzuca zmiany. Data i autor zostają, a zmiana trafia do
+   historii zmian. Pustej notatki nie da się zapisać: żeby ją skasować, użyj **Usuń**.
 
 ## Oś czasu
 Pierwsza sekcja karty. Jedna lista, od najnowszych: notatki, maile, SMS-y, rozmowy, faktury, WZ, oferty,

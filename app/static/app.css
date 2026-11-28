@@ -52,6 +52,11 @@ label{display:block;font-size:13px;color:var(--muted);margin-bottom:5px;font-wei
 input,select,textarea{width:100%;font:inherit;font-size:15px;padding:5px 8px;border:1px solid var(--line);border-radius:4px;background:var(--card);color:var(--text);transition:border-color .12s,box-shadow .12s}
 input:focus,select:focus,textarea:focus{outline:0;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-weak)}
 textarea{min-height:76px;resize:vertical}
+[hidden]{display:none!important}
+.kcard textarea[data-autosize]{min-height:34px;resize:none;overflow:hidden}
+.note-pin textarea{border-color:transparent;background:transparent;padding:3px 4px}
+.note-pin textarea:hover{border-color:var(--line)}
+.note-pin textarea:focus{background:var(--card)}
 input[type=checkbox],input[type=radio]{width:auto;accent-color:var(--accent);margin-right:6px;vertical-align:-2px}
 input[type=file]{padding:7px}
 details>summary{cursor:pointer;color:var(--accent);font-size:14px;margin:4px 0}

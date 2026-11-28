@@ -56,15 +56,59 @@
 <td>{% if e.href %}<a href="{{ e.href }}">{{ e.text }}</a>{% else %}{{ e.text }}{% endif %}</td><td class="hide-sm muted" style="white-space:nowrap">{{ e.who }}</td></tr>{% endfor %}</table></details>{% endif %}</div>
 {% else %}<p class="muted">Jeszcze nic się nie działo.</p>{% endif %}
 <h2 id="notatki">Notatki</h2>
-<form method="post" action="/kontrahenci/{{ c.id }}/notatki" class="card">
-  <textarea name="text" rows="2" placeholder="Nowa notatka, np. rozmowa telefoniczna, ustalenia" required></textarea>
-  <div class="row" style="margin-top:6px"><button class="btn primary small">Dodaj notatkę</button></div>
+<form method="post" action="/kontrahenci/{{ c.id }}/notatka-stala" class="card note-pin" style="padding:6px 10px">
+  <div class="row muted" style="font-size:.85em"><span>Stała notatka (zawsze na górze)</span><span class="spacer"></span><button class="btn primary small note-save" hidden>Zapisz</button></div>
+  <textarea name="notes" rows="{{ [2, (c.notes or '').count('\n') + 1]|max }}" placeholder="Kliknij i wpisz, np. warunki współpracy, osoba decyzyjna, uwagi" data-autosize>{{ c.notes or '' }}</textarea>
 </form>
-{% for n in c.note_rows %}<div class="card" style="padding:10px 12px">
-  <div class="row muted" style="font-size:.9em"><span>{{ n.at.strftime('%d.%m.%Y %H:%M') }} · {{ n.author }}{% if n.contact %} · {{ n.contact.name }}{% endif %}</span><span class="spacer"></span>
+<form method="post" action="/kontrahenci/{{ c.id }}/notatki" class="card" style="padding:6px 10px">
+  <textarea name="text" rows="2" placeholder="Nowa notatka, np. rozmowa telefoniczna, ustalenia (Ctrl+Enter zapisuje)" required data-autosize></textarea>
+  <div class="row" style="margin-top:4px"><button class="btn primary small">Dodaj notatkę</button></div>
+</form>
+{% for n in c.note_rows %}<div class="card note" id="notatka-{{ n.id }}" style="padding:6px 10px">
+  <div class="row muted" style="font-size:.85em"><span>{{ n.at.strftime('%d.%m.%Y %H:%M') }} · {{ n.author }}{% if n.contact %} · {{ n.contact.name }}{% endif %}</span><span class="spacer"></span>
+  <button type="button" class="btn small note-edit">Edytuj</button>
   <form method="post" action="/kontrahenci/{{ c.id }}/notatki/{{ n.id }}/usun" onsubmit="return confirm('Usunąć notatkę?')" style="margin:0"><button class="btn small">Usuń</button></form></div>
-  <div style="white-space:pre-wrap;margin-top:4px">{{ n.text }}</div></div>
+  <div class="note-text" title="Kliknij, aby edytować" style="white-space:pre-wrap;margin-top:2px;cursor:text">{{ n.text }}</div>
+  <form method="post" action="/kontrahenci/{{ c.id }}/notatki/{{ n.id }}" class="note-form" hidden style="margin:2px 0 0">
+    <textarea name="text" required data-autosize>{{ n.text }}</textarea>
+    <div class="row" style="margin-top:4px"><button class="btn primary small">Zapisz</button><button type="button" class="btn small note-cancel">Anuluj</button><span class="muted" style="font-size:.85em">Ctrl+Enter zapisuje, Esc anuluje</span></div>
+  </form></div>
 {% else %}<p class="muted">Brak notatek.</p>{% endfor %}
+<script>
+(function () {
+  var box = document.getElementById('notatki').parentNode;
+  function fit(t) { t.style.height = 'auto'; t.style.height = (t.scrollHeight + 2) + 'px'; }
+  box.querySelectorAll('textarea[data-autosize]').forEach(function (t) {
+    t.addEventListener('input', function () { fit(t); });
+    t.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); if (t.form.reportValidity()) t.form.submit(); }
+      if (e.key === 'Escape') { var n = t.closest('.note'); if (n) close(n); }
+    });
+  });
+  var pin = box.querySelector('.note-pin');
+  if (pin) {
+    var pt = pin.querySelector('textarea'), ps = pin.querySelector('.note-save'), orig = pt.value;
+    fit(pt);
+    pt.addEventListener('input', function () { ps.hidden = pt.value === orig; });
+    pt.addEventListener('blur', function () { if (pt.value !== orig) pin.submit(); });
+  }
+  function open(n) {
+    n.querySelector('.note-text').hidden = true; n.querySelector('.note-edit').hidden = true;
+    var f = n.querySelector('.note-form'), t = f.querySelector('textarea');
+    f.hidden = false; fit(t); t.focus(); t.setSelectionRange(t.value.length, t.value.length);
+  }
+  function close(n) {
+    var f = n.querySelector('.note-form'), t = f.querySelector('textarea');
+    t.value = t.defaultValue; f.hidden = true;
+    n.querySelector('.note-text').hidden = false; n.querySelector('.note-edit').hidden = false;
+  }
+  box.querySelectorAll('.note').forEach(function (n) {
+    n.querySelector('.note-edit').addEventListener('click', function () { open(n); });
+    n.querySelector('.note-text').addEventListener('click', function () { if (!getSelection().toString()) open(n); });
+    n.querySelector('.note-cancel').addEventListener('click', function () { close(n); });
+  });
+})();
+</script>
 <div class="row"><h2 id="faktury">Faktury</h2><span class="spacer"></span><a class="btn small" href="/faktury?q={{ (c.nip or c.name)|urlencode }}">Wszystkie</a><a class="btn small" href="/faktury/nowa?kontrahent={{ c.id }}">+ Faktura</a></div>
 {% if invoices %}{% include "_invoice_rows.html" %}{% else %}<p class="muted">Brak faktur.</p>{% endif %}
 <div class="row"><h2 id="wz">WZ i PZ</h2><span class="spacer"></span><a class="btn small" href="/wz/nowa?kontrahent={{ c.id }}">+ WZ</a></div>

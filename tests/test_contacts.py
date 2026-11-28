@@ -86,6 +86,21 @@ def test_contractor_notes(client):
     assert "Dzwonił w sprawie alarmu" in page and "admin" in page
     with SessionLocal() as db:
         nid = db.query(ContractorNote).one().id
+    # edycja w miejscu: formularz jest na karcie, zapis zmienia tresc
+    assert f'action="/kontrahenci/{cid}/notatki/{nid}"' in page
+    r = client.post(f"/kontrahenci/{cid}/notatki/{nid}", data={"text": "Dzwonił w sprawie alarmu, oddzwonić jutro"},
+                    follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"].endswith(f"#notatka-{nid}")
+    with SessionLocal() as db:
+        assert db.get(ContractorNote, nid).text == "Dzwonił w sprawie alarmu, oddzwonić jutro"
+    client.post(f"/kontrahenci/{cid}/notatki/{nid}", data={"text": "  "})
+    with SessionLocal() as db:
+        assert db.get(ContractorNote, nid).text == "Dzwonił w sprawie alarmu, oddzwonić jutro"
+    # stala notatka kontrahenta, wpisywana wprost na karcie
+    client.post(f"/kontrahenci/{cid}/notatka-stala", data={"notes": "Płaci zawsze przelewem"})
+    with SessionLocal() as db:
+        assert db.get(Contractor, cid).notes == "Płaci zawsze przelewem"
+    assert "Płaci zawsze przelewem" in client.get(f"/kontrahenci/{cid}").text
     client.post(f"/kontrahenci/{cid}/notatki/{nid}/usun")
     assert "Brak notatek." in client.get(f"/kontrahenci/{cid}").text
 

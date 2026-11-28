@@ -1,6 +1,6 @@
 {
- "generated": "2026-11-27",
- "commit": "ffa15c8",
+ "generated": "2026-11-28",
+ "commit": "c60ef0e",
  "screens": [
   {
    "id": "pomoc-okienko",
@@ -185,6 +185,26 @@
     }
    ],
    "image": "kontrahent-nowy.png"
+  },
+  {
+   "id": "kontrahent-notatki",
+   "title": "Karta kontrahenta: notatki (wpisz i zmień w miejscu)",
+   "page": "/kontrahenci/1#notatki",
+   "steps": [
+    {
+     "css": ".note-pin textarea",
+     "label": "stała notatka: kliknij i pisz, zapisuje się po wyjściu z pola"
+    },
+    {
+     "css": "#notatki ~ form textarea[name=text]",
+     "label": "nowa notatka (Ctrl+Enter zapisuje)"
+    },
+    {
+     "css": ".note-edit",
+     "label": "Edytuj (albo kliknij w treść notatki), potem Zapisz"
+    }
+   ],
+   "image": "kontrahent-notatki.png"
   },
   {
    "id": "produkt-nowy",

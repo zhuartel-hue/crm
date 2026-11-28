@@ -1306,6 +1306,42 @@ async def contractor_note_add(cid: int, request: Request, db: Session = Depends(
     return redirect(f"/kontrahenci/{cid}#notatki")
 
 
+@app.post("/kontrahenci/{cid}/notatki/{nid}")
+async def contractor_note_edit(cid: int, nid: int, request: Request, db: Session = Depends(get_db)):
+    """Zmiana tresci notatki w miejscu, na karcie kontrahenta."""
+    n = db.get(ContractorNote, nid)
+    if n is None or n.contractor_id != cid or _own(db, request, Contractor, cid) is None:
+        raise HTTPException(404)
+    form = await request.form()
+    text = (form.get("text") or "").strip()[:20000]
+    if not text:
+        flash(request, "Notatka nie może być pusta. Aby ją usunąć, kliknij „Usuń”.")
+    elif text != n.text:
+        n.text = text
+        audit(db, web_actor(request), "contractor.note_edit", f"{n.contractor.name}: zmieniono notatkę z {n.at:%d.%m.%Y}",
+              entity="contractor", entity_id=cid)
+        db.commit()
+        flash(request, "Zapisano notatkę.")
+    return redirect(f"/kontrahenci/{cid}#notatka-{nid}")
+
+
+@app.post("/kontrahenci/{cid}/notatka-stala")
+async def contractor_pinned_note(cid: int, request: Request, db: Session = Depends(get_db)):
+    """Stala notatka kontrahenta (pole Notatki z danych), edytowana wprost na karcie."""
+    c = _own(db, request, Contractor, cid)
+    if c is None:
+        raise HTTPException(404)
+    form = await request.form()
+    text = (form.get("notes") or "").strip()
+    if text != (c.notes or ""):
+        c.notes = text
+        audit(db, web_actor(request), "contractor.notes", f"{c.name}: zmieniono stałą notatkę", entity="contractor",
+              entity_id=c.id)
+        db.commit()
+        flash(request, "Zapisano stałą notatkę.")
+    return redirect(f"/kontrahenci/{cid}#notatki")
+
+
 @app.post("/kontrahenci/{cid}/notatki/{nid}/usun")
 def contractor_note_delete(cid: int, nid: int, request: Request, db: Session = Depends(get_db)):
     n = db.get(ContractorNote, nid)
