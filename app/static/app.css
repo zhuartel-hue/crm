@@ -180,7 +180,8 @@ table.cols-fixed td,table.cols-fixed th{overflow:hidden;text-overflow:ellipsis}
 .picker-sm{min-width:150px}.picker-sm input{padding:4px 8px;font-size:13px}
 .picker-sm input.status-pick{width:100%}
 
-.klink{font-weight:600;color:var(--text);text-decoration:underline;text-decoration-color:var(--accent);text-decoration-thickness:1.5px;text-underline-offset:2px}.klink:hover{color:var(--accent)}
+/* nazwa kontrahenta: zwykla czcionka, bez podkreslenia; po najechaniu pogrubiona (text-shadow, zeby tabela nie skakala) */
+.klink{font-weight:400;color:var(--text);text-decoration:none}.klink:hover,.klink:focus-visible{color:var(--accent);text-decoration:none;text-shadow:0 0 .65px currentColor,0 0 .65px currentColor}
 .kcard p.muted{margin:2px 0 6px}.kcard h2{margin:10px 0 4px}.kcard .card{margin-bottom:6px}
 /* foldery (Koszty: Do weryfikacji / Zweryfikowane / Wszystkie) i raporty */
 .folders{display:flex;gap:2px;flex-wrap:wrap;border-bottom:1px solid var(--line);margin:0 0 8px}

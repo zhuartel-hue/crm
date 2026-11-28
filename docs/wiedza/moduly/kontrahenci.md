@@ -3,7 +3,7 @@ Aktualizacja: 2026-11-28 (notatki wpisujesz i zmieniasz wprost na karcie)
 
 ## Link do kontrahenta na każdej liście
 Na listach faktur, należności, WZ, ofert, zamówień, umów, kosztów, zadań, połączeń, poczty, sprzętu i w kalendarzu
-nazwa kontrahenta jest **pogrubiona i podkreślona**. Kliknięcie otwiera jego kartę. Tak samo na podglądzie faktury,
+nazwa kontrahenta jest linkiem (po najechaniu myszką pogrubia się). Kliknięcie otwiera jego kartę. Tak samo na podglądzie faktury,
 WZ, oferty, zamówienia i faktury kosztowej. Gdy dokument nie jest powiązany z kontrahentem z bazy (np. jednorazowy
 nabywca), nazwa jest zwykłym tekstem.
 
